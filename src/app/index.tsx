@@ -11,7 +11,7 @@ export default function IndexScreen() {
   return (
     <SafeAreaView style={styles.screen}>
       <View style={styles.block}>
-        <Text style={styles.title}>Kadens</Text>
+        <Text style={styles.title}>Kadens - Mobile</Text>
         <Text style={styles.line}>Socle mobile (KL-21)</Text>
         <Text style={styles.line}>API : {API_URL ?? 'non configurée (.env)'}</Text>
       </View>

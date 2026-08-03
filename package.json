@@ -4,8 +4,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "expo start",
-    "android": "expo start --android",
+    "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000 || echo 'adb reverse impossible, téléphone débranché ? Metro et le backend ne seront pas joignables depuis le mobile.'",
+    "start": "npm run --silent adb:reverse && expo start --localhost",
+    "android": "npm run --silent adb:reverse && REACT_NATIVE_PACKAGER_HOSTNAME=localhost expo run:android",
     "web": "expo start --web",
     "lint": "expo lint",
     "format": "prettier --write .",
@@ -14,6 +15,7 @@
   "dependencies": {
     "expo": "~57.0.9",
     "expo-constants": "~57.0.8",
+    "expo-dev-client": "~57.0.10",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.1",
     "expo-linking": "~57.0.4",

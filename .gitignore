@@ -42,3 +42,5 @@ yarn-error.*
 # une édition manuelle serait effacée au prochain build.
 /ios
 /android
+
+.java-version
