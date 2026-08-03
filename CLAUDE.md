@@ -359,4 +359,54 @@ pose et qu'il ne faut pas casser :
   ici n'exerce `expo-secure-store` au-delà de ce que KL-25 avait déjà vérifié,
   et il n'y a pas de caméra à tester avant KL-48.
 
-Prochain ticket : **KL-48** (écran de scan du QR d'appairage).
+**KL-48 livré (03/08/2026)** : `pairing.tsx` complète l'écran d'un lecteur de QR
+(`expo-camera`), sans le remplacer. Ce qu'il pose et qu'il ne faut pas casser :
+
+- **La permission se demande après explication, jamais au montage.**
+  `useCameraPermissions` sert de garde d'affichage : tant que
+  `permission.granted` est faux, l'écran montre pourquoi la caméra sert et un
+  bouton `requestPermission()`. `permission.canAskAgain === false` (refus
+  définitif) bascule sur un renvoi vers les réglages Android
+  (`Linking.openSettings()`) — c'est la seule issue, Android ne redemande
+  jamais après un second refus.
+- **`signInWithPairingQr` (nouveau, `src/api/auth.ts`) pose l'URL de base
+  *avant* l'échange, et la remet à sa valeur précédente si l'appel échoue par
+  réseau ou délai** (`NetworkError` / `TimeoutError`) — un QR qui pointe vers un
+  serveur injoignable ne doit pas stranger la saisie manuelle de repli sur une
+  URL morte pour le reste de la session. Un refus **du serveur** (code expiré
+  ou déjà consommé) ne revert pas l'URL : le serveur a répondu, elle est donc
+  bonne.
+- **`src/api` ne connaît toujours pas `@/db`.** `signInWithPairingQr` retourne
+  l'`apiUrl` scannée sans l'écrire ; c'est l'écran d'appairage, seul point qui
+  connaît les deux couches (même statut que `_layout.tsx` pour la restauration
+  du jeton), qui appelle `patchSyncState({ apiUrl })` **après** un succès —
+  `sync_state.apiUrl` a désormais son seul écrivain, comme prévu par
+  `src/db/syncState.ts`.
+- **Le corps du QR se valide en pur, sans réseau ni état** :
+  `parsePairingQrPayload` (`src/api/pairingQr.ts`) vérifie juste la forme
+  (`{url, code, exp}`, trois chaînes) et lève `InvalidPairingQrError` sinon —
+  jamais un `JSON.parse` qui remonte tel quel. `exp` n'est **pas** revérifiée
+  côté client : la comparer à l'horloge du téléphone ferait dépendre le
+  verdict d'un désaccord d'horloge, alors que le serveur est déjà seul maître
+  de l'échéance à l'échange, et « inconnu / expiré / déjà consommé » rendent le
+  même message par construction (`docs/api-mobile.md §3.1`) — dupliquer la
+  vérification ici aurait donné deux verdicts possibles pour un même code.
+- **Une erreur, un seul emplacement.** Scan et saisie manuelle partagent le
+  même état d'erreur, affiché une fois en tête de l'écran plutôt que dupliqué
+  sous chaque chemin : le serveur ne distingue pas leur origine, l'écran non
+  plus.
+- **Aucune trace du code ou du jeton.** `signInWithPairingCode` (KL-25/26) fait
+  déjà tout le travail sensible ; ce ticket ne fait qu'y amener le code lu par
+  la caméra, sans jamais le journaliser ni le poser ailleurs qu'en mémoire le
+  temps de l'appel.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et pour web.
+  **Build natif sur appareil non concluant** : `expo run:android` sur un
+  Pixel réel échoue à la compilation Kotlin de `expo-dev-menu` et
+  `expo-log-box` (`Unresolved reference 'ReactActivityLifecycleListener'`, et
+  consorts) — **confirmé préexistant et sans rapport avec ce ticket** en
+  rejouant le même build sur l'état d'avant KL-48 (sans `expo-camera`) :
+  échec identique. C'est un problème de toolchain (Kotlin/AGP/RN) à
+  diagnostiquer séparément, pas un défaut de l'écran de scan.
+
+Prochain ticket : **KL-27** (moteur de synchronisation).

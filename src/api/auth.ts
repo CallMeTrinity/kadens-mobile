@@ -9,8 +9,11 @@
  * pas la session, et ce fichier connaît les deux.
  */
 
+import { getApiBaseUrl, setApiBaseUrl } from './baseUrl';
 import { deviceName } from './device';
 import * as endpoints from './endpoints';
+import { NetworkError, TimeoutError } from './errors';
+import { parsePairingQrPayload } from './pairingQr';
 import { attachUser, closeSession, openSession } from './session';
 import type { ApiUser } from './types';
 
@@ -51,6 +54,44 @@ export async function signInWithPairingCode(code: string): Promise<ApiUser> {
   await openSession(token, user);
 
   return user;
+}
+
+/**
+ * Connexion par la lecture caméra du QR (KL-48).
+ *
+ * Le QR porte aussi l'URL du serveur (§0.6) : la poser **avant** l'échange est
+ * ce qui rend l'app utilisable sans aucune saisie, y compris contre une IP LAN
+ * en développement. Si l'URL scannée ne répond pas du tout (réseau, délai),
+ * elle est **remise** à ce qu'elle était : un QR illisible ne doit pas stranger
+ * la saisie manuelle de repli sur un serveur injoignable pour le reste de la
+ * session. Une réponse du serveur qui refuse le code (expiré, déjà consommé)
+ * n'est en revanche pas revertie — le serveur a répondu, l'URL est donc bonne.
+ *
+ * Ne persiste rien en base : `sync_state.apiUrl` est écrit par l'appelant
+ * (l'écran d'appairage) après un succès, seul endroit qui connaît à la fois
+ * `@/api` et `@/db` pour ce geste — même raison que `baseUrl.ts` n'importe
+ * jamais `@/db`.
+ */
+export async function signInWithPairingQr(rawData: string): Promise<{
+  user: ApiUser;
+  apiUrl: string;
+}> {
+  const payload = parsePairingQrPayload(rawData);
+  const previousBaseUrl = getApiBaseUrl();
+
+  setApiBaseUrl(payload.url);
+
+  try {
+    const user = await signInWithPairingCode(payload.code);
+
+    return { user, apiUrl: payload.url };
+  } catch (cause) {
+    if (cause instanceof NetworkError || cause instanceof TimeoutError) {
+      setApiBaseUrl(previousBaseUrl);
+    }
+
+    throw cause;
+  }
 }
 
 /**

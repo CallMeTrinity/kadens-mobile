@@ -40,6 +40,9 @@ export {
 
 export { deviceName } from './device';
 
+export { InvalidPairingQrError, parsePairingQrPayload } from './pairingQr';
+export type { PairingQrPayload } from './pairingQr';
+
 export {
   bootstrap,
   deleteSchedule,
@@ -53,7 +56,13 @@ export {
   putSchedule,
 } from './endpoints';
 
-export { refreshMe, signInWithPairingCode, signInWithPassword, signOut } from './auth';
+export {
+  refreshMe,
+  signInWithPairingCode,
+  signInWithPairingQr,
+  signInWithPassword,
+  signOut,
+} from './auth';
 
 export {
   attachUser,
