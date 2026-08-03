@@ -163,6 +163,14 @@ export const text = {
    * En mono, parce qu'une colonne de charges se lit en colonne.
    */
   numeric: role({ stack: 'mono', weight: '500', size: 16, leading: 1.2, tabular: true }),
+
+  /**
+   * Valeur au centre d'un `NumberStepper`. Même famille que `numeric`, deux
+   * pas au-dessus : elle se lit **à bout de bras**, barre en main, et c'est
+   * elle qu'on vérifie avant de valider une série. Un rôle plutôt qu'une taille
+   * écrite dans le composant — l'échelle reste au même endroit.
+   */
+  inputValue: role({ stack: 'mono', weight: '500', size: 22, leading: 1.2, tabular: true }),
 } as const;
 
 export type TextRole = keyof typeof text;

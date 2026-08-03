@@ -16,6 +16,8 @@
 export { colors, fontStacks, radius, space, tracking } from './tokens';
 export type { ColorToken, FontStack, SpaceToken, Weight } from './tokens';
 
+export { layout } from './layout';
+
 export { fontFamily, useKadensFonts } from './fonts';
 export type { WeightOf } from './fonts';
 

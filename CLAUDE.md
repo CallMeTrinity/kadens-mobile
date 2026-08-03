@@ -105,4 +105,54 @@ synchronise en différé avec Kadens.
   et montrant un échantillon de l'échelle — le moyen le plus court de voir que
   les polices ont bien chargé.
 
-Prochain ticket : **KL-23** (composants de base).
+**KL-23 livré (03/08/2026)** : les composants de base, dans `src/components/`,
+importés par `@/components` (jamais par leur fichier). `Button` (primaire rouge,
+secondaire encre, fantôme), `Card`, `Chip`, `Field`, `NumberStepper`, `Sheet`,
+`Header`, `EmptyState`. Ce qu'ils posent et qu'il ne faut pas casser :
+
+- **Le plancher tactile de 44 points est un chiffre nommé une fois**
+  (`layout.touchTarget`, `src/theme/layout.ts`), avec deux voisins : l'épaisseur
+  de filet — **pas `StyleSheet.hairlineWidth`**, qui vaut moins d'un point sur
+  Android et dissoudrait une identité qui tient par ses filets — et la hauteur
+  maximale d'une feuille. Ce ne sont pas des tokens et ils ne peuvent pas
+  l'être : le web les porte dans `base.css` ou en `vh`, `tokens.css` n'en dit
+  rien, donc l'export de KL-20 ne les voit pas.
+- **Le `:hover` du web devient l'état pressé**, en transposant le sens et non la
+  déclaration : l'aplat rouge s'éclaircit (le foncer refermerait le bouton), le
+  contour encre s'inverse, le fantôme se pose sur un fond. Un glyphe posé sur un
+  aplat qui s'inverse doit s'inverser avec lui, sinon il disparaît au moment
+  précis où l'on veut voir que le geste est parti.
+- **`NumberStepper`, trois pièges** : la frappe reste dans un brouillon local
+  jusqu'au relâchement du champ (convertir à chaque frappe rend « 82, »
+  impossible à taper) ; la répétition à l'appui long lit sa base dans une `ref`,
+  pas dans la prop `value`, qui n'a pas encore été re-rendue au tick suivant ;
+  et le pas s'applique sur `onPressIn` pour le retour immédiat, avec un drapeau
+  qui empêche `onPress` de le doubler — **TalkBack n'émet que `onPress`**, le
+  supprimer rendrait le compteur inutilisable au lecteur d'écran. Les timers se
+  nettoient au démontage.
+- **Un seul rôle typographique ajouté** (`inputValue`, mono 22) : la valeur d'un
+  compteur se lit à bout de bras, `numeric` est calibré pour une colonne de
+  tableau. Une taille écrite dans un composant sortirait l'échelle de
+  `typography.ts`.
+- **Pas d'icônes, et c'est une décision** : « Retour » et « Fermer » en toutes
+  lettres. Embarquer `lucide-react-native` + `react-native-svg` engage le bundle
+  et le rendu web ; ça se tranchera quand un écran en aura besoin, pas pour un
+  chevron. L'identité Presse est typographique.
+- **Un `Chip` ne se tape pas** (c'est `.kd-badge`, une marque de lecture). Un
+  filtre tactile sera un autre composant, avec son plancher — pas une prop
+  `onPress` greffée ici. Ses deux façons de porter du sens ne se mélangent pas :
+  `tone` pour un statut, `rank` pour un rang catégoriel en filet gauche.
+- **`Header` porte lui-même `insets.top`** : un écran l'emploie à la racine,
+  **hors** `SafeAreaView`, sinon une bande de fond papier reste au-dessus.
+  Son titre est un libellé d'écran (condensé capitales) ; un nom saisi ne passe
+  pas par là (règle 4).
+- **`Sheet` : `flexShrink`, pas `flex: 1`** — sans lui un contenu long pousse
+  l'en-tête hors de l'écran, avec `flex: 1` une feuille courte s'étire jusqu'aux
+  78 %. Le voile ferme, le bouton retour d'Android aussi, le dégagement bas suit
+  `insets.bottom`.
+- **`src/app/index.tsx` montre les huit composants** au lieu de l'échelle : c'est
+  l'écran qui sert à vérifier sur un vrai téléphone. Vérification sans
+  téléphone : `npm run typecheck`, `npm run lint`, `npx prettier --check .` et un
+  `npx expo export` pour Android **et** pour web — le seul qui exerce le bundler.
+
+Prochain ticket : **KL-24** (couche SQLite + Drizzle).
