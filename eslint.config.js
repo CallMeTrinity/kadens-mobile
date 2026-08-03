@@ -9,6 +9,14 @@ module.exports = defineConfig([
   // Prettier, et fait remonter les écarts de formatage comme des erreurs ESLint.
   prettierRecommended,
   {
-    ignores: ['dist/*', 'android/*', 'ios/*', '.expo/*', 'expo-env.d.ts'],
+    ignores: [
+      'dist/*',
+      'android/*',
+      'ios/*',
+      '.expo/*',
+      'expo-env.d.ts',
+      // Généré par drizzle-kit (npm run db:generate), jamais édité à la main.
+      'src/db/migrations/*',
+    ],
   },
 ]);

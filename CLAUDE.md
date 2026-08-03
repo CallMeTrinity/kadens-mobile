@@ -68,9 +68,26 @@ synchronise en différé avec Kadens.
 - **Une graisse = une police enregistrée.** Android ne synthétise pas les
   graisses d'une famille chargée à l'exécution : la police se choisit par
   `fontFamily(stack, weight)`, jamais par `fontWeight`.
+- **La base locale s'importe par `@/db`**, jamais par un fichier précis, et le
+  pilote Drizzle d'`expo-sqlite` est **synchrone** : `db.transaction()` valide
+  dès que son rappel **retourne**. Un rappel `async` validerait la transaction
+  avant la première écriture, sans rien signaler. Dans une transaction : rappel
+  non-`async`, et `.run()` / `.get()` / `.all()` explicites.
+- **`src/db/migrations/` est généré** par `npm run db:generate` (drizzle-kit),
+  versionné, jamais édité à la main — même statut que `src/theme/tokens.ts`. Une
+  migration retouchée après coup a déjà été appliquée sur un téléphone et ne sera
+  pas rejouée : toute correction passe par une **nouvelle** migration.
+- **Le prescrit se stocke en un document, le réalisé se normalise.** Le premier
+  est remplacé en entier à chaque pull et ne se recompose pas ici ; le second est
+  la seule chose que le téléphone écrit. Détail et raisons dans
+  `src/db/schema.ts`.
 
 ## 4. Conventions de rangement
 
+- Racine du dépôt : `babel.config.js`, `metro.config.js` et `drizzle.config.ts`
+  existent depuis KL-24 et n'ont qu'une raison d'être chacun (embarquer les `.sql`
+  des migrations, les résoudre, les générer). Les créer implique de redéclarer ce
+  qu'Expo appliquait par défaut : ne pas les vider.
 - Route → `src/app/` (`expo-router`, une route = un fichier)
 - Composant de base → `src/components/`
 - Thème et tokens → `src/theme/`
@@ -155,4 +172,85 @@ secondaire encre, fantôme), `Card`, `Chip`, `Field`, `NumberStepper`, `Sheet`,
   téléphone : `npm run typecheck`, `npm run lint`, `npx prettier --check .` et un
   `npx expo export` pour Android **et** pour web — le seul qui exerce le bundler.
 
-Prochain ticket : **KL-24** (couche SQLite + Drizzle).
+**KL-24 livré (03/08/2026)** : la base locale, dans `src/db/`, importée par
+`@/db`. Huit tables (`exercise`, `exercise_history`, `scheduled_workout`,
+`prescribed_snapshot`, `logged_exercise`, `logged_set`, `sync_state`,
+`mutation_queue`), migrations générées par drizzle-kit et appliquées au
+démarrage, UUIDv7 posés localement, jeu de démonstration injectable. Ce qu'il
+pose et qu'il ne faut pas casser :
+
+- **Le prescrit est un document, le réalisé est normalisé, et ce n'est pas une
+  incohérence.** Le prescrit ne se recompose pas ici (règle verrouillée) et il est
+  **remplacé en entier** à chaque pull, parce que sa fraîcheur n'est portée par
+  aucune colonne côté serveur — `?since` n'allège que la bibliothèque. L'éclater
+  en trois tables donnerait trois tables qu'on ne lirait qu'en bloc et qu'il
+  faudrait rejoindre à chaque ouverture de séance. Le réalisé, lui, s'écrit série
+  par série : il est normalisé et indexé. `prescribed_snapshot` est une table
+  séparée et non une colonne de `scheduled_workout` : lister les séances du jour
+  ne doit pas remonter le plus gros document de la base.
+- **`exercise_history` n'est pas dans la liste du ticket, et elle est
+  nécessaire.** Le bootstrap descend `history` précisément pour que la dernière
+  perf et le record s'affichent **en séance, hors ligne** ; sans table, la réponse
+  serait lue puis jetée et KL-32 supposerait du réseau — ce que le cadrage réserve
+  au seul `GET /api/exercises/{id}/history`.
+- **Pas de drapeau « modifié localement ».** Le fait est déjà porté par
+  `mutation_queue`, et deux sources pour un seul fait finissent par se
+  contredire. C'est ce qui rend l'ordre **push avant pull** non négociable : le
+  pull remplace la fenêtre, une modification locale non poussée y serait effacée.
+- **Trois `PRAGMA` et une option, posés à l'ouverture, et aucun n'est
+  décoratif.** `foreign_keys = ON` — SQLite les désactive **par défaut**, sans lui
+  les `ON DELETE CASCADE` du schéma ne feraient rien et supprimer une séance hors
+  fenêtre laisserait son réalisé orphelin et jamais poussé. `journal_mode = WAL` —
+  un push ne bloque plus les lectures, et « la synchronisation ne bloque jamais
+  l'interface » est une exigence de KL-27. `enableChangeListener: true` —
+  `openDatabaseSync` met ses connexions en cache par nom de fichier, l'activer
+  plus tard demanderait une seconde connexion sur le même fichier.
+- **`mutation_queue.id` est en `AUTOINCREMENT` au sens strict.** Sans lui SQLite
+  réattribue le plus grand rowid libéré : après une purge, une mutation neuve
+  passerait devant une plus ancienne. L'ordre de la file est le seul ordre qui
+  existe.
+- **Un `DELETE` qui vide une table entière doit porter une clause `WHERE`**
+  (`wipe()` le fait, `sql`1 = 1``). Sans elle, SQLite applique son optimisation
+  « truncate » — la table est vidée d'un bloc, sans visiter les lignes, et
+  `sqlite3_update_hook` **n'est jamais appelé** : une vue montée sur
+  `useLiveQuery` reste figée sur l'ancien contenu, sans erreur. Le piège ne
+  touche que `mutation_queue` et `sync_state`, les deux seules tables sans
+  aucune clé étrangère — donc précisément la file que l'écran de réglages
+  (KL-35) voudra observer en direct. **Observé sur l'appareil** : après un
+  vidage, la base était à zéro et le compteur affichait encore 1.
+- **`sync_state` est un singleton garanti par la base** (`CHECK (id = 1)`), pas
+  par une intention du code, et tout y passe par `getSyncState` /
+  `patchSyncState`. Elle porte aussi `apiUrl` : l'URL du serveur vient du QR
+  (KL-48) et doit survivre au redémarrage — le **jeton**, lui, n'entre jamais en
+  base (`expo-secure-store`, KL-25).
+- **L'UUIDv7 a un compteur monotone dans la milliseconde**, pas seulement un
+  préfixe temporel : une clôture qui écrit tout un exercice d'un coup produirait
+  sinon des identifiants dont l'ordre est décidé par l'aléa. Vérifié sur 10 000
+  tirages — tous uniques, ordre de génération = ordre lexicographique.
+- **`nowIso()` pour un instant, `localDate()` pour une date de calendrier.**
+  `toISOString().slice(0, 10)` est le piège que `localDate` existe pour fermer :
+  une séance de 23 h à Lyon appartient au jour affiché par le téléphone, pas à
+  celui de Greenwich.
+- **`seedDemo()` est gardée par `__DEV__` et lève en production** : de fausses
+  séances injectées dans le réalisé partiraient au serveur au push suivant. Son
+  jeu est daté **relativement à aujourd'hui** — figé, il sortirait de la fenêtre
+  J-30 → J+14 en un mois et « Aujourd'hui » se viderait sans qu'on comprenne
+  pourquoi.
+- **`metro.config.js` pousse `wasm` dans `assetExts`** uniquement pour que
+  `expo export -p web` continue de passer : le portage web d'`expo-sqlite`
+  importe un `.wasm`. L'app ne cible toujours pas le web — la base s'y charge, elle
+  ne s'y lance pas.
+- **Vérification** : `npm run typecheck`, `npm run lint`, `npx prettier --check .`,
+  `npx expo export` pour Android **et** web, le schéma généré passé dans un vrai
+  `sqlite3` (cascade, `CHECK` du singleton, refus d'une FK orpheline,
+  `AUTOINCREMENT` après purge), le générateur d'UUID exécuté hors React Native
+  (10 000 tirages), et surtout **l'app lancée sur le téléphone** : migrations
+  appliquées, WAL actif, cycle vider → injecter → vider vérifié à l'écran **et**
+  dans le fichier extrait par `adb`. C'est ce dernier contrôle qui a fait sortir
+  le piège du `DELETE` sans `WHERE` — aucun des autres ne pouvait le voir.
+  Rappel d'environnement : le build Gradle demande la **JDK 21** de
+  `.java-version` ; un `JAVA_HOME` pointant une JDK plus récente échoue sur
+  `react-native-worklets` avec « a restricted method in java.lang.System has been
+  called », ce qui ne ressemble en rien à un problème de version.
+
+Prochain ticket : **KL-25** (client API et stockage du token).

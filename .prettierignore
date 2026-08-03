@@ -5,3 +5,6 @@ android/
 ios/
 expo-env.d.ts
 package-lock.json
+
+# Migrations générées par drizzle-kit (npm run db:generate) : jamais éditées.
+src/db/migrations/
