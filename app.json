@@ -1,36 +1,32 @@
 {
   "expo": {
-    "name": "kadens-mobile",
-    "slug": "kadens-mobile",
+    "name": "Kadens",
+    "slug": "kadens",
     "version": "1.0.0",
     "orientation": "portrait",
+    "userInterfaceStyle": "light",
     "icon": "./assets/images/icon.png",
-    "scheme": "kadensmobile",
-    "userInterfaceStyle": "automatic",
-    "ios": {
-      "icon": "./assets/expo.icon"
-    },
-    "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "predictiveBackGestureEnabled": false
-    },
+    "scheme": "kadens",
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png"
+    },
+    "android": {
+      "package": "fr.antoninpamart.kadens",
+      "adaptiveIcon": {
+        "backgroundColor": "#dcdcd7",
+        "foregroundImage": "./assets/images/android-icon-foreground.png"
+      },
+      "predictiveBackGestureEnabled": false
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#dcdcd7",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "imageWidth": 140
         }
       ]
     ],

@@ -1,56 +1,96 @@
-# Welcome to your Expo app 👋
+# Kadens Mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+App Android de **suivi de séance en direct** pour [Kadens](https://kadens.antoninpamart.fr).
+Elle déroule une séance programmée, en logue le réalisé série par série, et le
+fait **hors réseau** avec synchronisation différée.
 
-## Get started
+Le serveur (Symfony) vit dans le dépôt `kadens`. Le cadrage complet, les
+décisions et les tickets sont dans `kadens/docs/feature-live-tracking.md` ; le
+contrat de l'API dans `kadens/docs/api-mobile.md`.
 
-1. Install dependencies
+- Expo SDK 57 (React Native 0.86), TypeScript, `expo-router`
+- Android uniquement : aucun ticket ne cible iOS, aucun build iOS n'est vérifié
+- Distribution par dépôt F-Droid auto-hébergé, pas par le Play Store
 
-   ```bash
-   npm install
-   ```
+---
 
-2. Start the app
+## Prérequis
 
-   ```bash
-   npx expo start
-   ```
+- **Node 20 ou 22** (LTS). Expo SDK 57 ne certifie pas les versions impaires ni
+  les toutes dernières.
+- **Expo Go** sur le téléphone Android pour le développement courant, ou un
+  build natif (`npx expo run:android`) dès qu'un module natif non inclus dans
+  Expo Go entre en jeu.
+- Pour un build natif : JDK 17 et le SDK Android (Android Studio).
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Lancement
 
 ```bash
-npm run reset-project
+npm install
+cp .env.example .env      # puis renseigner l'IP LAN (voir plus bas)
+npm start                 # QR à scanner avec Expo Go
+npm run android           # ouvre directement sur l'appareil/émulateur connecté
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+Autres commandes :
 
-### Other setup steps
+```bash
+npm run web        # rendu web (react-native-web), pratique pour itérer sur un composant
+npm run lint       # ESLint (config Expo + Prettier)
+npm run format     # Prettier en écriture
+npm run typecheck  # tsc --noEmit
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Le rendu web n'est qu'un confort de développement : rien n'y est vérifié, et
+l'app se teste sur Android.
 
-## Learn more
+## Développement contre un Symfony local
 
-To learn more about developing your project with Expo, look at the following resources:
+**Le téléphone n'est pas la machine.** `localhost` désigne le téléphone
+lui-même : une URL d'API en `http://localhost:8000` échoue toujours, et l'erreur
+ressemble à une panne réseau plutôt qu'à une erreur de configuration.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+1. Relever l'**IP LAN** de la machine :
 
-## Join the community
+   ```bash
+   ipconfig getifaddr en0        # macOS, Wi-Fi
+   ```
 
-Join our community of developers creating universal apps.
+2. Démarrer Symfony en écoutant sur **toutes** les interfaces — par défaut il
+   n'écoute que la boucle locale et reste injoignable depuis le téléphone :
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+   ```bash
+   symfony serve --listen-ip=0.0.0.0 --port=8000
+   ```
+
+3. Renseigner cette IP dans `.env` :
+
+   ```
+   EXPO_PUBLIC_API_URL=http://192.168.1.42:8000
+   ```
+
+4. Machine et téléphone doivent être sur **le même réseau**, sans isolation des
+   clients Wi-Fi (fréquent sur les réseaux invités).
+
+`EXPO_PUBLIC_API_URL` n'est qu'un défaut de développement : en usage réel, le QR
+d'appairage affiché dans `/profile/settings` porte l'URL du serveur et la
+configure au passage (KL-48). C'est aussi le chemin le plus court en dev — le QR
+généré par un Symfony local contient déjà la bonne IP.
+
+## Dossiers natifs
+
+`android/` **n'est pas versionné** : le workflow de build le régénère par
+`expo prebuild`. Toute configuration native (permissions, signature, intent
+filters) passe donc par un **plugin déclaré dans `app.json`** — une modification
+faite à la main dans `android/` serait effacée au prochain build, sans bruit.
+
+## Structure
+
+```
+src/
+  app/          routes expo-router (une route = un fichier)
+  config.ts     configuration issue de l'environnement
+assets/images/  icône, écran de démarrage
+```
+
+L'alias `@/` pointe `src/`.

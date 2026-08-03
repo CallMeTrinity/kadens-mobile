@@ -30,14 +30,15 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (.env.example est versionné, lui)
+.env
 .env*.local
 
 # typescript
 *.tsbuildinfo
 
-example
-
-# generated native folders
+# Dossiers natifs : régénérés par `expo prebuild`, jamais versionnés.
+# Toute configuration native passe donc par un plugin déclaré dans app.json —
+# une édition manuelle serait effacée au prochain build.
 /ios
 /android
