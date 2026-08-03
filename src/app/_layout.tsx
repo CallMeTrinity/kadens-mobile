@@ -1,11 +1,12 @@
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
-import { useDatabaseMigrations } from '@/db';
+import { restoreSession, setApiBaseUrl, useSession } from '@/api';
+import { getSyncState, useDatabaseMigrations } from '@/db';
 import { colors, space, text, useKadensFonts } from '@/theme';
 
 // L'écran de démarrage reste affiché tant que les polices ne sont pas prêtes.
@@ -20,6 +21,9 @@ export default function RootLayout() {
   // que ce soit — une requête sur une table pas encore créée ne « charge »
   // pas, elle échoue.
   const { success: dbReady, error: dbError } = useDatabaseMigrations();
+  // Et la session (KL-25), qui vient du trousseau, donc de façon asynchrone.
+  const authSettled = useRestoredSession(dbReady || dbError !== undefined, dbReady);
+  const session = useSession();
 
   const fontsSettled = fontsLoaded || fontError !== null;
   const dbSettled = dbReady || dbError !== undefined;
@@ -29,12 +33,17 @@ export default function RootLayout() {
     // l'affichage, elle ne doit pas bloquer l'app sur un démarrage sans fin.
     // Même chose pour la base — mais elle, elle se **dit** (ci-dessous), parce
     // qu'elle porte le réalisé pas encore poussé.
-    if (fontsSettled && dbSettled) {
+    //
+    // La session entre dans la condition pour une autre raison : tant qu'elle
+    // est à `unknown`, le garde ci-dessous ne peut que montrer l'écran de
+    // connexion. Lever l'écran de démarrage avant elle ferait clignoter cet
+    // écran à chaque lancement, y compris pour quelqu'un de connecté.
+    if (fontsSettled && dbSettled && authSettled) {
       SplashScreen.hideAsync();
     }
-  }, [fontsSettled, dbSettled]);
+  }, [fontsSettled, dbSettled, authSettled]);
 
-  if (!fontsSettled || !dbSettled) {
+  if (!fontsSettled || !dbSettled || !authSettled) {
     return null;
   }
 
@@ -54,6 +63,8 @@ export default function RootLayout() {
     );
   }
 
+  const signedIn = session.status === 'signedIn';
+
   return (
     <SafeAreaProvider>
       <Stack
@@ -61,10 +72,71 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: colors.bg },
         }}
-      />
+      >
+        {/*
+          Le garde de navigation. `Stack.Protected` retire les écrans de la pile
+          au lieu de rendre une redirection : quand un 401 purge la session, la
+          pile ne contient plus que `login` et le routeur y retombe seul. C'est
+          ce qui rend « un 401 renvoie vers l'écran de connexion » vrai sans
+          qu'aucun écran n'ait à intercepter d'erreur.
+        */}
+        <Stack.Protected guard={signedIn}>
+          <Stack.Screen name="index" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={!signedIn}>
+          <Stack.Screen name="login" />
+        </Stack.Protected>
+      </Stack>
       <StatusBar style="dark" />
     </SafeAreaProvider>
   );
+}
+
+/**
+ * Restaure la session et l'URL du serveur, une fois, au démarrage.
+ *
+ * L'ordre compte : l'URL vient de `sync_state` (posée par le QR, KL-48), donc de
+ * la base locale, donc **après** les migrations. Le jeton, lui, vit dans le
+ * trousseau et se lirait sans la base — mais rien ne presse, et un seul point de
+ * démarrage vaut mieux que deux.
+ *
+ * C'est le seul endroit de l'app où `@/api` et `@/db` se rencontrent au
+ * démarrage : le client HTTP n'a aucune raison d'ouvrir SQLite pour savoir où
+ * appeler (cf. `api/baseUrl.ts`).
+ */
+function useRestoredSession(dbSettled: boolean, dbReady: boolean): boolean {
+  const [settled, setSettled] = useState(false);
+
+  useEffect(() => {
+    if (!dbSettled || settled) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      if (dbReady) {
+        const state = await getSyncState();
+
+        if (state?.apiUrl) {
+          setApiBaseUrl(state.apiUrl);
+        }
+      }
+
+      await restoreSession();
+
+      if (!cancelled) {
+        setSettled(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dbSettled, dbReady, settled]);
+
+  return settled;
 }
 
 const styles = StyleSheet.create({

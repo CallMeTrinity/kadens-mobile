@@ -253,4 +253,68 @@ pose et qu'il ne faut pas casser :
   `react-native-worklets` avec « a restricted method in java.lang.System has been
   called », ce qui ne ressemble en rien à un problème de version.
 
-Prochain ticket : **KL-25** (client API et stockage du token).
+**KL-25 livré (03/08/2026)** : le client API, dans `src/api/`, importé par
+`@/api`. Un `request()` unique (timeout, rejeu, `401`), le jeton dans
+`expo-secure-store`, la session en magasin de module, dix endpoints typés, et le
+garde de navigation du layout racine. Ce qu'il pose et qu'il ne faut pas casser :
+
+- **Le rejeu se décide sur la méthode, jamais sur le résultat.** `GET`, `PUT` et
+  `DELETE` sont idempotents par construction dans cette API et se rejouent trois
+  fois, avec un délai qui double et une gigue de ±25 %. Un `POST` ne se rejoue
+  **pas** : un `login` dont la réponse s'est perdue a peut-être abouti, et le
+  rejouer émettrait un second jeton que personne ne détient — un appareil
+  fantôme dans `/profile/settings`, vivant 90 jours.
+- **Un `429` n'est pas rejoué automatiquement**, bien qu'il soit passager. Le
+  `Retry-After` va jusqu'à ~60 s sur la connexion : dormir une minute dans un
+  appel fige l'interface sans rien à montrer et recharge le compteur du
+  limiteur. L'échéance remonte à l'appelant en `retryAfterSeconds`.
+- **Un échec se lit par sa classe, jamais par son message.** `NetworkError`,
+  `TimeoutError`, `ApiError` — et `isTransient()`, qui répond à la seule question
+  que se pose la file de mutations. Le contrat interdit explicitement d'analyser
+  `detail`, qui change sans préavis.
+- **Un appel authentifié sans jeton ne part pas** : il ferme la session sur place
+  et lève un `401` local. Le laisser partir nu le ferait échouer en
+  `NetworkError` hors réseau, donc en « réessaie plus tard », et la session
+  resterait ouverte sans jeton indéfiniment.
+- **Le `401` purge, le garde redirige.** `Stack.Protected` **retire** l'écran de
+  la pile au lieu de rendre une redirection : le routeur retombe seul sur
+  `login`. Aucun écran n'a donc à intercepter d'erreur d'authentification, et il
+  n'existe pas de chemin où l'on reste sur une séance avec un jeton mort.
+- **La session est un magasin de module, pas un contexte React** : le transport
+  et, demain, le moteur de synchronisation la lisent quand aucun écran n'est
+  monté. Trois états et non deux — sans `unknown` le temps que le trousseau
+  réponde, le premier rendu se confondrait avec « déconnecté » et l'écran de
+  connexion clignoterait à chaque lancement. C'est pour ça que l'écran de
+  démarrage reste levé jusqu'à `restoreSession()`.
+- **`useSession()` ne rend jamais le jeton** ; seul `currentToken()`, réservé au
+  transport, le donne. Ce qu'on ne passe pas en props ne finit pas dans un
+  journal de rendu.
+- **`requireAuthentication` du magasin sécurisé est refusé.** Le jeton est lu par
+  **chaque** requête, y compris par un push qui tourne barre en main : une
+  empreinte à ce moment-là rendrait la synchronisation impossible. Ce qui protège
+  ici, c'est le chiffrement au repos par l'Android Keystore.
+- **L'URL du serveur est injectée, pas lue en base.** Elle vit dans
+  `sync_state.apiUrl`, mais un client HTTP n'a pas à ouvrir SQLite pour savoir où
+  appeler : le layout racine la pose au démarrage, seul endroit où `@/api` et
+  `@/db` se rencontrent. Corollaire : `setApiBaseUrl()` ne persiste rien, qui la
+  change écrit aussi `sync_state`.
+- **`signOut` efface le jeton local même si la révocation échoue** : se
+  déconnecter hors réseau doit déconnecter. Un `DELETE` qui rend `404` est un
+  **succès** (le contrat le dit), sinon une mutation dont la réponse s'est perdue
+  bloquerait la file pour toujours.
+- **`src/app/login.tsx` est une coquille assumée**, née de « un 401 renvoie vers
+  l'écran de connexion » : il fallait une destination. Elle ne porte que le repli
+  mot de passe et n'anticipe rien de **KL-26**, qui la remplace (QR en primaire,
+  code en secondaire, mot de passe en dernier).
+- **Vérification** : `npm run typecheck`, `npm run lint`, `npx prettier --check .`,
+  `npx expo export` pour Android **et** web, puis deux bancs d'essai hors React
+  Native — `src/api` bundlé pour Node, `expo-secure-store` et `expo-device`
+  bouchonnés. Le premier (21 contrôles) exerce le transport contre un serveur
+  HTTP local : tentatives par méthode, croissance du délai, timeout, annulation,
+  `Retry-After`, corps illisible, `204`, purge sur `401` et **absence** de purge
+  sur un `401` non authentifié. Le second (15 contrôles) fait tourner le vrai
+  client contre le vrai Symfony : bootstrap complet et delta, upsert `201` puis
+  rejeu `200` sans duplication, `422` avec le chemin du champ, et un jeton
+  révoqué de l'extérieur qui purge le trousseau.
+
+Prochain ticket : **KL-26** (écran de connexion).

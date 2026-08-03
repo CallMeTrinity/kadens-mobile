@@ -4,8 +4,16 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
 
+import {
+  bootstrap,
+  describeError,
+  getApiBaseUrl,
+  ping,
+  refreshMe,
+  signOut,
+  useSession,
+} from '@/api';
 import { Button, Card, Chip, EmptyState, Field, Header, NumberStepper, Sheet } from '@/components';
-import { API_URL } from '@/config';
 import {
   clearDatabase,
   db,
@@ -26,6 +34,11 @@ import { colors, space, text } from '@/theme';
 // KL-24 y ajoute le compteur de la base locale : c'est ce qui permet de voir que
 // les migrations sont passées et que le jeu de démonstration s'injecte, sans
 // écran dédié — il disparaîtra avec le reste de cet écran.
+//
+// KL-25 y ajoute la carte « API » : elle exerce le client sur un vrai réseau,
+// ce qu'aucun contrôle hors téléphone ne fait. C'est là qu'on voit qu'un jeton
+// révoqué depuis `/profile/settings` renvoie bien à l'écran de connexion — le
+// seul moyen d'observer la purge de bout en bout.
 export default function IndexScreen() {
   const [weight, setWeight] = useState(82.5);
   const [reps, setReps] = useState(8);
@@ -84,10 +97,7 @@ export default function IndexScreen() {
           </View>
         </Card>
 
-        <Card title="Configuration">
-          <Text style={styles.label}>API</Text>
-          <Text style={styles.value}>{API_URL ?? 'non configurée (.env)'}</Text>
-        </Card>
+        <ApiCard />
 
         <Card title="Base locale" right={<Chip label="KL-24" rank={3} />}>
           <View style={styles.stack}>
@@ -125,6 +135,103 @@ export default function IndexScreen() {
   );
 }
 
+/**
+ * La carte de vérification du client API (KL-25).
+ *
+ * Trois appels qui couvrent ce que le ticket pose : `ping` (le plus court chemin
+ * jusqu'au réseau), `/api/me` (qui complète la session restaurée et affiche
+ * l'appareil tel que `/profile/settings` le nomme), et `bootstrap` (le seul
+ * appel volumineux, donc le seul qui exerce vraiment le timeout).
+ */
+function ApiCard() {
+  const session = useSession();
+  const [pending, setPending] = useState<string | null>(null);
+  const [result, setResult] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(label: string, action: () => Promise<string>) {
+    setPending(label);
+    setError(null);
+    setResult(null);
+
+    try {
+      setResult(await action());
+    } catch (cause) {
+      setError(describeError(cause));
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <Card title="API" right={<Chip label="KL-25" rank={3} />}>
+      <View style={styles.stack}>
+        <View style={styles.countRow}>
+          <Text style={styles.label}>serveur</Text>
+          <Text style={styles.value}>{getApiBaseUrl() ?? 'aucune URL'}</Text>
+        </View>
+        <View style={styles.countRow}>
+          <Text style={styles.label}>compte</Text>
+          <Text style={styles.value}>{session.user?.email ?? 'jeton restauré'}</Text>
+        </View>
+
+        <Button
+          label={pending === 'ping' ? 'Ping…' : 'Ping'}
+          variant="secondary"
+          block
+          disabled={pending !== null}
+          onPress={() =>
+            void run('ping', async () => {
+              const payload = await ping();
+
+              return `ok — ${payload.user}`;
+            })
+          }
+        />
+        <Button
+          label={pending === 'me' ? 'Compte…' : 'Compte et appareil'}
+          variant="secondary"
+          block
+          disabled={pending !== null}
+          onPress={() =>
+            void run('me', async () => {
+              const user = await refreshMe();
+
+              return `${user.email} — ${user.roles.join(', ')}`;
+            })
+          }
+        />
+        <Button
+          label={pending === 'bootstrap' ? 'Bootstrap…' : 'Bootstrap'}
+          variant="secondary"
+          block
+          disabled={pending !== null}
+          onPress={() =>
+            void run('bootstrap', async () => {
+              const payload = await bootstrap();
+
+              return [
+                `${payload.exercises.length} exercices`,
+                `${payload.schedule.length} séances`,
+                `fenêtre ${payload.window.from} → ${payload.window.to}`,
+              ].join(' · ');
+            })
+          }
+        />
+        <Button
+          label="Se déconnecter"
+          variant="ghost"
+          disabled={pending !== null}
+          onPress={() => void signOut()}
+        />
+
+        {result ? <Text style={styles.body}>{result}</Text> : null}
+        {error ? <Text style={styles.fault}>{error}</Text> : null}
+      </View>
+    </Card>
+  );
+}
+
 /** Le nombre de lignes d'une table, tenu à jour à chaque écriture. */
 function useRowCount(table: SQLiteTable): number {
   const { data } = useLiveQuery(db.select({ n: count() }).from(table));
@@ -141,4 +248,6 @@ const styles = StyleSheet.create({
   label: { ...text.eyebrow, color: colors.textFaint },
   value: { ...text.numeric, color: colors.text },
   body: { ...text.body, color: colors.textSecondary },
+  // Le rouge dit l'échec, et rien d'autre (§5 règle 2).
+  fault: { ...text.body, color: colors.primary },
 });

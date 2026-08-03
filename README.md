@@ -110,11 +110,29 @@ généré par un Symfony local contient déjà la bonne IP.
 filters) passe donc par un **plugin déclaré dans `app.json`** — une modification
 faite à la main dans `android/` serait effacée au prochain build, sans bruit.
 
+**Ajouter un module natif impose de reconstruire.** Le développement se fait sur
+un build de développement (`expo-dev-client`), dont le jeu de modules natifs est
+figé au moment de la compilation. Metro rebundle le JS à chaque sauvegarde, donc
+le nouveau code arrive bien sur le téléphone — mais le module manque au binaire,
+et l'app tombe sur :
+
+```
+ERROR  [Error: Cannot find native module 'ExpoSecureStore']
+```
+
+suivi d'une cascade de `Route "./_layout.tsx" is missing the required default
+export` : l'import a levé, la route ne vaut plus rien. Rien à corriger dans le
+code, il faut relancer `npm run android`. Après un `npx expo install <module>`,
+donc, on reconstruit — un `npm start` seul ne suffit pas.
+
 ## Structure
 
 ```
 src/
   app/          routes expo-router (une route = un fichier)
+  api/          client HTTP, endpoints typés, session et jeton
+  components/   composants de base (Button, Field, Sheet…)
+  db/           base locale SQLite, schéma et migrations générées
   theme/        tokens générés, échelle typographique, polices
   config.ts     configuration issue de l'environnement
 tools/          scripts de synchronisation avec le serveur
