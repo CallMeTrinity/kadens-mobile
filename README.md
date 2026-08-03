@@ -41,6 +41,32 @@ npm run format     # Prettier en écriture
 npm run typecheck  # tsc --noEmit
 ```
 
+## Design : tokens et polices
+
+L'identité vient du serveur, elle ne se redéfinit pas ici.
+
+```bash
+npm run sync:tokens   # design-tokens.json  -> src/theme/tokens.ts (généré)
+npm run sync:fonts    # public/fonts/*.ttf  -> assets/fonts/
+npm run sync:design   # les deux
+```
+
+Les deux scripts lisent une **racine publique**, par défaut la production. Tant
+qu'elle n'a pas le fichier, générer depuis le dépôt voisin :
+
+```bash
+npm run sync:tokens -- --source=../kadens/public
+```
+
+`src/theme/tokens.ts` est **généré et versionné** : ne jamais l'éditer à la main,
+régénérer. Une valeur que React Native ne sait pas lire (`color-mix()`, une pile
+de polices, un rayon non nul) **échoue la commande** plutôt que d'être approchée.
+
+L'échelle typographique, elle, n'est pas dans les tokens (le web la porte en
+`clamp()`) : elle vit dans `src/theme/typography.ts`, et c'est là que se tient la
+règle de casse — libellés de structure en Barlow Condensed capitales, contenu
+saisi en Barlow casse normale.
+
 Le rendu web n'est qu'un confort de développement : rien n'y est vérifié, et
 l'app se teste sur Android.
 
@@ -89,8 +115,12 @@ faite à la main dans `android/` serait effacée au prochain build, sans bruit.
 ```
 src/
   app/          routes expo-router (une route = un fichier)
+  theme/        tokens générés, échelle typographique, polices
   config.ts     configuration issue de l'environnement
-assets/images/  icône, écran de démarrage
+tools/          scripts de synchronisation avec le serveur
+assets/
+  fonts/        Barlow, Barlow Condensed, IBM Plex Mono (récupérées, versionnées)
+  images/       icône, écran de démarrage
 ```
 
 L'alias `@/` pointe `src/`.

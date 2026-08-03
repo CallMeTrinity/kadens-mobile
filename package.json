@@ -8,6 +8,9 @@
     "start": "npm run --silent adb:reverse && expo start --localhost",
     "android": "npm run --silent adb:reverse && REACT_NATIVE_PACKAGER_HOSTNAME=localhost expo run:android",
     "web": "expo start --web",
+    "sync:tokens": "node tools/sync-tokens.mjs",
+    "sync:fonts": "node tools/sync-fonts.mjs",
+    "sync:design": "npm run sync:tokens && npm run sync:fonts",
     "lint": "expo lint",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit"

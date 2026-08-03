@@ -52,11 +52,22 @@ synchronise en différé avec Kadens.
 - **`android/` n'est pas versionné.** Toute configuration native passe par un
   plugin déclaré dans `app.json`.
 - **`src/theme/tokens.ts` est généré** depuis `design-tokens.json` publié par le
-  serveur (KL-22) : versionné, jamais édité à la main.
+  serveur (`npm run sync:tokens`) : versionné, jamais édité à la main. Toute
+  valeur que React Native ne comprend pas **échoue la génération** au lieu d'être
+  approchée — un token muet peindrait du transparent sans rien dire.
 - **Aucune couleur ni police en dur dans un composant**, toujours un token
   sémantique (règle 1 du design system). Le condensé capitales ne touche jamais
   au contenu saisi : nom d'exercice et de séance en Barlow, casse normale
-  (règle 4).
+  (règle 4). C'est `src/theme/typography.ts` qui tient cette frontière, en
+  séparant les rôles de **structure** des rôles de **contenu** ; l'échelle y est
+  écrite à la main, parce que le web la porte en `clamp()` et que `tokens.css`
+  n'en dit rien.
+- **Un composant importe depuis `@/theme`, jamais de `tokens.ts` directement.**
+  L'adaptation aux API natives (interlettrage en em, choix d'une graisse) vit
+  dans les fichiers voisins du fichier généré.
+- **Une graisse = une police enregistrée.** Android ne synthétise pas les
+  graisses d'une famille chargée à l'exécution : la police se choisit par
+  `fontFamily(stack, weight)`, jamais par `fontWeight`.
 
 ## 4. Conventions de rangement
 
@@ -65,6 +76,9 @@ synchronise en différé avec Kadens.
 - Thème et tokens → `src/theme/`
 - Base locale, schéma et migrations → `src/db/`
 - Client API → `src/api/`
+- Script de synchronisation avec le serveur → `tools/` (Node, `.mjs`)
+- Ressources embarquées → `assets/` (`fonts/` récupéré par `npm run sync:fonts`,
+  `images/` repris de `public/pwa/`)
 - Alias d'import : `@/` pointe `src/`
 
 ## 5. État d'avancement
@@ -74,4 +88,21 @@ synchronise en différé avec Kadens.
 (`fr.antoninpamart.kadens`, portrait, `light`), `android/` non versionné,
 `.env.example` et README (dont le rappel de l'IP LAN).
 
-Prochain ticket : **KL-22** (socle de design natif).
+**KL-22 livré (03/08/2026)** : le socle de design natif.
+
+- `tools/sync-tokens.mjs` (`npm run sync:tokens`) traduit `design-tokens.json` en
+  `src/theme/tokens.ts` : couleurs et polices sémantiques, espacements, rayons,
+  graisses, interlettrage. `tools/sync-fonts.mjs` (`npm run sync:fonts`) rapatrie
+  les onze `.ttf` dans `assets/fonts/`. Les deux prennent la même
+  `--source=<url|chemin>` (une racine publique), défaut = la prod ; tant qu'elle
+  n'est pas déployée, générer depuis le dépôt voisin : `--source=../kadens/public`.
+- `src/theme/typography.ts` : l'échelle, en rôles de structure et de contenu.
+  Interlettrage converti des em vers les points, interligne planché à 1×.
+- `src/theme/fonts.ts` : les onze polices, chargées par `useFonts` derrière
+  l'écran de démarrage, et `fontFamily(stack, weight)` typé sur ce qui est
+  réellement embarqué.
+- `src/app/index.tsx` reste l'écran de vérification, désormais peint aux tokens
+  et montrant un échantillon de l'échelle — le moyen le plus court de voir que
+  les polices ont bien chargé.
+
+Prochain ticket : **KL-23** (composants de base).
