@@ -55,7 +55,14 @@ export {
 
 export { refreshMe, signInWithPairingCode, signInWithPassword, signOut } from './auth';
 
-export { attachUser, currentToken, getSession, restoreSession, useSession } from './session';
+export {
+  attachUser,
+  completeFirstSync,
+  currentToken,
+  getSession,
+  restoreSession,
+  useSession,
+} from './session';
 export type { SessionState, SessionStatus, SignedOutReason } from './session';
 
 export type {

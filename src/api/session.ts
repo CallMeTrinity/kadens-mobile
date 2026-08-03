@@ -48,9 +48,26 @@ export interface SessionState {
    */
   user: ApiUser | null;
   reason: SignedOutReason;
+  /**
+   * `true` juste après un `login` ou un `pair` **fraîchement réussis** : la base
+   * locale est vide, et le garde de `_layout.tsx` retient l'app sur l'écran de
+   * bootstrap le temps du premier `GET /api/bootstrap` (KL-26).
+   *
+   * Une session **restaurée** au lancement démarre à `false` : la base locale
+   * porte déjà le dernier pull, et bloquer l'app sur un écran de chargement à
+   * chaque ouverture contredirait le hors-ligne. Le rafraîchissement d'une
+   * session restaurée est le rôle du moteur de synchronisation (KL-27), pas de
+   * celui-ci.
+   */
+  awaitingFirstSync: boolean;
 }
 
-const INITIAL: SessionState = { status: 'unknown', user: null, reason: 'none' };
+const INITIAL: SessionState = {
+  status: 'unknown',
+  user: null,
+  reason: 'none',
+  awaitingFirstSync: false,
+};
 
 let state: SessionState = INITIAL;
 let token: string | null = null;
@@ -99,19 +116,39 @@ export async function restoreSession(): Promise<SessionState> {
   token = stored;
   publish(
     stored === null
-      ? { status: 'signedOut', user: null, reason: 'none' }
-      : { status: 'signedIn', user: null, reason: 'none' },
+      ? { status: 'signedOut', user: null, reason: 'none', awaitingFirstSync: false }
+      : { status: 'signedIn', user: null, reason: 'none', awaitingFirstSync: false },
   );
 
   return state;
 }
 
-/** Ouvre la session : le jeton part au trousseau, l'état passe à « connecté ». */
+/**
+ * Ouvre la session : le jeton part au trousseau, l'état passe à « connecté ».
+ *
+ * `awaitingFirstSync` part à `true` : c'est un `login` ou un `pair` qui vient de
+ * réussir, jamais une restauration (`restoreSession` publie directement l'état
+ * final). L'écran de bootstrap le referme (`completeFirstSync`).
+ */
 export async function openSession(nextToken: string, user: ApiUser): Promise<void> {
   await writeToken(nextToken);
 
   token = nextToken;
-  publish({ status: 'signedIn', user, reason: 'none' });
+  publish({ status: 'signedIn', user, reason: 'none', awaitingFirstSync: true });
+}
+
+/**
+ * Referme le garde du premier bootstrap (KL-26). Appelée par l'écran de
+ * bootstrap, que le `GET /api/bootstrap` ait réussi ou qu'on l'ait abandonné.
+ *
+ * Sans effet hors de la fenêtre où elle a un sens : une session déjà déconnectée
+ * ou qui n'attendait rien ne doit pas se retrouver marquée "signedIn" par effet
+ * de bord.
+ */
+export function completeFirstSync(): void {
+  if (state.status === 'signedIn' && state.awaitingFirstSync) {
+    publish({ ...state, awaitingFirstSync: false });
+  }
 }
 
 /** Complète la session avec l'utilisateur, sans toucher au jeton (`GET /api/me`). */
@@ -130,7 +167,7 @@ export function attachUser(user: ApiUser): void {
  */
 export async function closeSession(reason: SignedOutReason = 'none'): Promise<void> {
   token = null;
-  publish({ status: 'signedOut', user: null, reason });
+  publish({ status: 'signedOut', user: null, reason, awaitingFirstSync: false });
 
   await clearToken();
 }

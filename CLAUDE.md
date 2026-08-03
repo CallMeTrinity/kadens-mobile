@@ -317,4 +317,46 @@ garde de navigation du layout racine. Ce qu'il pose et qu'il ne faut pas casser 
   rejeu `200` sans duplication, `422` avec le chemin du champ, et un jeton
   révoqué de l'extérieur qui purge le trousseau.
 
-Prochain ticket : **KL-26** (écran de connexion).
+**KL-26 livré (03/08/2026)** : l'écran de connexion. Trois routes dans
+`src/app/` (`login.tsx`, `pairing.tsx`, `login-password.tsx`), toutes trois
+dans le groupe `Stack.Protected guard={!signedIn}` du layout racine. Ce qu'il
+pose et qu'il ne faut pas casser :
+
+- **`login.tsx` est un écran de choix, plus un formulaire.** Trois actions
+  hiérarchisées : « Scanner le QR » (primaire), « Saisir le code »
+  (secondaire), « Email et mot de passe » (dernier repli, sans lien
+  d'inscription). Les deux premières poussent vers `pairing.tsx` : sans
+  `expo-camera` (réservé à KL-48), rien ne les distingue encore, et cet écran
+  n'implémente que la saisie manuelle du code de 8 caractères
+  (`signInWithPairingCode`, déjà posé par KL-25). KL-48 **complète**
+  `pairing.tsx` d'une caméra, il ne le remplace pas — le champ manuel y reste
+  le repli.
+- **`SessionState` gagne un quatrième champ, `awaitingFirstSync`, pas un
+  quatrième statut.** `openSession` (un `login`/`pair` frais) le pose à `true` ;
+  `restoreSession` le pose à `false` dans ses deux branches. C'est ce deuxième
+  point qui compte : une session **restaurée** au lancement ne repasse pas par
+  l'écran de bootstrap, parce que sa base locale porte déjà le dernier pull —
+  l'y forcer à chaque ouverture contredirait le hors-ligne. Rafraîchir une
+  session restaurée reste le travail du déclenchement « au lancement » que
+  KL-27 posera sur le moteur de synchronisation, pas de cet écran. Le layout
+  racine lit ce champ pour ajouter une troisième branche au garde
+  (`Stack.Protected guard={signedIn && session.awaitingFirstSync}` →
+  `bootstrapping.tsx`), entre `signedIn` et `!signedIn`.
+- **`bootstrapping.tsx` ne persiste pas la réponse du bootstrap.** Il appelle
+  `GET /api/bootstrap` (sans `since`) pour deux raisons seulement — valider que
+  le serveur répond, tenir « état de chargement honnête » — puis referme le
+  garde avec `completeFirstSync()` sans toucher à `@/db`. Écrire le document
+  en base, en transaction, en tenant `sync_state` (fenêtre, `lastPulledAt`) est
+  le rôle déclaré de **KL-27**, qui en sera le seul écrivain : le dupliquer ici
+  referait ce travail hors de ses garanties transactionnelles. Un échec
+  n'enferme pas l'utilisateur : « Réessayer » relance le même appel,
+  « Continuer sans mes séances » referme le garde quand même — la base locale
+  reste vide jusqu'au prochain pull, mais l'app reste utilisable.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et pour web (quatre
+  routes statiques rendues : `/login`, `/pairing`, `/login-password`,
+  `/bootstrapping`). Pas de contrôle sur un vrai téléphone à ce stade : rien
+  ici n'exerce `expo-secure-store` au-delà de ce que KL-25 avait déjà vérifié,
+  et il n'y a pas de caméra à tester avant KL-48.
+
+Prochain ticket : **KL-48** (écran de scan du QR d'appairage).

@@ -64,6 +64,12 @@ export default function RootLayout() {
   }
 
   const signedIn = session.status === 'signedIn';
+  // Un `login` ou un `pair` qui vient de réussir laisse la base locale vide :
+  // l'app retient l'écran de bootstrap (KL-26) le temps du premier
+  // `GET /api/bootstrap`, plutôt que de montrer "Aujourd'hui" sans rien dedans.
+  // Une session restaurée saute cette étape (`awaitingFirstSync` y part à
+  // `false`) : la base locale porte déjà le dernier pull.
+  const readyForApp = signedIn && !session.awaitingFirstSync;
 
   return (
     <SafeAreaProvider>
@@ -80,12 +86,18 @@ export default function RootLayout() {
           ce qui rend « un 401 renvoie vers l'écran de connexion » vrai sans
           qu'aucun écran n'ait à intercepter d'erreur.
         */}
-        <Stack.Protected guard={signedIn}>
+        <Stack.Protected guard={readyForApp}>
           <Stack.Screen name="index" />
+        </Stack.Protected>
+
+        <Stack.Protected guard={signedIn && session.awaitingFirstSync}>
+          <Stack.Screen name="bootstrapping" />
         </Stack.Protected>
 
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="login" />
+          <Stack.Screen name="pairing" />
+          <Stack.Screen name="login-password" />
         </Stack.Protected>
       </Stack>
       <StatusBar style="dark" />
