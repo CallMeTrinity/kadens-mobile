@@ -1,0 +1,48 @@
+/**
+ * Point d'entrée du moteur de synchronisation (KL-27).
+ *
+ * Un écran importe **d'ici** (`@/sync`), jamais d'un fichier précis : même règle
+ * que `@/db`, `@/api`, `@/theme` et `@/components`.
+ *
+ * C'est le seul module de l'app où `@/api` et `@/db` se rencontrent durablement
+ * (le layout racine les croise aussi, le temps de restaurer l'URL et le jeton).
+ * Cette frontière est voulue : le client HTTP n'ouvre pas SQLite, la base
+ * n'appelle pas le réseau, et ce qui les met en rapport tient dans un endroit
+ * qu'on peut lire d'un bout à l'autre.
+ *
+ * Ce qu'il faut savoir avant d'appeler quoi que ce soit :
+ *
+ * 1. **Le push passe toujours avant le pull.** Le pull remplace la fenêtre de
+ *    séances datées ; lancé en premier, il écraserait ce qui n'est pas encore
+ *    parti. Il n'y a donc pas de fonction « pull seul » exposée.
+ * 2. **Rien ne lève et rien ne bloque.** `syncNow()` rend un rapport, jamais une
+ *    exception : ses déclencheurs n'ont personne pour l'attraper. Les écrans
+ *    lisent la base locale, qui republie ses lectures vives quand le pull écrit.
+ * 3. **Une séance non confirmée par le serveur est intouchable.** Tant qu'une
+ *    mutation la concerne, le pull ne l'écrase pas : la base locale fait autorité
+ *    sur son réalisé.
+ * 4. **Écrire du réalisé, c'est empiler une mutation dans la même transaction.**
+ *    `enqueueSchedulePut(uuid, tx)` prend l'exécuteur de l'appelant, et c'est
+ *    ainsi qu'il faut l'appeler — sinon une app tuée entre les deux laisse un
+ *    réalisé que rien ne signale comme non poussé.
+ */
+
+export { getSyncStatus, syncNow, useSyncStatus } from './engine';
+export type { SyncOutcome, SyncPhase, SyncStatus, SyncTrigger } from './engine';
+
+export { syncOnWorkoutClosed, useSyncTriggers } from './triggers';
+
+export {
+  dropMutation,
+  enqueueScheduleDelete,
+  enqueueSchedulePut,
+  isExhausted,
+  listMutations,
+  MAX_ATTEMPTS,
+  rearmExhausted,
+} from './queue';
+
+export { readScheduleDocument } from './document';
+
+export type { PullReport } from './pull';
+export type { PushReport } from './push';

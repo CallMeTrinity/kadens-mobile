@@ -22,10 +22,17 @@
  *    sur l'ancien contenu, sans erreur. Voir `wipe()` dans `seed.ts`.
  */
 
-export { DATABASE_NAME, db, nativeDb, type Database } from './client';
+export {
+  DATABASE_NAME,
+  db,
+  nativeDb,
+  type Database,
+  type Transaction,
+  type Writer,
+} from './client';
 export { useDatabaseMigrations } from './migrate';
 export { clearDatabase, seedDemo } from './seed';
-export { getSyncState, patchSyncState } from './syncState';
+export { getSyncState, patchSyncState, patchSyncStateIn } from './syncState';
 export { localDate, nowIso } from './time';
 export { isUuidv7, uuidv7 } from './uuid';
 

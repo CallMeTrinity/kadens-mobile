@@ -320,6 +320,10 @@ export function seedDemo(): void {
   }
 
   db.transaction((tx) => {
+    // Relue **avant** le vidage : `wipe()` emporte `sync_state`, donc l'URL du
+    // serveur posée par l'appairage. Elle est réécrite plus bas.
+    const apiUrl = tx.select({ apiUrl: syncState.apiUrl }).from(syncState).get()?.apiUrl ?? null;
+
     wipe(tx);
 
     tx.insert(exercise)
@@ -587,14 +591,30 @@ export function seedDemo(): void {
 
     // --- L'état de synchronisation ------------------------------------------
     // La fenêtre est celle qu'annoncerait le serveur : J-30 → J+14.
+    //
+    // **`serverTime` reste nul, et ce n'est pas un oubli.** C'est l'horloge du
+    // serveur au dernier bootstrap *réussi*, et c'est ce que le moteur renvoie en
+    // `?since` (KL-27). Le jeu de démonstration n'a rien descendu : y écrire
+    // `nowIso()` ferait demander un **delta** au premier vrai pull, alors que la
+    // base locale ne contient que ces huit exercices fabriqués. Le serveur
+    // n'allège que la bibliothèque — l'historique et la fenêtre de séances datées
+    // partent toujours en entier (`BootstrapPayload`) — donc la réponse
+    // référencerait des exercices qui ne sont pas là, et la transaction du pull
+    // échouerait en `FOREIGN KEY constraint failed` sans jamais pouvoir se
+    // rattraper. Nul, le premier pull est complet, et il l'est aussi longtemps
+    // qu'il faut. Même raison pour `lastPulledAt`.
+    //
+    // `apiUrl` survit au vidage : elle vient du QR d'appairage (KL-48) et
+    // n'appartient pas au jeu de données. La perdre ici déconnecterait l'app du
+    // serveur au prochain lancement, pour avoir injecté des séances de test.
     tx.insert(syncState)
       .values({
         id: SYNC_STATE_ID,
-        apiUrl: null,
-        serverTime: nowIso(),
+        apiUrl,
+        serverTime: null,
         windowFrom: dayOffset(-30),
         windowTo: dayOffset(14),
-        lastPulledAt: nowIso(),
+        lastPulledAt: null,
         lastPushedAt: null,
       })
       .run();

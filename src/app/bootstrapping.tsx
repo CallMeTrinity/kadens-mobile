@@ -1,25 +1,30 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
-import { bootstrap, completeFirstSync, describeError } from '@/api';
+import { completeFirstSync } from '@/api';
 import { Button } from '@/components';
+import { syncNow } from '@/sync';
 import { colors, space, text } from '@/theme';
 
 /**
- * L'écran de premier bootstrap (KL-26).
+ * L'écran de premier bootstrap (KL-26, complété par KL-27).
  *
  * Retenu par `_layout.tsx` juste après un `login` ou un `pair` réussis : la base
  * locale est vide, et un « Aujourd'hui » sans rien dedans mentirait sur l'état
- * de l'app. Un `GET /api/bootstrap` (sans `since`, le premier pull complet) part
- * donc ici, avec un message honnête plutôt qu'un chargement muet.
+ * de l'app. Le premier pull part donc ici, avec un message honnête plutôt qu'un
+ * chargement muet.
  *
- * **La réponse n'est volontairement pas appliquée à la base locale.** L'écrire
- * en transaction et tenir `sync_state` (fenêtre, `lastPulledAt`) est le rôle du
- * moteur de synchronisation (KL-27), qui en fera **le** seul écrivain — le
- * dupliquer ici referait ce travail en dehors de ses garanties transactionnelles.
- * Cet écran ne fait que valider que le serveur répond avant de laisser entrer
- * dans l'app, et referme le garde (`completeFirstSync`) dans tous les cas :
- * succès, ou abandon volontaire depuis l'échec.
+ * **Il passe par le moteur de synchronisation, pas par un appel direct.** KL-26
+ * appelait `GET /api/bootstrap` sans rien en faire, faute de moteur : la base
+ * restait vide jusqu'au déclencheur suivant. C'est réparé — `syncNow` applique la
+ * réponse en transaction et tient `sync_state`, et il reste le seul écrivain de
+ * cette table (le dupliquer ici referait ce travail hors de ses garanties). La
+ * file est vide à ce stade, le push qui précède le pull ne fait donc rien, et
+ * l'ordre « push avant pull » reste vrai sans cas particulier.
+ *
+ * Un échec n'enferme personne : « Réessayer » relance, « Continuer sans mes
+ * séances » referme le garde quand même — la base reste vide jusqu'au prochain
+ * pull, mais l'app reste utilisable.
  */
 export default function BootstrappingScreen() {
   const [attempt, setAttempt] = useState(0);
@@ -30,18 +35,23 @@ export default function BootstrappingScreen() {
     let cancelled = false;
 
     void (async () => {
-      try {
-        await bootstrap();
+      // `syncNow` ne lève jamais : son échec se lit dans le rapport (`engine.ts`),
+      // parce que ses autres appelants sont des déclencheurs sans personne pour
+      // attraper une exception.
+      const outcome = await syncNow('first-sync');
 
-        if (!cancelled) {
-          completeFirstSync();
-        }
-      } catch (cause) {
-        if (!cancelled) {
-          setError(describeError(cause));
-          setPending(false);
-        }
+      if (cancelled) {
+        return;
       }
+
+      if (outcome.ok) {
+        completeFirstSync();
+
+        return;
+      }
+
+      setError(outcome.error);
+      setPending(false);
     })();
 
     return () => {
@@ -66,7 +76,9 @@ export default function BootstrappingScreen() {
           </>
         ) : (
           <>
-            <Text style={styles.title}>Serveur injoignable</Text>
+            {/* Plus « Serveur injoignable » : l'échec peut aussi venir du serveur
+                lui-même, et le message précis est juste en dessous. */}
+            <Text style={styles.title}>Récupération impossible</Text>
             <Text style={styles.error}>{error}</Text>
             <View style={styles.actions}>
               <Button label="Réessayer" onPress={retry} block />

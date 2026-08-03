@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 
-import { db } from './client';
+import { db, type Writer } from './client';
 import { SYNC_STATE_ID, syncState, type SyncStateRow } from './schema';
 
 /**
@@ -31,14 +31,26 @@ export async function getSyncState(): Promise<SyncStateRow | null> {
  * fenêtre du dernier pull.
  */
 export async function patchSyncState(patch: Partial<Omit<SyncStateRow, 'id'>>): Promise<void> {
+  patchSyncStateIn(db, patch);
+}
+
+/**
+ * La même écriture, **dans la transaction de l'appelant**.
+ *
+ * Le pull en a besoin : « appliquer le bootstrap et avancer `lastPulledAt` » doit
+ * être un seul geste. Un état avancé sur une base à moitié écrite ferait repartir
+ * la synchronisation suivante d'un `since` qui promet des données jamais arrivées.
+ */
+export function patchSyncStateIn(writer: Writer, patch: Partial<Omit<SyncStateRow, 'id'>>): void {
   // Un patch vide produirait un `ON CONFLICT DO UPDATE SET` sans affectation,
   // que SQLite refuse. Rien à écrire, rien à faire.
   if (Object.keys(patch).length === 0) {
     return;
   }
 
-  await db
+  writer
     .insert(syncState)
     .values({ id: SYNC_STATE_ID, ...patch })
-    .onConflictDoUpdate({ target: syncState.id, set: patch });
+    .onConflictDoUpdate({ target: syncState.id, set: patch })
+    .run();
 }

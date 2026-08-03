@@ -23,6 +23,7 @@ import {
   scheduledWorkout,
   seedDemo,
 } from '@/db';
+import { isExhausted, MAX_ATTEMPTS, rearmExhausted, syncNow, useSyncStatus } from '@/sync';
 import { colors, space, text } from '@/theme';
 
 // Écran de vérification du socle. Il montrait l'échelle typographique (KL-22),
@@ -98,6 +99,8 @@ export default function IndexScreen() {
         </Card>
 
         <ApiCard />
+
+        <SyncCard />
 
         <Card title="Base locale" right={<Chip label="KL-24" rank={3} />}>
           <View style={styles.stack}>
@@ -227,6 +230,81 @@ function ApiCard() {
 
         {result ? <Text style={styles.body}>{result}</Text> : null}
         {error ? <Text style={styles.fault}>{error}</Text> : null}
+      </View>
+    </Card>
+  );
+}
+
+/**
+ * La carte de vérification du moteur de synchronisation (KL-27).
+ *
+ * Elle montre ce qu'aucun contrôle hors téléphone ne montre : que le cycle
+ * complet tourne sur un vrai réseau, que la file se vide, et que les compteurs de
+ * la carte « Base locale » bougent juste après — c'est-à-dire que la transaction
+ * du pull a bien écrit. La file en échec s'affiche entrée par entrée : c'est
+ * l'esquisse de ce que KL-35 rendra pour de bon.
+ */
+function SyncCard() {
+  const status = useSyncStatus();
+  const { data: queue } = useLiveQuery(db.select().from(mutationQueue).orderBy(mutationQueue.id));
+  const [report, setReport] = useState<string | null>(null);
+
+  const busy = status.phase !== 'idle';
+
+  return (
+    <Card title="Synchro" right={<Chip label="KL-27" rank={3} />}>
+      <View style={styles.stack}>
+        <View style={styles.countRow}>
+          <Text style={styles.label}>phase</Text>
+          <Text style={styles.value}>{busy ? `${status.phase} (${status.trigger})` : 'idle'}</Text>
+        </View>
+        <View style={styles.countRow}>
+          <Text style={styles.label}>dernier succès</Text>
+          <Text style={styles.value}>{status.lastSuccessAt?.slice(11, 19) ?? '—'}</Text>
+        </View>
+        <View style={styles.countRow}>
+          <Text style={styles.label}>en attente</Text>
+          <Text style={styles.value}>{queue.length}</Text>
+        </View>
+
+        <Button
+          label={busy ? 'Synchronisation…' : 'Synchroniser'}
+          variant="secondary"
+          block
+          disabled={busy}
+          onPress={() =>
+            void syncNow('manual').then((outcome) =>
+              setReport(
+                outcome.ok
+                  ? [
+                      `${outcome.push?.pushed ?? 0} poussée(s)`,
+                      `${outcome.pull?.exercises ?? 0} exercices`,
+                      `${outcome.pull?.schedule ?? 0} séances`,
+                      `${outcome.pull?.protectedSchedule ?? 0} protégée(s)`,
+                      `${outcome.pull?.removedSchedule ?? 0} purgée(s)`,
+                    ].join(' · ')
+                  : null,
+              ),
+            )
+          }
+        />
+
+        {queue.map((row) => (
+          <View key={row.id} style={styles.countRow}>
+            <Text style={styles.label}>
+              {row.type} · {row.payload.uuid.slice(0, 8)}
+            </Text>
+            <Text style={isExhausted(row) ? styles.fault : styles.value}>
+              {row.attempts}/{MAX_ATTEMPTS}
+            </Text>
+          </View>
+        ))}
+        {queue.some(isExhausted) ? (
+          <Button label="Réarmer les échecs" variant="ghost" onPress={() => rearmExhausted()} />
+        ) : null}
+
+        {report ? <Text style={styles.body}>{report}</Text> : null}
+        {status.lastError ? <Text style={styles.fault}>{status.lastError}</Text> : null}
       </View>
     </Card>
   );

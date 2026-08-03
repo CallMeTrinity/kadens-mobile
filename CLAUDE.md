@@ -81,6 +81,21 @@ synchronise en différé avec Kadens.
   est remplacé en entier à chaque pull et ne se recompose pas ici ; le second est
   la seule chose que le téléphone écrit. Détail et raisons dans
   `src/db/schema.ts`.
+- **Le push passe toujours avant le pull**, et il n'existe pas de « pull seul ».
+  Le pull remplace la fenêtre de séances datées : lancé en premier, il écraserait
+  ce qui n'est pas encore parti. Ce qui reste en file après le push est
+  exactement ce que le pull doit épargner.
+- **Écrire du réalisé, c'est empiler sa mutation dans la MÊME transaction.**
+  `enqueueSchedulePut(uuid, tx)` prend l'exécuteur de l'appelant (type `Writer`,
+  `@/db`). L'app tuée entre les deux laisserait un réalisé que rien ne signale
+  comme non poussé — et le pull suivant l'effacerait sans un mot.
+- **Une séance non confirmée par le serveur est intouchable.** « Non confirmée » =
+  une mutation en file (épuisée comprise), ou commencée et pas terminée. Le pull
+  lui applique la **programmation** et rien d'autre : ni le réalisé, ni
+  `startedAt`/`endedAt`, ni `status`, ni la note de clôture.
+- **`?since` prend `sync_state.serverTime`, jamais `lastPulledAt`.** Le premier
+  est l'horloge du serveur, le second celle du téléphone ; s'en remettre au
+  second ferait dépendre la synchro d'un désaccord de pendules.
 
 ## 4. Conventions de rangement
 
@@ -93,6 +108,8 @@ synchronise en différé avec Kadens.
 - Thème et tokens → `src/theme/`
 - Base locale, schéma et migrations → `src/db/`
 - Client API → `src/api/`
+- Moteur de synchronisation → `src/sync/` (le seul module où `@/api` et `@/db`
+  se rencontrent durablement)
 - Script de synchronisation avec le serveur → `tools/` (Node, `.mjs`)
 - Ressources embarquées → `assets/` (`fonts/` récupéré par `npm run sync:fonts`,
   `images/` repris de `public/pwa/`)
@@ -235,7 +252,15 @@ pose et qu'il ne faut pas casser :
   séances injectées dans le réalisé partiraient au serveur au push suivant. Son
   jeu est daté **relativement à aujourd'hui** — figé, il sortirait de la fenêtre
   J-30 → J+14 en un mois et « Aujourd'hui » se viderait sans qu'on comprenne
-  pourquoi.
+  pourquoi. Elle **ne pose ni `serverTime` ni `lastPulledAt`** : ce sont les
+  marques d'un bootstrap réussi, et les écrire ferait demander un _delta_ au
+  premier vrai pull sur une base qui ne contient que huit exercices fabriqués —
+  le serveur n'allège que la bibliothèque, l'historique et la fenêtre de séances
+  partent en entier, donc la transaction du pull échouait sur une contrainte de
+  clé étrangère sans pouvoir se rattraper. **Observé sur l'appareil**
+  (03/08/2026), corrigé. Elle **préserve `apiUrl`** au passage : `wipe()` emporte
+  `sync_state`, et perdre l'URL de l'appairage pour avoir injecté des séances de
+  test déconnecterait l'app au lancement suivant.
 - **`metro.config.js` pousse `wasm` dans `assetExts`** uniquement pour que
   `expo export -p web` continue de passer : le portage web d'`expo-sqlite`
   importe un `.wasm`. L'app ne cible toujours pas le web — la base s'y charge, elle
@@ -370,7 +395,7 @@ pose et qu'il ne faut pas casser :
   (`Linking.openSettings()`) — c'est la seule issue, Android ne redemande
   jamais après un second refus.
 - **`signInWithPairingQr` (nouveau, `src/api/auth.ts`) pose l'URL de base
-  *avant* l'échange, et la remet à sa valeur précédente si l'appel échoue par
+  _avant_ l'échange, et la remet à sa valeur précédente si l'appel échoue par
   réseau ou délai** (`NetworkError` / `TimeoutError`) — un QR qui pointe vers un
   serveur injoignable ne doit pas stranger la saisie manuelle de repli sur une
   URL morte pour le reste de la session. Un refus **du serveur** (code expiré
@@ -409,4 +434,77 @@ pose et qu'il ne faut pas casser :
   échec identique. C'est un problème de toolchain (Kotlin/AGP/RN) à
   diagnostiquer séparément, pas un défaut de l'écran de scan.
 
-Prochain ticket : **KL-27** (moteur de synchronisation).
+**KL-27 livré (03/08/2026) — le lot 3 est clos.** Le moteur de synchronisation,
+dans `src/sync/`, importé par `@/sync`. Un cycle **push puis pull**, un seul à la
+fois, qui ne lève jamais et ne retient aucun écran. Ce qu'il pose et qu'il ne
+faut pas casser :
+
+- **L'ordre push → pull est la moitié du ticket.** Le pull remplace la fenêtre de
+  séances datées (§4.5 du contrat) : lancé en premier, il écraserait la séance du
+  matin pas encore envoyée, et il n'y a rien à consulter pour savoir laquelle —
+  c'est `mutation_queue` qui porte le fait « modifié localement ». Il n'existe
+  donc pas de fonction « pull seul » exportée.
+- **Une séance non confirmée par le serveur est intouchable, et ça fait deux
+  cas** : une mutation en file (**épuisée comprise**), ou une séance commencée et
+  pas terminée. Le second est de la ceinture par-dessus les bretelles — KL-29
+  empilera une mutation dès la première série cochée, mais une séance ouverte
+  dont rien n'a été coché n'en a pas. Sur une séance protégée, le pull applique
+  la **programmation** (date, titre, plan, blocs : le coach a pu corriger) et
+  **rien d'autre**. Écraser `status` serait le pire des trois : le document relu
+  au push suivant repartirait en `planned`, et la clôture serait perdue au moment
+  même où on l'envoie.
+- **Le compteur d'échecs ne compte que les refus du serveur.** Réseau absent,
+  délai, `429`, `5xx` : le cycle s'arrête, `lastError` s'affiche, `attempts` ne
+  bouge pas — le sous-sol d'une salle est le cas nominal, y épuiser une mutation
+  valide afficherait une panne là où il n'y a qu'un mur de béton. Un refus
+  définitif (`409`, `422`, `403`) compte **et** laisse passer la suivante : le
+  problème est dans ce document-là. Une mutation marquée n'est jamais supprimée —
+  elle sort du dépilage, attend un geste humain (KL-35), et continue de protéger
+  sa séance.
+- **`?since` envoie `serverTime`, pas `lastPulledAt`** (le ticket disait le
+  second, le contrat le premier, §6.5). L'un est l'horloge du serveur, l'autre
+  celle du téléphone : trente secondes de désaccord suffiraient à sauter un
+  exercice modifié entre deux appels.
+- **`deleted.schedule` n'est pas appliqué, `deleted.exercises` si.** `?since`
+  n'allège **que** la bibliothèque : son jeu est partiel, d'où la liste des
+  disparus. La fenêtre de séances datées part toujours entière — « absente du jeu
+  reçu » suffit, et cette purge est ce qui borne la base (sans elle, chaque jour
+  qui passe y laisserait une séance de plus).
+- **Un exercice supprimé côté serveur survit localement s'il est référencé par un
+  réalisé non confirmé.** `exercise_id` est en `SET NULL` : le supprimer viderait
+  la référence, et le document poussé ensuite sortirait de l'historique et des
+  records sans rien signaler.
+- **L'historique saute les exercices que la base locale ne connaît pas.** C'est
+  la seule asymétrie de la réponse qui puisse blesser : `?since` allège la
+  bibliothèque et **n'allège pas** l'historique, qui porte sur la bibliothèque
+  entière. Un delta reçu sur une base dont `exercise` n'est pas un sur-ensemble
+  de ce que le serveur voit ferait échouer l'insertion sur la clé étrangère —
+  donc tomber **tout** le pull, à chaque tentative, sans que le `since` avance
+  jamais. Sauter est gratuit ici, et c'est ce qui le distingue du réalisé : la
+  table est un cache d'affichage rebâti en entier au pull suivant, et l'entrée
+  écartée l'est pour un exercice qu'aucun écran ne peut afficher. **Limite
+  connue, non traitée** : `logged_exercise.exercise_id` a le même problème (un
+  exercice perso de coach, loggé, puis relation terminée — le serveur envoie
+  l'id, la bibliothèque visible ne le contient plus) et la même tolérance n'y
+  serait **pas** gratuite, un `exercise_id` nul remontant au push ferait perdre
+  au serveur sa propre référence (`document.ts`). La sortie propre est de retirer
+  cette clé étrangère par une nouvelle migration : une FK vers un cache partiel
+  est une erreur de catégorie. À traiter avec KL-35.
+- **Le document se relit en base au moment du push**, jamais figé dans la file :
+  c'est ce qui permet à dix modifications de ne produire qu'un envoi, et à une
+  série ajoutée après l'enfilement de partir quand même.
+- **`bootstrapping.tsx` (KL-26) persiste enfin ce qu'il descend** : il passe par
+  `syncNow('first-sync')` au lieu d'un `bootstrap()` sans suite. Le moteur reste
+  le seul écrivain de `sync_state`.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et web, plus un banc
+  d'essai de **55 contrôles contre le vrai Symfony** — `src/sync` bundlé pour
+  Node, `expo-sqlite` posé sur `node:sqlite`. Il exerce la protection, la
+  coalescence, l'ordre, le rejeu sans doublon, le réseau coupé, le `422` qui
+  compte, les cinq refus et le réarmement. **Pas de contrôle sur appareil** : le
+  build natif reste bloqué par le problème de toolchain Kotlin/AGP de KL-48
+  (préexistant). Le moteur n'a donc pas encore vu de vraies bascules d'`AppState`
+  ni d'`expo-network` ; la carte « Synchro » de `src/app/index.tsx` est là pour
+  ça.
+
+Prochain ticket : **KL-28** (écran Aujourd'hui).

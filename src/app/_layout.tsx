@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { restoreSession, setApiBaseUrl, useSession } from '@/api';
 import { getSyncState, useDatabaseMigrations } from '@/db';
+import { useSyncTriggers } from '@/sync';
 import { colors, space, text, useKadensFonts } from '@/theme';
 
 // L'écran de démarrage reste affiché tant que les polices ne sont pas prêtes.
@@ -27,6 +28,20 @@ export default function RootLayout() {
 
   const fontsSettled = fontsLoaded || fontError !== null;
   const dbSettled = dbReady || dbError !== undefined;
+
+  // Un `login` ou un `pair` qui vient de réussir laisse la base locale vide :
+  // l'app retient l'écran de bootstrap (KL-26) le temps du premier pull. Une
+  // session restaurée saute cette étape (`awaitingFirstSync` y part à `false`) :
+  // la base locale porte déjà le dernier pull.
+  const signedIn = session.status === 'signedIn';
+  const readyForApp = signedIn && !session.awaitingFirstSync;
+
+  // Les déclencheurs de synchronisation (KL-27) : lancement, retour au premier
+  // plan, retour du réseau. Ils vivent ici parce qu'ils doivent survivre au
+  // démontage de n'importe quel écran — une séance clôturée pendant que l'app est
+  // en arrière-plan doit partir au retour, même si plus rien n'est affiché.
+  // Montés une seule fois, et retenus tant que la session n'est pas ouverte.
+  useSyncTriggers(readyForApp);
 
   useEffect(() => {
     // On masque aussi en cas d'erreur : une police manquante dégrade
@@ -62,14 +77,6 @@ export default function RootLayout() {
       </SafeAreaProvider>
     );
   }
-
-  const signedIn = session.status === 'signedIn';
-  // Un `login` ou un `pair` qui vient de réussir laisse la base locale vide :
-  // l'app retient l'écran de bootstrap (KL-26) le temps du premier
-  // `GET /api/bootstrap`, plutôt que de montrer "Aujourd'hui" sans rien dedans.
-  // Une session restaurée saute cette étape (`awaitingFirstSync` y part à
-  // `false`) : la base locale porte déjà le dernier pull.
-  const readyForApp = signedIn && !session.awaitingFirstSync;
 
   return (
     <SafeAreaProvider>

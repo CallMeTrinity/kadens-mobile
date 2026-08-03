@@ -66,6 +66,30 @@ export const db = drizzle(nativeDb, { schema });
 export type Database = typeof db;
 
 /**
+ * Le rappel que reçoit `db.transaction()`. Extrait du type de Drizzle plutôt que
+ * réécrit : il change avec la version du pilote, et une copie divergerait en
+ * silence.
+ */
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0];
+
+/**
+ * Ce qui sait écrire : la base, ou une transaction en cours.
+ *
+ * Ce type existe pour une raison précise, posée par le moteur de synchronisation
+ * (KL-27) : écrire une série et empiler la mutation qui la poussera doivent être
+ * **atomiques**. L'app tuée entre les deux laisserait un réalisé que rien ne
+ * signale comme non poussé — et le pull suivant, qui remplace la fenêtre,
+ * l'effacerait sans un mot (il n'y a pas de drapeau « modifié localement », c'est
+ * la file qui porte ce fait).
+ *
+ * D'où la forme de tout ce qui écrit dans `src/sync` : des fonctions
+ * **synchrones** qui prennent l'exécuteur en argument, appelables telles quelles
+ * depuis une transaction de l'appelant. Le pilote `expo-sqlite` étant synchrone,
+ * ça ne coûte rien.
+ */
+export type Writer = Database | Transaction;
+
+/**
  * La connexion brute, réservée à ce que Drizzle ne fait pas : les `PRAGMA`, et
  * le branchement de l'outil de débogage Drizzle sur un build de développement.
  */
