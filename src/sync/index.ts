@@ -25,10 +25,21 @@
  *    `enqueueSchedulePut(uuid, tx)` prend l'exécuteur de l'appelant, et c'est
  *    ainsi qu'il faut l'appeler — sinon une app tuée entre les deux laisse un
  *    réalisé que rien ne signale comme non poussé.
+ * 5. **L'état du moteur et l'état persisté sont deux choses.** `useSyncStatus()`
+ *    dit ce qui se passe maintenant et repart vide à chaque lancement ;
+ *    `useSyncState()` lit ce que `sync_state` garde d'une session à l'autre. Un
+ *    écran qui n'aurait lu que le premier annoncerait « jamais synchronisé » sur
+ *    une base fraîche (KL-35).
  */
 
 export { getSyncStatus, syncNow, useSyncStatus } from './engine';
 export type { SyncOutcome, SyncPhase, SyncStatus, SyncTrigger } from './engine';
+
+export { useMutationQueue, useSyncState } from './hooks';
+export type { QueuedMutation } from './hooks';
+
+export { resyncAll } from './reset';
+export type { ResetOutcome, ResetRefusal } from './reset';
 
 export { syncOnWorkoutClosed, useSyncTriggers } from './triggers';
 

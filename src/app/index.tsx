@@ -112,11 +112,11 @@ export default function TodayScreen() {
         right={
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Diagnostic"
-            onPress={() => router.push('/diagnostics')}
+            accessibilityLabel="Réglages"
+            onPress={() => router.push('/settings')}
             style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
           >
-            <Text style={styles.headerActionLabel}>Diagnostic</Text>
+            <Text style={styles.headerActionLabel}>Réglages</Text>
           </Pressable>
         }
       />

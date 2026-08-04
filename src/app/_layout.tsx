@@ -115,13 +115,11 @@ export default function RootLayout() {
           <Stack.Screen name="session/[uuid]/index" />
           <Stack.Screen name="session/[uuid]/close" />
           {/*
-            L'écran de vérification du socle, devenu un écran à part entière quand
-            « Aujourd'hui » a pris sa place (KL-28). Il porte encore la seule
-            déconnexion de l'app et les cartes qui exercent l'API et la
-            synchronisation sur un vrai téléphone : KL-35 le remplacera par les
-            vrais réglages.
+            Les réglages (KL-35), qui ont remplacé l'écran de diagnostic du socle.
+            Protégés comme les autres : ils portent la déconnexion, la file
+            d'envoi et la purge locale, donc du réalisé.
           */}
-          <Stack.Screen name="diagnostics" />
+          <Stack.Screen name="settings" />
         </Stack.Protected>
 
         <Stack.Protected guard={signedIn && session.awaitingFirstSync}>

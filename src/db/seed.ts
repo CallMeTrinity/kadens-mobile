@@ -665,7 +665,38 @@ function wipe(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
   tx.delete(syncState).where(all).run();
 }
 
-/** Vide la base, sans rien réinjecter. */
+/**
+ * Vide la base, sans rien réinjecter. **L'URL du serveur survit.**
+ *
+ * C'est le geste des deux boutons de l'écran de réglages (KL-35) — « se
+ * déconnecter » et « resynchroniser tout » — et la préservation n'est pas une
+ * commodité : `sync_state.apiUrl` vient du **QR d'appairage** (KL-48), pas du
+ * compte ni du serveur. L'effacer déconnecterait l'app de son serveur pour avoir
+ * voulu vider un cache, et le repli « email et mot de passe » de l'écran de
+ * connexion n'aurait plus où appeler. Même raison que dans `seedDemo()`.
+ *
+ * Ce qu'elle emporte, en revanche, est **définitif** : le réalisé pas encore
+ * poussé n'a pas d'autre exemplaire. C'est à l'appelant de s'en assurer avant —
+ * `resyncAll()` (`@/sync`) refuse de purger tant que la file n'est pas vide, la
+ * déconnexion le dit et fait confirmer.
+ *
+ * `preference` n'est pas concernée : ce sont des réglages d'appareil, ils ne se
+ * retéléchargent de nulle part (voir `wipe()`).
+ */
 export function clearDatabase(): void {
-  db.transaction((tx) => wipe(tx));
+  db.transaction((tx) => {
+    // Relue **avant** le vidage, comme dans `seedDemo()` : `wipe()` emporte la
+    // ligne entière.
+    const apiUrl = tx.select({ apiUrl: syncState.apiUrl }).from(syncState).get()?.apiUrl ?? null;
+
+    wipe(tx);
+
+    if (apiUrl !== null) {
+      // Les autres colonnes repartent à null, et c'est ce qui rend le prochain
+      // pull **complet** : `serverTime` est le `?since` du bootstrap (KL-27), le
+      // remettre à zéro redemande tout au serveur. Une base vide avec un `since`
+      // récent ne se remplirait jamais.
+      tx.insert(syncState).values({ id: SYNC_STATE_ID, apiUrl }).run();
+    }
+  });
 }
