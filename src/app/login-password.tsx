@@ -1,6 +1,7 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError, getApiBaseUrl, signInWithPassword } from '@/api';
 import { Button, Card, Field, Header } from '@/components';
@@ -19,6 +20,7 @@ export default function LoginPasswordScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
+  const insets = useSafeAreaInsets();
   const [error, setError] = useState<string | null>(null);
 
   const baseUrl = getApiBaseUrl();
@@ -44,7 +46,12 @@ export default function LoginPasswordScreen() {
     <View style={styles.screen}>
       <Header eyebrow="Kadens Live" title="Email et mot de passe" onBack={() => router.back()} />
 
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      {/* La zone sûre du bas (KL-37) : sans elle, la fin de page s'arrête au
+          bord de l'écran et passe sous la barre gestuelle Android. */}
+      <ScrollView
+        contentContainerStyle={[styles.page, { paddingBottom: space[8] + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <Card>
           <View style={styles.stack}>
             <Field

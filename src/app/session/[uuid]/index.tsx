@@ -1,6 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
   Button,
@@ -164,6 +165,7 @@ export default function SessionScreen() {
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // Mesurée, pas devinée : c'est ce qui dégage le bas de la page (voir plus bas).
   const [restHeight, setRestHeight] = useState(0);
+  const insets = useSafeAreaInsets();
 
   const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
   const rest = useRestTimer();
@@ -291,11 +293,19 @@ export default function SessionScreen() {
         d'exercice et avec la taille de police du système, et un nombre écrit à la
         main finirait par masquer la dernière série cochée — c'est-à-dire
         exactement celle qu'on vient de faire.
+
+        Hors repos, c'est la barre gestuelle Android qu'il faut dégager (KL-37) :
+        cet écran est empilé par-dessus la barre d'onglets, rien ne le protège du
+        bord. Pendant le repos, en revanche, la mesure **contient déjà** la zone
+        sûre, que la barre prend en rembourrage — l'ajouter ici la compterait deux
+        fois.
       */}
       <ScrollView
         contentContainerStyle={[
           styles.page,
-          rest !== null && { paddingBottom: restHeight + space[13] },
+          rest !== null
+            ? { paddingBottom: restHeight + space[13] }
+            : { paddingBottom: space[13] + insets.bottom },
         ]}
       >
         {!running && !closed ? (
@@ -479,6 +489,12 @@ function Progress({ done, total }: { done: number; total: number }) {
 function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: number) => void }) {
   const over = rest.remaining === 0;
   const ratio = rest.totalSeconds > 0 ? rest.remaining / rest.totalSeconds : 0;
+  // La zone sûre du bas en **rembourrage** (KL-37) : la barre peint sous la barre
+  // gestuelle Android au lieu de s'arrêter au-dessus, et ses trois boutons
+  // remontent d'autant. Sans ça, « Passer » tombait sous le trait du système —
+  // limite relevée en livrant KL-31. La hauteur mesurée par `onLayout` inclut ce
+  // rembourrage, donc le dégagement de la page suit tout seul.
+  const insets = useSafeAreaInsets();
 
   return (
     <View onLayout={(event) => onHeight(event.nativeEvent.layout.height)} style={styles.rest}>
@@ -507,7 +523,7 @@ function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: numbe
         </Text>
       </View>
 
-      <View style={styles.restActions}>
+      <View style={[styles.restActions, { paddingBottom: space[6] + insets.bottom }]}>
         <Button
           label={`− ${REST_STEP} s`}
           variant="secondary"
@@ -1645,12 +1661,12 @@ const styles = StyleSheet.create({
   // Le rouge à l'échéance seulement, et c'est bien son emploi : ce n'est pas une
   // catégorie qu'on colore, c'est l'appel à reprendre la série (§5 règle 2).
   restClockOver: { color: colors.primary },
+  // `paddingBottom` posé au point d'usage : il compte la zone sûre du bas.
   restActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[4],
     paddingHorizontal: space[8],
-    paddingBottom: space[6],
   },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },

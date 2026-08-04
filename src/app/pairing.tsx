@@ -2,6 +2,7 @@ import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'ex
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError, signInWithPairingCode, signInWithPairingQr } from '@/api';
 import { Button, Card, Field, Header } from '@/components';
@@ -25,6 +26,7 @@ export default function PairingScreen() {
   const router = useRouter();
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
+  const insets = useSafeAreaInsets();
   const [error, setError] = useState<string | null>(null);
   // Empêche de traiter deux fois le même cadre pendant qu'un scan est en cours
   // de vérification côté serveur ; remis à `false` après échec pour permettre
@@ -78,7 +80,12 @@ export default function PairingScreen() {
     <View style={styles.screen}>
       <Header eyebrow="Kadens Live" title="Appairage" onBack={() => router.back()} />
 
-      <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
+      {/* La zone sûre du bas (KL-37) : sans elle, la fin de page s'arrête au
+          bord de l'écran et passe sous la barre gestuelle Android. */}
+      <ScrollView
+        contentContainerStyle={[styles.page, { paddingBottom: space[8] + insets.bottom }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {/* Un seul emplacement pour l'erreur : elle peut venir du scan comme de
             la saisie manuelle, et le serveur ne distingue pas leur origine. */}
         {error ? <Text style={styles.error}>{error}</Text> : null}

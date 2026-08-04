@@ -1,8 +1,6 @@
 import Constants from 'expo-constants';
-import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
 import { Button, Card, Chip, Header, NumberStepper } from '@/components';
@@ -55,15 +53,17 @@ import { colors, space, text } from '@/theme';
  * dirait plus rien.
  */
 export default function SettingsScreen() {
-  const insets = useSafeAreaInsets();
-
   return (
     <View style={styles.screen}>
-      <Header eyebrow="Cet appareil" title="Réglages" onBack={() => router.back()} />
+      {/*
+        Aucun retour arrière depuis KL-37 : les réglages sont une **destination**
+        de la barre basse, plus un écran empilé. Un bouton « Retour » sur une
+        destination renverrait vers l'onglet précédent, ce qu'un onglet fait
+        déjà, mieux.
+      */}
+      <Header eyebrow="Cet appareil" title="Réglages" />
 
-      <ScrollView
-        contentContainerStyle={[styles.page, { paddingBottom: space[8] + insets.bottom }]}
-      >
+      <ScrollView contentContainerStyle={styles.page}>
         <AccountCard />
         <SyncCard />
         <RestCard />
@@ -554,8 +554,11 @@ const styles = StyleSheet.create({
   name: { ...text.name, color: colors.text, flexShrink: 1 },
   body: { ...text.body, color: colors.textSecondary },
   caption: { ...text.caption, color: colors.textFaint },
-  // Le rouge dit l'échec, et rien d'autre (§5 règle 2).
-  fault: { ...text.body, color: colors.primary },
+  // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
+  // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
+  // deux ne veulent pas dire la même chose — l'un est l'accent d'une action,
+  // l'autre l'échec. Ils partagent leur valeur aujourd'hui, pas leur sens.
+  fault: { ...text.body, color: colors.statusMissed },
 
   queue: { gap: space[5] },
   // Un filet gauche, comme les écarts de la clôture : la ligne se détache sans

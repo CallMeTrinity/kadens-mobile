@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { completeFirstSync } from '@/api';
 import { Button } from '@/components';
@@ -28,6 +29,7 @@ import { colors, space, text } from '@/theme';
  */
 export default function BootstrappingScreen() {
   const [attempt, setAttempt] = useState(0);
+  const insets = useSafeAreaInsets();
   const [pending, setPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,10 +69,15 @@ export default function BootstrappingScreen() {
 
   return (
     <View style={styles.screen}>
-      <View style={styles.center}>
+      {/* La zone sûre du bas (KL-37) : le bloc est centré, mais sur un écran court
+          « Continuer sans mes séances » descend jusqu'au bord. */}
+      <View style={[styles.center, { paddingBottom: insets.bottom }]}>
         {pending ? (
           <>
-            <ActivityIndicator size="large" color={colors.primary} />
+            {/* À l'encre, pas au rouge (KL-37) : attendre n'est ni une action
+                primaire, ni de l'intensité, ni un échec — les trois seuls
+                emplois du rouge (règle 2). */}
+            <ActivityIndicator size="large" color={colors.text} />
             <Text style={styles.title}>Récupération de tes séances</Text>
             <Text style={styles.hint}>Ça ne prend qu’un instant.</Text>
           </>
@@ -100,7 +107,9 @@ const styles = StyleSheet.create({
   center: { alignItems: 'center', gap: space[4], paddingHorizontal: space[8] },
   title: { ...text.sectionTitle, color: colors.text, textAlign: 'center' },
   hint: { ...text.caption, color: colors.textFaint, textAlign: 'center' },
-  // Le rouge dit l'échec, et rien d'autre (§5 règle 2).
-  error: { ...text.body, color: colors.primary, textAlign: 'center' },
+  // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
+  // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
+  // deux ne veulent pas dire la même chose — l'un est l'accent, l'autre l'échec.
+  error: { ...text.body, color: colors.statusMissed, textAlign: 'center' },
   actions: { marginTop: space[4], gap: space[3], alignSelf: 'stretch' },
 });

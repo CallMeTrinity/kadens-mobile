@@ -1,5 +1,6 @@
 import { useRouter } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '@/api';
 import { Button, Header } from '@/components';
@@ -22,12 +23,16 @@ import { colors, space, text } from '@/theme';
 export default function LoginScreen() {
   const router = useRouter();
   const session = useSession();
+  const insets = useSafeAreaInsets();
 
   return (
     <View style={styles.screen}>
       <Header eyebrow="Kadens Live" title="Connexion" />
 
-      <View style={styles.page}>
+      {/* La zone sûre du bas (KL-37) : le contenu est centré, mais sur un écran
+          court « Email et mot de passe » descend jusqu'au bord et passerait sous
+          la barre gestuelle Android. */}
+      <View style={[styles.page, { paddingBottom: space[8] + insets.bottom }]}>
         {session.reason === 'expired' ? (
           <Text style={styles.notice}>
             Ta session a pris fin : le jeton a été révoqué depuis le site, ou il a dépassé ses 90

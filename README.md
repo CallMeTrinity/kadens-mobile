@@ -41,17 +41,18 @@ npm run format     # Prettier en écriture
 npm run typecheck  # tsc --noEmit
 ```
 
-## Design : tokens et polices
+## Design : tokens, polices et visuels
 
 L'identité vient du serveur, elle ne se redéfinit pas ici.
 
 ```bash
-npm run sync:tokens   # design-tokens.json  -> src/theme/tokens.ts (généré)
-npm run sync:fonts    # public/fonts/*.ttf  -> assets/fonts/
-npm run sync:design   # les deux
+npm run sync:tokens   # design-tokens.json      -> src/theme/tokens.ts (généré)
+npm run sync:fonts    # public/fonts/*.ttf      -> assets/fonts/
+npm run sync:icons    # public/pwa/android/*.png -> assets/images/
+npm run sync:design   # les trois
 ```
 
-Les deux scripts lisent une **racine publique**, par défaut la production. Tant
+Les trois scripts lisent une **racine publique**, par défaut la production. Tant
 qu'elle n'a pas le fichier, générer depuis le dépôt voisin :
 
 ```bash
@@ -66,6 +67,18 @@ L'échelle typographique, elle, n'est pas dans les tokens (le web la porte en
 `clamp()`) : elle vit dans `src/theme/typography.ts`, et c'est là que se tient la
 règle de casse — libellés de structure en Barlow Condensed capitales, contenu
 saisi en Barlow casse normale.
+
+Les visuels d'`assets/images/` — icône du lanceur, couches adaptative et
+monochrome, silhouette de notification, écran de démarrage — sont eux aussi
+**générés côté serveur**, par `tools/build-pwa-icons.php`. Leur source est
+`assets/icons/kadens-red-black.png`, la variante **rouge et noire** de la marque,
+et non celle du site : deux icônes de la même famille sur le même écran d'accueil
+se confondraient. Elle arrive déjà réduite au K, sur fond blanc opaque, donc rien
+à isoler mais tout à détourer — le fond est retiré en récupérant l'antialiasing
+plutôt qu'au seuil, sinon les diagonales du K se dentellent.
+
+Régénérer côté serveur, puis `npm run sync:icons`. Les noms de fichiers sont
+déclarés dans `app.json` : les deux listes se tiennent l'une l'autre.
 
 Le rendu web n'est qu'un confort de développement : rien n'y est vérifié, et
 l'app se teste sur Android.

@@ -1,7 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Button, Card, Chip, EmptyState, Field, Header, Sheet } from '@/components';
 import {
@@ -62,7 +61,6 @@ export default function TodayScreen() {
   const selected = shiftDate(today, offset);
   const [freeSheetOpen, setFreeSheetOpen] = useState(false);
   const [freeTitle, setFreeTitle] = useState('');
-  const insets = useSafeAreaInsets();
 
   const strip = useDayStrip(today);
   const workouts = useDayWorkouts(selected);
@@ -106,20 +104,10 @@ export default function TodayScreen() {
 
   return (
     <View style={styles.screen}>
-      <Header
-        eyebrow={longDate(selected)}
-        title={dayTitle(selected, today)}
-        right={
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Réglages"
-            onPress={() => router.push('/settings')}
-            style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
-          >
-            <Text style={styles.headerActionLabel}>Réglages</Text>
-          </Pressable>
-        }
-      />
+      {/* Plus d'action « Réglages » ici depuis KL-37 : c'est une entrée de la
+          barre basse. Le même chemin à deux endroits ferait douter qu'il mène au
+          même écran — et celui-ci est au pouce. */}
+      <Header eyebrow={longDate(selected)} title={dayTitle(selected, today)} />
 
       <DayStrip cells={strip} selected={selected} onSelect={setOffset} />
 
@@ -155,8 +143,10 @@ export default function TodayScreen() {
 
       {/* La barre d'action ne défile pas : « toujours accessible » veut dire
           atteignable sans remonter une liste, y compris au milieu d'une journée
-          chargée. */}
-      <View style={[styles.actions, { paddingBottom: space[6] + insets.bottom }]}>
+          chargée. Elle ne compte plus la zone sûre du bas depuis KL-37 : la barre
+          d'onglets est en dessous et c'est elle qui la prend — l'ajouter ici
+          creuserait deux fois le même dégagement. */}
+      <View style={styles.actions}>
         <Button
           label={offset === 0 ? 'Séance libre' : "Séance libre aujourd'hui"}
           variant="secondary"
@@ -379,14 +369,6 @@ const styles = StyleSheet.create({
   caption: { ...text.caption, color: colors.textFaint },
   body: { ...text.body, color: colors.textSecondary },
 
-  headerAction: {
-    justifyContent: 'center',
-    minHeight: layout.touchTarget,
-    paddingLeft: space[3],
-  },
-  headerActionPressed: { opacity: 0.6 },
-  headerActionLabel: { ...text.action, color: colors.textSecondary },
-
   strip: {
     flexDirection: 'row',
     backgroundColor: colors.surfaceRaised,
@@ -416,6 +398,7 @@ const styles = StyleSheet.create({
 
   actions: {
     paddingTop: space[6],
+    paddingBottom: space[6],
     paddingHorizontal: space[8],
     backgroundColor: colors.surfaceRaised,
     borderTopWidth: layout.hairline,

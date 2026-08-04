@@ -41,8 +41,10 @@ import {
   exerciseHistoryQuery,
   exerciseLibraryQuery,
   loggedExercisesQuery,
+  loggedSetCountsAllQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
+  pastWorkoutsQuery,
   pendingMutationsQuery,
   preferencesQuery,
   prescribedSnapshotQuery,
@@ -86,6 +88,26 @@ export function useToday(): string {
 export function useDayWorkouts(date: string): DayWorkout[] {
   const { data: rows } = useLiveQuery(workoutsOfDayQuery(date), [date]);
   const { data: counts } = useLiveQuery(loggedSetCountsQuery(date), [date]);
+  const pending = usePendingUuids();
+
+  return useMemo(() => {
+    const sets = new Map(counts.map((row) => [row.uuid, row.sets]));
+
+    return rows.map((row) => toDayWorkout(row, sets.get(row.uuid) ?? 0, pending.has(row.uuid)));
+  }, [rows, counts, pending]);
+}
+
+/**
+ * Les séances derrière soi, la plus récente d'abord (KL-37).
+ *
+ * Même assemblage que `useDayWorkouts` — c'est le même objet à l'écran, avec le
+ * même état de synchronisation — sur une autre question : ce qui a été fait
+ * plutôt que ce qui est prévu ce jour-là. Voir `pastWorkoutsQuery` pour ce que
+ * « derrière soi » veut dire exactement, et pour la portée réelle de la liste.
+ */
+export function usePastWorkouts(): DayWorkout[] {
+  const { data: rows } = useLiveQuery(pastWorkoutsQuery());
+  const { data: counts } = useLiveQuery(loggedSetCountsAllQuery());
   const pending = usePendingUuids();
 
   return useMemo(() => {

@@ -105,21 +105,25 @@ export default function RootLayout() {
           qu'aucun écran n'ait à intercepter d'erreur.
         */}
         <Stack.Protected guard={readyForApp}>
-          <Stack.Screen name="index" />
+          {/*
+            Les trois destinations de la barre basse — Aujourd'hui, Historique,
+            Réglages — vivent dans un seul écran de pile (KL-37). Un groupe
+            n'apparaît pas dans l'URL : `/settings` reste `/settings`.
+          */}
+          <Stack.Screen name="(tabs)" />
           {/*
             Les deux écrans d'une séance. Ils sont déclarés **un par un** parce
             que le garde ne protège que ce qu'il liste : une route oubliée ici
             resterait navigable une fois la session purgée, et celle-ci ouvre le
             réalisé (KL-33).
+
+            Ils sont **empilés par-dessus la barre d'onglets**, pas dedans : une
+            séance se déroule en plein écran, et trois onglets sous le pouce y
+            disputeraient la place à la seule cible qui compte, valider une
+            série. En sortir, c'est revenir, pas changer d'onglet.
           */}
           <Stack.Screen name="session/[uuid]/index" />
           <Stack.Screen name="session/[uuid]/close" />
-          {/*
-            Les réglages (KL-35), qui ont remplacé l'écran de diagnostic du socle.
-            Protégés comme les autres : ils portent la déconnexion, la file
-            d'envoi et la purge locale, donc du réalisé.
-          */}
-          <Stack.Screen name="settings" />
         </Stack.Protected>
 
         <Stack.Protected guard={signedIn && session.awaitingFirstSync}>
@@ -192,7 +196,7 @@ const styles = StyleSheet.create({
     padding: space[8],
     gap: space[4],
   },
-  faultTitle: { ...text.sectionTitle, color: colors.primary },
+  faultTitle: { ...text.sectionTitle, color: colors.statusMissed },
   faultBody: { ...text.body, color: colors.textSecondary },
   faultDetail: { ...text.caption, color: colors.textFaint },
 });

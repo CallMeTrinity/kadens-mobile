@@ -131,6 +131,23 @@ export const text = {
     uppercase: true,
   }),
 
+  /**
+   * Entrée de la barre de navigation basse (KL-37).
+   *
+   * Le web descend `.kd-nav__link` de 15 à 11 points sous 560px, sans changer
+   * de famille : c'est la même transposition ici. Un cran d'interlettrage de
+   * moins que `action`, parce qu'à cette taille le `.1em` de l'action écarterait
+   * « Aujourd'hui » au-delà du tiers d'écran qui lui revient.
+   */
+  tabLabel: role({
+    stack: 'display',
+    weight: '600',
+    size: 11,
+    leading: 1.2,
+    tracking: tracking.eyebrow,
+    uppercase: true,
+  }),
+
   /** Sur-titre et libellé de champ, en mono capitales. */
   eyebrow: role({
     stack: 'mono',

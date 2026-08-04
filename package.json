@@ -11,7 +11,8 @@
     "db:generate": "drizzle-kit generate",
     "sync:tokens": "node tools/sync-tokens.mjs",
     "sync:fonts": "node tools/sync-fonts.mjs",
-    "sync:design": "npm run sync:tokens && npm run sync:fonts",
+    "sync:icons": "node tools/sync-icons.mjs",
+    "sync:design": "npm run sync:tokens && npm run sync:fonts && npm run sync:icons",
     "lint": "expo lint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -45,6 +46,7 @@
     "react-native-reanimated": "4.5.1",
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
+    "react-native-svg": "15.15.4",
     "react-native-web": "^0.21.2",
     "react-native-worklets": "0.10.1"
   },

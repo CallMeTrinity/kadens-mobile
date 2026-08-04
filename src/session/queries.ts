@@ -26,7 +26,7 @@
  * requête est choisi en conséquence, c'est écrit au cas par cas ci-dessous.
  */
 
-import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 
 import {
   db,
@@ -96,6 +96,50 @@ export function runningWorkoutQuery() {
     .where(and(isNotNull(scheduledWorkout.startedAt), isNull(scheduledWorkout.endedAt)))
     .orderBy(desc(scheduledWorkout.startedAt), desc(scheduledWorkout.uuid))
     .limit(1);
+}
+
+/**
+ * Les séances derrière soi (KL-37) — l'écran « Historique ».
+ *
+ * La condition n'est pas « la date est passée » mais **« il s'est passé quelque
+ * chose »** : la séance a été clôturée ici (`ended_at`), ou le serveur l'a
+ * tranchée (`done`, `missed`). Une séance d'avant-hier jamais ouverte et restée
+ * `planned` n'est pas de l'historique, c'est un trou — la bande de jours de
+ * l'écran « Aujourd'hui » remonte déjà jusqu'à J-2 pour ça.
+ *
+ * **Aucun filtre de date, et c'est volontaire** : la base locale ne contient que
+ * la fenêtre du serveur (J-30 → J+14, `docs/api-mobile.md §4.5`), qui fait
+ * autorité et remplace ce qu'elle couvre. Ajouter une borne ici, ce serait
+ * inventer une seconde fenêtre à tenir d'accord avec celle-là. La portée réelle
+ * de l'écran est donc « les trente derniers jours », et il le dit.
+ *
+ * Écoute `scheduled_workout` : clôturer une séance y pose `ended_at`, elle
+ * apparaît ici sans que rien n'ait à prévenir l'écran.
+ */
+export function pastWorkoutsQuery() {
+  return db
+    .select()
+    .from(scheduledWorkout)
+    .where(
+      or(isNotNull(scheduledWorkout.endedAt), inArray(scheduledWorkout.status, ['done', 'missed'])),
+    )
+    .orderBy(desc(scheduledWorkout.date), desc(scheduledWorkout.uuid));
+}
+
+/**
+ * Combien de séries consignées, par séance, sur toute la base locale.
+ *
+ * Jumelle de `loggedSetCountsQuery`, sans le filtre de date : l'historique n'est
+ * pas une journée. Le `from` reste `logged_set` pour la même raison, et la
+ * séance datée n'est plus jointe du tout — elle ne servait qu'à filtrer.
+ */
+export function loggedSetCountsAllQuery() {
+  return db
+    .select({ uuid: loggedExercise.scheduledUuid, sets: count() })
+    .from(loggedSet)
+    .innerJoin(loggedExercise, eq(loggedSet.loggedExerciseId, loggedExercise.id))
+    .where(eq(loggedExercise.skipped, false))
+    .groupBy(loggedExercise.scheduledUuid);
 }
 
 /**

@@ -15,8 +15,9 @@
       "package": "fr.antoninpamart.kadens",
       "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#dcdcd7",
-        "foregroundImage": "./assets/images/android-icon-foreground.png"
+        "backgroundColor": "#ffffff",
+        "foregroundImage": "./assets/images/adaptive-foreground.png",
+        "monochromeImage": "./assets/images/adaptive-monochrome.png"
       },
       "permissions": ["android.permission.VIBRATE"],
       "predictiveBackGestureEnabled": false
@@ -26,9 +27,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#dcdcd7",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 140
+          "backgroundColor": "#ffffff",
+          "image": "./assets/images/splash.png",
+          "imageWidth": 180
         }
       ],
       "expo-sqlite",
@@ -43,6 +44,7 @@
       [
         "expo-notifications",
         {
+          "icon": "./assets/images/notification.png",
           "color": "#d8261e",
           "defaultChannel": "rest"
         }

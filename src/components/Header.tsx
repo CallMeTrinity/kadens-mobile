@@ -6,6 +6,25 @@
  * `SafeAreaView` (qui laisserait une bande de fond papier) et un double
  * rembourrage. Un écran l'emploie donc à la racine, hors `SafeAreaView`.
  *
+ * ## La règle des zones sûres, l'autre bout compris (KL-37)
+ *
+ * Android dessine **de bord à bord** depuis le SDK 54 : rien n'est réservé, ni
+ * en haut ni en bas. Le haut est donc réglé une fois pour toutes, ici. Le bas
+ * reste à la charge de l'écran, parce qu'il n'y a pas un seul cas mais deux, et
+ * qu'ils ne se rendent pas pareil :
+ *
+ * - **Une barre peinte au bas de l'écran** (barre d'onglets, barre d'action,
+ *   barre de repos) prend l'inset en **rembourrage** : elle peint sous la barre
+ *   gestuelle, ses cibles remontent au-dessus. Une marge laisserait un liseré de
+ *   fond papier sous une barre qui n'est plus un bord.
+ * - **Une page qui défile** l'ajoute à son `paddingBottom` de contenu : le
+ *   dernier élément s'arrête au-dessus du trait du système.
+ *
+ * Ne jamais cumuler les deux : un écran dont la barre porte déjà l'inset ne le
+ * réserve pas une seconde fois dans sa page.
+ *
+ * ## Casse
+ *
  * Le titre est un **libellé d'écran** : condensé capitales. Un nom saisi — nom
  * de séance, d'exercice — ne passe pas par là (règle 4) ; il se rend dans le
  * corps de l'écran, au rôle `name`, ou en `eyebrow` s'il sert de contexte.
@@ -16,6 +35,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { colors, layout, space, text } from '@/theme';
+import { Icon } from './Icon';
 
 export type HeaderProps = {
   title: string;
@@ -40,9 +60,11 @@ export function Header({ title, eyebrow, onBack, right, testID }: HeaderProps) {
           onPress={onBack}
           style={({ pressed }) => [styles.back, pressed && styles.backPressed]}
         >
-          {/* Pas d'icône : le projet n'embarque pas encore de jeu de glyphes, et
-              en poser un ici obligerait à trancher cette question pour un bouton
-              de retour. Le mot est lisible et se lit à voix haute tel quel. */}
+          {/* La flèche est arrivée avec le jeu de glyphes de KL-37. Elle
+              **accompagne** le mot, elle ne le remplace pas : un chevron seul
+              serait une cible muette, et le libellé accessible du bouton est de
+              toute façon posé sur le `Pressable`. */}
+          <Icon name="arrow-left" size={17} color={colors.textSecondary} />
           <Text style={styles.backLabel}>Retour</Text>
         </Pressable>
       ) : null}
@@ -70,6 +92,9 @@ const styles = StyleSheet.create({
     gap: space[2],
   },
   back: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[2],
     justifyContent: 'center',
     minHeight: layout.touchTarget,
     // `flex-start` : sans lui, la cible s'étend sur toute la largeur de
