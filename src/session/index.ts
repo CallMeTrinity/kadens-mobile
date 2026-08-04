@@ -22,20 +22,51 @@
  *    `async` (voir `@/db`).
  * 2. **Ouvrir une séance n'empile pas de mutation.** Le pull la protège déjà par
  *    « commencée et pas terminée ». Écrire du **réalisé**, en revanche, empile la
- *    sienne dans la même transaction — c'est la règle que KL-29 devra tenir.
+ *    sienne dans la même transaction — c'est ce que `log.ts` tient, série par
+ *    série, depuis KL-29.
  * 3. **La programmation ne se modifie pas ici.** Ni date, ni titre, ni statut : le
  *    serveur en est l'autorité. Le téléphone possède les bornes et le réalisé.
+ * 4. **Une série réalisée s'apparie à sa ligne prescrite par le RANG**, dans deux
+ *    files séparées (échauffement, travail). Ce n'est pas un choix d'écran : le
+ *    contrat ne transporte aucune référence de la série vers la ligne, et c'est la
+ *    règle que `LogComparator` tient déjà côté serveur. Voir `program.ts`.
  */
 
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
 export type { DayCell } from './days';
 
-export { useDayStrip, useDayWorkouts, useRunningWorkout, useToday, useWorkout } from './hooks';
+export {
+  useDayStrip,
+  useDayWorkouts,
+  useRunningWorkout,
+  useSessionProgram,
+  useToday,
+  useWorkout,
+  useWorkoutPendingSync,
+} from './hooks';
+
+export { blockRoleLabel, countsAsWorking, setTypeLabel, setTypeLetter } from './labels';
+
+export { checkSet, setCardioDone, uncheckSet } from './log';
+
+export { buildProgram } from './program';
+export type {
+  SessionBlock,
+  SessionExercise,
+  SessionExtra,
+  SessionGroup,
+  SessionProgram,
+  SessionSetLine,
+  SetValues,
+} from './program';
 
 export {
   dayCountsQuery,
+  loggedExercisesQuery,
   loggedSetCountsQuery,
+  loggedSetsOfWorkoutQuery,
   pendingMutationsQuery,
+  prescribedSnapshotQuery,
   runningWorkoutQuery,
   toDayWorkout,
   workoutQuery,

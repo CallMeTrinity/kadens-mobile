@@ -33,6 +33,7 @@ import {
   loggedExercise,
   loggedSet,
   mutationQueue,
+  prescribedSnapshot,
   scheduledWorkout,
   type ScheduledWorkoutRow,
 } from '@/db';
@@ -139,6 +140,72 @@ export function loggedSetCountsQuery(date: string) {
  */
 export function pendingMutationsQuery() {
   return db.select({ payload: mutationQueue.payload }).from(mutationQueue);
+}
+
+/**
+ * Le programme d'une séance (KL-29).
+ *
+ * C'est **la seule** requête de tout le module qui touche `prescribed_snapshot`,
+ * et c'est voulu : le document est le plus gros de la base, il ne se lit qu'à
+ * l'ouverture d'une séance, jamais pour en lister. L'invariant de `db/schema.ts`
+ * tient donc toujours — il interdit de le remonter pour *lister*, pas pour
+ * *dérouler*.
+ *
+ * Écoute `prescribed_snapshot` : un pull qui apporte une correction du coach
+ * pendant la séance se voit sans rien à prévenir.
+ */
+export function prescribedSnapshotQuery(uuid: string) {
+  return db
+    .select({ blocks: prescribedSnapshot.blocks })
+    .from(prescribedSnapshot)
+    .where(eq(prescribedSnapshot.scheduledUuid, uuid))
+    .limit(1);
+}
+
+/**
+ * Les exercices réalisés d'une séance, dans l'ordre du programme.
+ *
+ * Écoute `logged_exercise` : cocher la première série d'un exercice y crée sa
+ * ligne, le déroulé la voit.
+ */
+export function loggedExercisesQuery(uuid: string) {
+  return db
+    .select()
+    .from(loggedExercise)
+    .where(eq(loggedExercise.scheduledUuid, uuid))
+    .orderBy(asc(loggedExercise.position), asc(loggedExercise.id));
+}
+
+/**
+ * Les séries réalisées d'une séance, dans l'ordre où elles ont été faites.
+ *
+ * Le `from` est `logged_set` **volontairement** — même raison que
+ * `loggedSetCountsQuery` : c'est la table qu'une série cochée fait grossir, donc
+ * celle dont le changement doit republier le déroulé. La séance datée n'est
+ * jointe que pour filtrer.
+ *
+ * L'ordre `(exercice, position)` est celui dont l'appariement par rang dépend
+ * (`program.ts`) : sans lui, deux séries de la même file remonteraient dans
+ * l'ordre que SQLite veut bien rendre, et la coche sauterait d'une ligne à
+ * l'autre d'un rendu au suivant.
+ */
+export function loggedSetsOfWorkoutQuery(uuid: string) {
+  return db
+    .select({
+      uuid: loggedSet.uuid,
+      loggedExerciseId: loggedSet.loggedExerciseId,
+      position: loggedSet.position,
+      type: loggedSet.type,
+      reps: loggedSet.reps,
+      weightKg: loggedSet.weightKg,
+      durationSeconds: loggedSet.durationSeconds,
+      rpe: loggedSet.rpe,
+      completedAt: loggedSet.completedAt,
+    })
+    .from(loggedSet)
+    .innerJoin(loggedExercise, eq(loggedSet.loggedExerciseId, loggedExercise.id))
+    .where(eq(loggedExercise.scheduledUuid, uuid))
+    .orderBy(asc(loggedSet.loggedExerciseId), asc(loggedSet.position));
 }
 
 /** Une séance datée telle que l'écran la peint, ses dérivés compris. */

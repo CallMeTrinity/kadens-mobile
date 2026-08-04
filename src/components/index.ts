@@ -17,3 +17,10 @@ export { Field, type FieldProps } from './Field';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
 export { Sheet, type SheetProps } from './Sheet';
+
+/**
+ * La mise en forme des unités (KL-29). Ici plutôt que dans `@/session` : décider
+ * de ce qui est fait est du domaine, écrire « 82,5 kg » est du rendu — et le
+ * rendu français des nombres vit déjà dans ce dossier.
+ */
+export { duration, setEffort, weight } from './units';

@@ -105,6 +105,14 @@ synchronise en différé avec Kadens.
   veille consiste à **ouvrir** la séance d'hier, pas à la redater : `date`,
   `title` et `status` appartiennent au serveur, les bornes et le réalisé au
   téléphone.
+- **Une série réalisée s'apparie à sa ligne prescrite par le RANG, dans deux
+  files séparées** (échauffement, travail). Ce n'est pas un choix d'écran : le
+  contrat ne transporte aucune référence de la série vers la ligne
+  (`sourcePrescribedId` est sur l'exercice, `position` n'est pas envoyée), et
+  c'est la règle que `LogComparator` tient déjà côté serveur — il ne peut pas y
+  en avoir deux, sinon le téléphone et `/schedule/{id}` racontent deux histoires.
+  **Corollaire : cocher est séquentiel** (première ligne non cochée de sa file,
+  dernière cochée pour décocher). Détail dans `src/session/program.ts`.
 
 ## 4. Conventions de rangement
 
@@ -579,4 +587,66 @@ qu'ils posent et qu'il ne faut pas casser :
   les cibles tactiles de la bande de jours et la bascule de minuit n'ont donc pas
   été vus sur un vrai téléphone.
 
-Prochain ticket : **KL-29** (écran Séance en cours).
+**KL-29 livré (04/08/2026)** : l'écran « Séance en cours »
+(`src/app/session/[uuid].tsx`), et trois fichiers de plus dans `src/session/` —
+`program.ts` (le croisement prescrit × réalisé, **pur**), `log.ts` (les trois
+écritures), `labels.ts` (le vocabulaire français des enums). Ce qu'ils posent et
+qu'il ne faut pas casser :
+
+- **L'appariement par rang en deux files est la décision du ticket** (cf. §3). Le
+  cochage séquentiel en découle, il ne le précède pas. Vérifié dans les deux sens :
+  un réalisé revenu du serveur avec ses positions renumérotées à partir de 0 se
+  relit exactement aux mêmes lignes.
+- **`prescribed_snapshot` se lit ici et nulle part ailleurs.** L'invariant de
+  KL-24 interdit de remonter le plus gros document de la base pour _lister_ un
+  jour ; il n'a jamais interdit de le lire pour _dérouler_ une séance, ce qui est
+  la seule raison pour laquelle la table est séparée.
+- **Trois lectures vives, pas une jointure.** `useLiveQuery` n'écoute que la table
+  du `from` : programme, exercices réalisés et séries sont trois requêtes sur
+  trois tables. Une jointure unique n'aurait été republiée que par sa table de
+  tête, et le déroulé serait resté figé sur les deux autres — sans erreur.
+- **Cocher écrit la série ET empile la mutation dans la même transaction**
+  (`log.ts`), et une seule par séance : la file est coalescée par uuid, dix séries
+  cochées ne font qu'un envoi.
+- **Décocher supprime aussi l'exercice réalisé devenu vide** (plus de série,
+  aucune note, non sauté — les deux dernières sont des _déclarations_, on ne les
+  efface pas), **et empile quand même la mutation** : `log: []` est ce qui efface
+  le réalisé côté serveur.
+- **Un réalisé sans rattachement vaut mieux qu'une série perdue.**
+  `logged_exercise.exercise_id` porte une FK active : un exercice absent de la
+  bibliothèque locale ferait échouer l'insertion. Le repli met `exerciseId` à
+  `null` et garde le nom. Même problème que celui rencontré par KL-27 dans l'autre
+  sens, même sortie propre (retirer la FK, avec KL-35).
+- **« On ne consigne que dans une séance ouverte » est une garde du domaine**, pas
+  de l'écran : les trois écritures la franchissent dans leur transaction. Close,
+  on n'écrit plus (pas de reprise après clôture) ; pas commencée, non plus — le
+  pull ne protégerait même pas la séance, faute de `started_at`.
+- **La progression compte des gestes, pas du volume** : l'échauffement entre dans
+  le total — contrairement au tonnage et aux records, où il est exclu partout — un
+  cardio compte pour une unité, un exercice sauté sort du dénominateur.
+- **Le réalisé que le programme ne réclame pas est affiché, pas ignoré** (séries
+  surnuméraires à la suite, exercices en « Hors programme »). KL-29 n'en crée
+  aucun ; le pull, lui, peut en descendre.
+- **`src/components/units.ts`** est le pendant natif d'`UnitFormatter` : une
+  charge et une durée se lisent à l'identique ici et sur `/schedule/{id}`. Il est
+  dans `components/` et non dans `session/` parce que décider de ce qui est fait
+  est du domaine, et écrire « 82,5 kg » est du rendu — et parce que le rendu
+  français des nombres y vivait déjà (`formatNumber`).
+- **Toujours pas d'icônes** : la case à cocher est un carré au filet qui se
+  remplit à l'encre. La ligne entière est la cible tactile, la case n'est qu'un
+  repère.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et web, plus un banc
+  d'essai de **97 contrôles hors React Native** (appariement, groupes de superset
+  et leur contiguïté, coalescence, refus d'une ligne hors tour, cardio, repli sur
+  bibliothèque incomplète, document poussé, protection du pull, aller-retour
+  serveur).
+- **Le build natif repasse.** `npm run android` a produit `app-debug.apk` et
+  installé `fr.antoninpamart.kadens` sur un appareil réel : l'échec de compilation
+  Kotlin d'`expo-dev-menu` / `expo-log-box`, constaté en KL-48 et rejoué en KL-27
+  et KL-28, **ne s'est pas reproduit**. Cette limite est donc levée pour les
+  tickets suivants. **Le rendu, lui, n'a pas été observé** : le téléphone était en
+  cours d'utilisation. Les cibles tactiles, la densité des lignes de série et la
+  lisibilité à bout de bras restent à valider à l'œil.
+
+Prochain ticket : **KL-30** (déviations en séance).

@@ -19,10 +19,14 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { localDate, type ScheduledWorkoutRow } from '@/db';
 
 import { dayWindow, type DayCell } from './days';
+import { buildProgram, type SessionProgram } from './program';
 import {
   dayCountsQuery,
+  loggedExercisesQuery,
   loggedSetCountsQuery,
+  loggedSetsOfWorkoutQuery,
   pendingMutationsQuery,
+  prescribedSnapshotQuery,
   runningWorkoutQuery,
   toDayWorkout,
   workoutQuery,
@@ -98,6 +102,29 @@ export function useWorkout(uuid: string): ScheduledWorkoutRow | null | undefined
   return updatedAt === undefined ? undefined : (data[0] ?? null);
 }
 
+/**
+ * Le déroulé d'une séance : son programme et son réalisé, croisés (KL-29).
+ *
+ * **Trois lectures vives et non une**, parce que `useLiveQuery` n'écoute que la
+ * table du `from` : le programme change quand un pull le corrige, les exercices
+ * réalisés quand on coche la première série de l'un d'eux, les séries à chaque
+ * coche. Une requête jointe unique n'aurait été republiée que par sa table de
+ * tête, et le déroulé serait resté figé sur les deux autres.
+ *
+ * Le croisement est mémoïsé : il est pur (`buildProgram`), et le refaire à chaque
+ * rendu de l'écran ferait retomber tout le déroulé sur des objets neufs.
+ */
+export function useSessionProgram(uuid: string): SessionProgram {
+  const { data: snapshot } = useLiveQuery(prescribedSnapshotQuery(uuid), [uuid]);
+  const { data: exercises } = useLiveQuery(loggedExercisesQuery(uuid), [uuid]);
+  const { data: sets } = useLiveQuery(loggedSetsOfWorkoutQuery(uuid), [uuid]);
+
+  return useMemo(
+    () => buildProgram(snapshot[0]?.blocks ?? [], exercises, sets),
+    [snapshot, exercises, sets],
+  );
+}
+
 /** La bande de jours, chacun sachant s'il porte des séances. */
 export function useDayStrip(today: string): (DayCell & { total: number })[] {
   const cells = useMemo(() => dayWindow(today), [today]);
@@ -110,6 +137,17 @@ export function useDayStrip(today: string): (DayCell & { total: number })[] {
 
     return cells.map((cell) => ({ ...cell, total: totals.get(cell.date) ?? 0 }));
   }, [cells, counts]);
+}
+
+/**
+ * Cette séance attend-elle d'être poussée ?
+ *
+ * C'est ce qui rend visible « rien n'est perdu » : la marque apparaît à la
+ * première série cochée hors réseau et disparaît d'elle-même quand le push
+ * aboutit, sans qu'aucun écran n'ait à le demander.
+ */
+export function useWorkoutPendingSync(uuid: string): boolean {
+  return usePendingUuids().has(uuid);
 }
 
 /** Les séances qu'une mutation attend de pousser, en lecture vive. */
