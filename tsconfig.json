@@ -2,6 +2,11 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // `jest` pour les globales des suites, `node` pour `node:sqlite` — le vrai
+    // SQLite sur lequel tourne le double d'`expo-sqlite` (KL-36). TypeScript
+    // n'inclut plus les paquets `@types` tout seul : les nommer est le seul
+    // moyen de les avoir, et c'est aussi ce qui garde la liste lisible.
+    "types": ["jest", "node"],
     "paths": {
       "@/*": ["./src/*"],
       "@/assets/*": ["./assets/*"]

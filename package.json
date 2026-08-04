@@ -14,7 +14,10 @@
     "sync:design": "npm run sync:tokens && npm run sync:fonts",
     "lint": "expo lint",
     "format": "prettier --write .",
-    "typecheck": "tsc --noEmit"
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "test:watch": "jest --watch"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
@@ -46,6 +49,8 @@
     "react-native-worklets": "0.10.1"
   },
   "devDependencies": {
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "29.5.14",
     "@types/react": "~19.2.2",
     "babel-plugin-inline-import": "^3.0.0",
     "drizzle-kit": "^0.31.10",
@@ -53,7 +58,10 @@
     "eslint-config-expo": "~57.0.1",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-prettier": "^5.5.6",
+    "jest": "~29.7.0",
+    "jest-expo": "~57.0.3",
     "prettier": "^3.9.6",
+    "test-renderer": "^1.2.0",
     "typescript": "~6.0.3"
   }
 }

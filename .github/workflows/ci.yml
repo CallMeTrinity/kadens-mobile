@@ -1,0 +1,50 @@
+name: CI
+
+# Sur chaque poussée, quelle que soit la branche : le dépôt n'a pas de branche
+# protégée ni de flux de PR, et un test qui ne tournerait que sur `main`
+# arriverait après le travail plutôt que pendant (KL-36).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Vérifier
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 24 : le double d'`expo-sqlite` (`__mocks__/expo-sqlite.ts`) tourne
+      # sur `node:sqlite`, disponible sans drapeau à partir de la 22.13. La 24 est
+      # la LTS courante, et elle évite d'ajouter un module natif à compiler
+      # (`better-sqlite3`) pour un SQLite que Node embarque déjà.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Typage
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format
+        run: npm run format:check
+
+      # `--ci` : aucun instantané n'est écrit en douce, ils échouent s'ils
+      # manquent. Les tests hors réseau du dépôt n'en utilisent pas, mais la
+      # règle doit être vraie le jour où l'un d'eux en écrira un.
+      - name: Tests
+        run: npm test -- --ci
+        env:
+          # Le socle des tests remplace `fetch` par une fonction qui échoue en
+          # nommant l'appel : rien ne doit sortir du runner. La variable est
+          # posée quand même, pour qu'un import qui la lirait au chargement ne
+          # dépende pas d'un `.env` absent en CI.
+          EXPO_PUBLIC_API_URL: http://localhost:8000
