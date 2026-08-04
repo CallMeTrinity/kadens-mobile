@@ -41,7 +41,15 @@
  *    d'autre : pas de bloc réordonné, pas de superset créé, pas de tour modifié.
  *    Corollaire : on ne dévie que sur ce qui a **été fait**, le prescrit n'ayant
  *    aucun endroit où accueillir une valeur revue avant la série.
- * 7. **L'historique affiché en séance est celui du serveur, pas du téléphone.**
+ * 7. **Clôturer est du réalisé, ouvrir ne l'est pas.** `close.ts` (KL-33) pose
+ *    `ended_at`, passe la séance en `done` et empile sa mutation dans la même
+ *    transaction, là où `beginWorkout` n'empile rien. Et c'est terminal : une
+ *    séance close ne se reprend pas (§2.3 point 5), `isOpen` refusant toute
+ *    écriture après coup. Le résumé qui l'accompagne (`summary.ts`) est calculé
+ *    **en local**, avec la cascade d'axes de `LogComparator` et le périmètre de
+ *    `LogMetrics` : il doit donner le même verdict que `/schedule/{id}`, sinon il
+ *    vaudrait moins que rien.
+ * 8. **L'historique affiché en séance est celui du serveur, pas du téléphone.**
  *    `useSessionHistory` (KL-32) lit `exercise_history`, que le pull réécrit en
  *    entier ; rien n'est recalculé localement à partir du réalisé en cours. Deux
  *    conséquences : la lecture marche hors réseau, et « la dernière fois » ne
@@ -52,9 +60,12 @@
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
 export type { DayCell } from './days';
 
+export { closeWorkout } from './close';
+
 export {
   useDayStrip,
   useDayWorkouts,
+  useElapsedSeconds,
   useExerciseLibrary,
   usePreferences,
   useRunningWorkout,
@@ -114,6 +125,15 @@ export {
   useRestTimer,
 } from './rest';
 export type { RestState } from './rest';
+
+export { buildSessionSummary, elapsedSeconds, exerciseOutcome } from './summary';
+export type {
+  DeviationAxis,
+  DeviationState,
+  ExerciseOutcome,
+  SessionBounds,
+  SessionSummary,
+} from './summary';
 
 export { useKeepScreenAwake } from './wake';
 

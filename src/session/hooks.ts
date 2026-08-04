@@ -27,6 +27,7 @@ import {
 import { dayWindow, type DayCell } from './days';
 import { searchExercises, type ExerciseOption } from './library';
 import { buildProgram, exerciseIdsOf, type SessionProgram } from './program';
+import { elapsedSeconds } from './summary';
 import {
   dayCountsQuery,
   exerciseHistoryQuery,
@@ -210,6 +211,36 @@ export function useDayStrip(today: string): (DayCell & { total: number })[] {
  */
 export function useWorkoutPendingSync(uuid: string): boolean {
   return usePendingUuids().has(uuid);
+}
+
+/**
+ * Depuis combien de temps la séance dure, en secondes (KL-33).
+ *
+ * Le décompte ne tourne que tant que la séance est ouverte : une fois `endedAt`
+ * posé, la durée est un fait, l'intervalle se coupe et la valeur se fige — c'est
+ * l'effet qui s'en charge, sans qu'aucun appelant ait à le savoir.
+ *
+ * La valeur se **recalcule** depuis les deux bornes à chaque tick plutôt que de
+ * s'incrémenter : même raison que le repos (`rest.ts`), Android suspend la boucle
+ * JS en arrière-plan et un compteur incrémenté reviendrait faux d'autant.
+ *
+ * À monter dans un composant qui ne peint **que** la durée : un rendu par seconde
+ * de l'écran entier ferait sauter la saisie de la note juste à côté.
+ */
+export function useElapsedSeconds(startedAt: string | null, endedAt: string | null): number | null {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (startedAt === null || endedAt !== null) {
+      return;
+    }
+
+    const ticker = setInterval(() => setNow(Date.now()), 1_000);
+
+    return () => clearInterval(ticker);
+  }, [startedAt, endedAt]);
+
+  return elapsedSeconds(startedAt, endedAt, now);
 }
 
 /** Les séances qu'une mutation attend de pousser, en lecture vive. */

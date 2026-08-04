@@ -106,7 +106,14 @@ export default function RootLayout() {
         */}
         <Stack.Protected guard={readyForApp}>
           <Stack.Screen name="index" />
-          <Stack.Screen name="session/[uuid]" />
+          {/*
+            Les deux écrans d'une séance. Ils sont déclarés **un par un** parce
+            que le garde ne protège que ce qu'il liste : une route oubliée ici
+            resterait navigable une fois la session purgée, et celle-ci ouvre le
+            réalisé (KL-33).
+          */}
+          <Stack.Screen name="session/[uuid]/index" />
+          <Stack.Screen name="session/[uuid]/close" />
           {/*
             L'écran de vérification du socle, devenu un écran à part entière quand
             « Aujourd'hui » a pris sa place (KL-28). Il porte encore la seule

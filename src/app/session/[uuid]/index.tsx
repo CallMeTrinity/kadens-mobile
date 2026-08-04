@@ -113,10 +113,17 @@ import type { ExerciseHistoryRow, PerformanceBest, PerformanceSession, SetType }
  * réseau, et rien ne s'affiche quand il n'y a rien à dire — pas de « — », pas de
  * cadre vide.
  *
- * ## Ce que l'écran ne fait pas, et à quel ticket ça revient
+ * ## La clôture n'est pas ici (KL-33)
  *
- * Clôturer : **KL-33**. Rien n'en est esquissé — une demi-implémentation serait à
- * défaire.
+ * Elle a son écran, `./close`, et cet écran-ci n'en porte que la **porte** : un
+ * bouton en fin de déroulé, là où on arrive quand la dernière série est cochée.
+ * Rien d'autre — le résumé, la note et le geste irréversible vivent à côté,
+ * parce qu'on ne clôture pas sans avoir lu ce qu'on clôture, et qu'un écran qui
+ * sert barre en main ne doit pas porter d'action qui ne se défait pas.
+ *
+ * Une séance close reste ouvrable ici, en lecture : c'est ce qu'on a fait, et
+ * « pas de reprise » ne veut pas dire « plus rien à lire ». Le bouton devient
+ * alors « Voir le résumé ».
  *
  * ## Pourquoi tout tient dans un seul fichier
  *
@@ -348,6 +355,23 @@ export default function SessionScreen() {
             variant="secondary"
             block
             onPress={() => setPicker({ mode: 'add' })}
+          />
+        ) : null}
+
+        {/* La porte de la clôture (KL-33), en fin de déroulé : c'est là qu'on
+            arrive une fois la dernière série cochée. Le geste lui-même, son
+            résumé et sa note vivent sur l'écran suivant. */}
+        {running || closed ? (
+          <Button
+            label={closed ? 'Voir le résumé' : 'Terminer la séance'}
+            variant={closed ? 'secondary' : 'primary'}
+            block
+            accessibilityHint={
+              closed
+                ? 'Relire ce qui a été fait'
+                : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
+            }
+            onPress={() => router.push(`/session/${uuid}/close`)}
           />
         ) : null}
       </ScrollView>

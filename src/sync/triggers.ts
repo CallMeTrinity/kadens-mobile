@@ -20,7 +20,10 @@ import { syncNow } from './engine';
  * 3. **Au retour du réseau.** Le cas nominal : la séance s'est faite au sous-sol,
  *    le réalisé part en remontant l'escalier, sans que personne ait à y penser.
  * 4. **À la clôture d'une séance** — pas ici, mais par un appel direct à
- *    `syncOnWorkoutClosed()` (KL-33), parce que c'est un geste d'écran.
+ *    `syncOnWorkoutClosed()`, que `closeWorkout()` (`@/session`, KL-33) fait
+ *    après avoir validé sa transaction. Dans le domaine plutôt que dans l'écran :
+ *    tout chemin de clôture doit le déclencher, et un appelant qui l'oublierait
+ *    laisserait la séance attendre le prochain retour au premier plan.
  *
  * Le moteur se charge de ne pas les laisser se doubler : un cycle à la fois, et
  * un plancher de dix secondes entre deux cycles automatiques (`engine.ts`).
@@ -102,9 +105,10 @@ export function useSyncTriggers(enabled: boolean): void {
 /**
  * Le quatrième déclencheur : une séance vient d'être clôturée (KL-33).
  *
- * Appelé par l'écran, sans `await` : la clôture doit rendre la main tout de suite,
- * la séance est déjà écrite en base et sa mutation déjà en file. Ce qui part ici
- * n'est qu'une tentative d'envoi immédiate — si elle échoue, rien n'est perdu.
+ * Appelé par `closeWorkout()`, sans `await` : la clôture doit rendre la main tout
+ * de suite, la séance est déjà écrite en base et sa mutation déjà en file. Ce qui
+ * part ici n'est qu'une tentative d'envoi immédiate — si elle échoue, rien n'est
+ * perdu, et l'écran de clôture le dit (« À synchroniser »).
  */
 export function syncOnWorkoutClosed(): void {
   void syncNow('workout-closed');
