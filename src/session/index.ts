@@ -30,11 +30,23 @@
  *    files séparées (échauffement, travail). Ce n'est pas un choix d'écran : le
  *    contrat ne transporte aucune référence de la série vers la ligne, et c'est la
  *    règle que `LogComparator` tient déjà côté serveur. Voir `program.ts`.
- * 5. **On dévie, on ne recompose pas.** `deviations.ts` (KL-30) corrige une
+ * 5. **Le repos n'est pas du réalisé.** `rest.ts` (KL-31) tient un décompte, une
+ *    notification et une vibration, et **rien de tout ça n'entre en base** : le
+ *    contrat n'a nulle part où le mettre, et un repos persisté ressurgirait au
+ *    lancement suivant. C'est aussi le seul état de ce module qui vit en mémoire
+ *    plutôt qu'en SQLite — il doit survivre au démontage de l'écran, pas au
+ *    redémarrage de l'app.
+ * 6. **On dévie, on ne recompose pas.** `deviations.ts` (KL-30) corrige une
  *    série, en ajoute, en retire, saute, remplace, ajoute un exercice — et rien
  *    d'autre : pas de bloc réordonné, pas de superset créé, pas de tour modifié.
  *    Corollaire : on ne dévie que sur ce qui a **été fait**, le prescrit n'ayant
  *    aucun endroit où accueillir une valeur revue avant la série.
+ * 7. **L'historique affiché en séance est celui du serveur, pas du téléphone.**
+ *    `useSessionHistory` (KL-32) lit `exercise_history`, que le pull réécrit en
+ *    entier ; rien n'est recalculé localement à partir du réalisé en cours. Deux
+ *    conséquences : la lecture marche hors réseau, et « la dernière fois » ne
+ *    devient jamais « à l'instant » — ce qui est en train d'être fait n'y entre
+ *    qu'après avoir été poussé puis redescendu.
  */
 
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
@@ -44,7 +56,9 @@ export {
   useDayStrip,
   useDayWorkouts,
   useExerciseLibrary,
+  usePreferences,
   useRunningWorkout,
+  useSessionHistory,
   useSessionProgram,
   useToday,
   useWorkout,
@@ -71,7 +85,15 @@ export type { ExerciseOption } from './library';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 
-export { allExercises, buildProgram, findExercise, findSetLine, setDeviates } from './program';
+export {
+  allExercises,
+  buildProgram,
+  exerciseIdOf,
+  exerciseIdsOf,
+  findExercise,
+  findSetLine,
+  setDeviates,
+} from './program';
 export type {
   SessionBlock,
   SessionExercise,
@@ -82,12 +104,28 @@ export type {
 } from './program';
 
 export {
+  adjustRest,
+  getRest,
+  initRestNotifications,
+  REST_STEP,
+  startRest,
+  startRestAfterSet,
+  stopRest,
+  useRestTimer,
+} from './rest';
+export type { RestState } from './rest';
+
+export { useKeepScreenAwake } from './wake';
+
+export {
   dayCountsQuery,
+  exerciseHistoryQuery,
   exerciseLibraryQuery,
   loggedExercisesQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
   pendingMutationsQuery,
+  preferencesQuery,
   prescribedSnapshotQuery,
   runningWorkoutQuery,
   toDayWorkout,

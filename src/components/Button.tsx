@@ -37,6 +37,14 @@ export type ButtonProps = {
   disabled?: boolean;
   /** Glyphe ou pastille posé avant le libellé. */
   leading?: ReactNode;
+  /**
+   * Ce que TalkBack annonce, quand le libellé ne s'énonce pas (KL-31).
+   *
+   * Le défaut est le libellé lui-même, et il suffit presque toujours. L'exception
+   * est le libellé **typographique** : « − 15 s » porte un signe moins Unicode,
+   * qui se lit correctement à l'œil et pas du tout à la voix.
+   */
+  accessibilityLabel?: string;
   accessibilityHint?: string;
   style?: StyleProp<ViewStyle>;
   testID?: string;
@@ -68,6 +76,7 @@ export function Button({
   block = false,
   disabled = false,
   leading,
+  accessibilityLabel,
   accessibilityHint,
   style,
   testID,
@@ -77,7 +86,7 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={accessibilityLabel ?? label}
       accessibilityHint={accessibilityHint}
       accessibilityState={{ disabled }}
       disabled={disabled}

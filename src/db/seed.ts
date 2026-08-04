@@ -648,6 +648,13 @@ export function seedDemo(): void {
 function wipe(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
   const all = sql`1 = 1`;
 
+  // `preference` n'est **pas** de la partie, et ne doit pas le devenir par
+  // réflexe de complétude : ce sont des réglages d'appareil (KL-31), pas des
+  // données descendues du serveur. Le « resynchroniser tout » de KL-35 purge ce
+  // qui se retéléchargera ; une durée de repos, elle, ne revient de nulle part.
+  // Si elle entrait ici un jour, il lui faudrait sa clause `where` comme aux
+  // deux tables ci-dessous — elle n'a aucune clé étrangère non plus.
+
   tx.delete(mutationQueue).where(all).run();
   tx.delete(loggedSet).where(all).run();
   tx.delete(loggedExercise).where(all).run();

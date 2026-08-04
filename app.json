@@ -17,6 +17,7 @@
         "backgroundColor": "#dcdcd7",
         "foregroundImage": "./assets/images/android-icon-foreground.png"
       },
+      "permissions": ["android.permission.VIBRATE"],
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
@@ -36,6 +37,13 @@
         {
           "cameraPermission": "Autorise Kadens à utiliser l’appareil photo pour scanner le QR d’appairage.",
           "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#d8261e",
+          "defaultChannel": "rest"
         }
       ]
     ],

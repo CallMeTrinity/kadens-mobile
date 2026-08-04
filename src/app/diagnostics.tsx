@@ -21,9 +21,11 @@ import {
   exercise,
   loggedSet,
   mutationQueue,
+  patchPreferences,
   scheduledWorkout,
   seedDemo,
 } from '@/db';
+import { REST_STEP, startRest, usePreferences } from '@/session';
 import { isExhausted, MAX_ATTEMPTS, rearmExhausted, syncNow, useSyncStatus } from '@/sync';
 import { colors, space, text } from '@/theme';
 
@@ -106,6 +108,8 @@ export default function DiagnosticsScreen() {
         <ApiCard />
 
         <SyncCard />
+
+        <RestCard />
 
         <Card title="Base locale" right={<Chip label="KL-24" rank={3} />}>
           <View style={styles.stack}>
@@ -310,6 +314,62 @@ function SyncCard() {
 
         {report ? <Text style={styles.body}>{report}</Text> : null}
         {status.lastError ? <Text style={styles.fault}>{status.lastError}</Text> : null}
+      </View>
+    </Card>
+  );
+}
+
+/**
+ * Les réglages de repos (KL-31).
+ *
+ * Ils sont **ici et pas dans un écran de réglages** parce que celui-ci n'existe
+ * pas encore : c'est KL-35, qui reprendra cette carte telle quelle avec la
+ * déconnexion et l'état de la file. Les poser dès maintenant est ce qui rend
+ * « durée par défaut réglable » et « vibration désactivable » vrais dans ce
+ * ticket-ci, au lieu de livrer un mécanisme que rien ne pilote.
+ *
+ * Le pas est de 15 secondes, comme l'ajustement en séance : deux granularités
+ * pour la même valeur donneraient des durées qui ne tombent jamais juste.
+ */
+function RestCard() {
+  const preferences = usePreferences();
+
+  return (
+    <Card title="Repos" right={<Chip label="KL-31" rank={3} />}>
+      <View style={styles.stack}>
+        <NumberStepper
+          label="Durée par défaut"
+          value={preferences.restSeconds}
+          onChange={(next) => patchPreferences({ restSeconds: next })}
+          step={REST_STEP}
+          min={REST_STEP}
+          max={3600}
+          unit="s"
+        />
+        <Text style={styles.body}>
+          Elle ne sert que si la ligne du programme n’a pas son propre repos, qui l’emporte
+          toujours.
+        </Text>
+
+        <Button
+          label={preferences.vibrate ? 'Vibration : activée' : 'Vibration : désactivée'}
+          variant="secondary"
+          block
+          accessibilityHint="Vibrer à la fin du repos"
+          onPress={() => patchPreferences({ vibrate: !preferences.vibrate })}
+        />
+
+        {/*
+          Le seul moyen de vérifier la notification sans faire une séance : la
+          barre de repos, elle, ne se peint que sur l'écran de séance — ce qu'on
+          teste ici est justement ce qui se passe **quand on n'y est pas**.
+        */}
+        <Button
+          label="Tester un repos de 15 s"
+          variant="ghost"
+          accessibilityHint="Passe l’app en arrière-plan pour voir la notification arriver"
+          onPress={() => startRest(REST_STEP, 'Test')}
+        />
       </View>
     </Card>
   );

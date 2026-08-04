@@ -26,14 +26,17 @@
  * requête est choisi en conséquence, c'est écrit au cas par cas ci-dessous.
  */
 
-import { and, asc, count, desc, eq, gte, isNotNull, isNull, lte } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte } from 'drizzle-orm';
 
 import {
   db,
   exercise,
+  exerciseHistory,
   loggedExercise,
   loggedSet,
   mutationQueue,
+  PREFERENCE_ID,
+  preference,
   prescribedSnapshot,
   scheduledWorkout,
   type ScheduledWorkoutRow,
@@ -210,6 +213,43 @@ export function loggedSetsOfWorkoutQuery(uuid: string) {
 }
 
 /**
+ * Un identifiant qu'aucun exercice ne porte.
+ *
+ * Les identifiants d'exercice viennent du serveur et sont des entiers positifs
+ * (`db/schema.ts`), donc `-1` ne désigne rien et ne le fera jamais.
+ */
+const NO_EXERCISE = -1;
+
+/**
+ * La dernière performance et le record des exercices d'une séance (KL-32).
+ *
+ * **Lues en local, comme tout le reste.** Ces deux points viennent du bootstrap
+ * et sont réécrits dans `exercise_history` à chaque pull (`sync/pull.ts`), très
+ * exactement pour être lisibles en séance sans réseau ; le réseau ne sert qu'à la
+ * trajectoire complète (`GET /api/exercises/{id}/history`), qu'aucun écran de
+ * l'app n'ouvre. Conséquence à connaître : ce qui s'affiche est ce que le
+ * **serveur** avait confirmé au dernier pull. La séance en cours n'y est pas tant
+ * qu'elle n'est pas poussée puis redescendue — et c'est ce qu'on veut, « la
+ * dernière fois » n'est pas « à l'instant ». L'écran affiche la date en clair,
+ * qui lève l'ambiguïté quand elle se pose.
+ *
+ * La liste ne peut pas partir vide : `inArray` rend mal un `IN ()`. Une séance
+ * dont aucun exercice n'est rattaché à la bibliothèque interroge donc un
+ * identifiant impossible plutôt que de faire monter la condition dans l'appelant.
+ *
+ * Écoute `exercise_history` : un pull qui arrive pendant la séance rafraîchit ce
+ * qui s'affiche sans que rien n'ait à prévenir l'écran.
+ */
+export function exerciseHistoryQuery(exerciseIds: number[]) {
+  return db
+    .select()
+    .from(exerciseHistory)
+    .where(
+      inArray(exerciseHistory.exerciseId, exerciseIds.length > 0 ? exerciseIds : [NO_EXERCISE]),
+    );
+}
+
+/**
  * La bibliothèque locale, pour remplacer ou ajouter un exercice (KL-30).
  *
  * Elle part **entière**, triée par nom, et se filtre en mémoire (`library.ts`) :
@@ -225,6 +265,22 @@ export function exerciseLibraryQuery() {
     .select({ id: exercise.id, name: exercise.name, global: exercise.global })
     .from(exercise)
     .orderBy(asc(exercise.name));
+}
+
+/**
+ * Les réglages de l'appareil (KL-31).
+ *
+ * En lecture **vive**, alors que `getPreferences()` les lit très bien en
+ * synchrone : ce n'est pas la même question. Démarrer un repos lit une valeur à
+ * un instant donné ; un écran qui affiche le réglage doit se repeindre quand on
+ * le change, et c'est ce que `useLiveQuery` fait sans qu'aucun code n'ait à
+ * prévenir personne.
+ *
+ * Écoute `preference`, table d'une ligne au plus — d'où la liste, parfois vide,
+ * que le hook complète par les valeurs par défaut.
+ */
+export function preferencesQuery() {
+  return db.select().from(preference).where(eq(preference.id, PREFERENCE_ID)).limit(1);
 }
 
 /** Une séance datée telle que l'écran la peint, ses dérivés compris. */

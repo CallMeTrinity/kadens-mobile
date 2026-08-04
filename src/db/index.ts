@@ -31,6 +31,7 @@ export {
   type Writer,
 } from './client';
 export { useDatabaseMigrations } from './migrate';
+export { DEFAULT_PREFERENCES, getPreferences, patchPreferences } from './preferences';
 export { clearDatabase, seedDemo } from './seed';
 export { getSyncState, patchSyncState, patchSyncStateIn } from './syncState';
 export { localDate, nowIso } from './time';
@@ -42,6 +43,8 @@ export {
   loggedExercise,
   loggedSet,
   mutationQueue,
+  PREFERENCE_ID,
+  preference,
   prescribedSnapshot,
   scheduledWorkout,
   SYNC_STATE_ID,
@@ -57,6 +60,7 @@ export type {
   LoggedSetInsert,
   LoggedSetRow,
   MutationRow,
+  PreferenceRow,
   PrescribedSnapshotRow,
   ScheduledWorkoutInsert,
   ScheduledWorkoutRow,

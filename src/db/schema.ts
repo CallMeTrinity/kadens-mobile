@@ -249,6 +249,48 @@ export const syncState = sqliteTable(
 /** L'identifiant de l'unique ligne de `sync_state`. */
 export const SYNC_STATE_ID = 1;
 
+// --- Les réglages de l'app ---------------------------------------------------
+
+/**
+ * Les réglages du téléphone (KL-31). **Une seule ligne**, même patron que
+ * `sync_state` et pour la même raison : deux lignes donneraient deux vérités.
+ *
+ * ## Pourquoi une table, et pas un magasin clé/valeur
+ *
+ * Parce que ces valeurs se lisent **pendant** une séance et se règlent depuis un
+ * autre écran (KL-35) : montées sur `useLiveQuery`, elles se republient d'
+ * elles-mêmes là où elles s'appliquent, sans qu'aucun code n'ait à prévenir
+ * personne. Un `AsyncStorage` aurait demandé une dépendance de plus, un cache en
+ * mémoire et un moyen de le notifier.
+ *
+ * ## Ce qui n'est pas ici
+ *
+ * Rien de ce qui appartient au serveur. Ces réglages sont **locaux à l'appareil**
+ * et ne partent jamais : la durée de repos de mon téléphone ne regarde pas le
+ * calendrier, et le contrat de `PUT /api/schedule/{uuid}` n'a nulle part où les
+ * mettre. Ils ne se synchronisent donc pas, et une réinstallation les repose à
+ * leurs valeurs par défaut.
+ */
+export const preference = sqliteTable(
+  'preference',
+  {
+    id: integer('id').primaryKey(),
+    /**
+     * La durée de repos par défaut, en secondes. Elle ne sert que **faute de
+     * mieux** : une ligne prescrite qui porte son propre `restSeconds` l'emporte
+     * toujours (`session/rest.ts`), le programme sachant mieux que le réglage ce
+     * que cet exercice demande.
+     */
+    restSeconds: integer('rest_seconds').notNull().default(90),
+    /** La vibration de fin de repos. Désactivable, comme le ticket le demande. */
+    vibrate: integer('vibrate', { mode: 'boolean' }).notNull().default(true),
+  },
+  (t) => [check('preference_singleton', sql`${t.id} = 1`)],
+);
+
+/** L'identifiant de l'unique ligne de `preference`. */
+export const PREFERENCE_ID = 1;
+
 /**
  * La file de mutations montantes, dépilée en FIFO par le moteur de
  * synchronisation (KL-27).
@@ -284,5 +326,6 @@ export type LoggedExerciseRow = typeof loggedExercise.$inferSelect;
 export type LoggedExerciseInsert = typeof loggedExercise.$inferInsert;
 export type LoggedSetRow = typeof loggedSet.$inferSelect;
 export type LoggedSetInsert = typeof loggedSet.$inferInsert;
+export type PreferenceRow = typeof preference.$inferSelect;
 export type SyncStateRow = typeof syncState.$inferSelect;
 export type MutationRow = typeof mutationQueue.$inferSelect;

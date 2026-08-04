@@ -7,6 +7,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { restoreSession, setApiBaseUrl, useSession } from '@/api';
 import { getSyncState, useDatabaseMigrations } from '@/db';
+import { initRestNotifications } from '@/session';
 import { useSyncTriggers } from '@/sync';
 import { colors, space, text, useKadensFonts } from '@/theme';
 
@@ -42,6 +43,16 @@ export default function RootLayout() {
   // en arrière-plan doit partir au retour, même si plus rien n'est affiché.
   // Montés une seule fois, et retenus tant que la session n'est pas ouverte.
   useSyncTriggers(readyForApp);
+
+  // Les notifications de repos (KL-31) : gestionnaire global, canaux Android, et
+  // purge de ce qui resterait programmé. Ici et pas dans l'écran de séance,
+  // parce que le gestionnaire vaut pour l'app entière et qu'une notification
+  // orpheline doit être balayée au lancement, pas à la prochaine ouverture d'une
+  // séance. Sans condition de session : une notification déjà programmée survit
+  // à une déconnexion, elle doit tomber quand même.
+  useEffect(() => {
+    void initRestNotifications();
+  }, []);
 
   useEffect(() => {
     // On masque aussi en cas d'erreur : une police manquante dégrade

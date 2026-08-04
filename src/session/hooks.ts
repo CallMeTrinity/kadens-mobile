@@ -16,18 +16,26 @@ import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
 import { useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
-import { localDate, type ScheduledWorkoutRow } from '@/db';
+import {
+  DEFAULT_PREFERENCES,
+  localDate,
+  type ExerciseHistoryRow,
+  type PreferenceRow,
+  type ScheduledWorkoutRow,
+} from '@/db';
 
 import { dayWindow, type DayCell } from './days';
 import { searchExercises, type ExerciseOption } from './library';
-import { buildProgram, type SessionProgram } from './program';
+import { buildProgram, exerciseIdsOf, type SessionProgram } from './program';
 import {
   dayCountsQuery,
+  exerciseHistoryQuery,
   exerciseLibraryQuery,
   loggedExercisesQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
   pendingMutationsQuery,
+  preferencesQuery,
   prescribedSnapshotQuery,
   runningWorkoutQuery,
   toDayWorkout,
@@ -128,6 +136,27 @@ export function useSessionProgram(uuid: string): SessionProgram {
 }
 
 /**
+ * La dernière performance et le record des exercices du déroulé (KL-32).
+ *
+ * Indexés par **identifiant d'exercice**, pas par clé de déroulé : deux lignes du
+ * programme peuvent travailler le même exercice, elles lisent alors le même
+ * point, et l'index par exercice est aussi celui de la table.
+ *
+ * La requête ne se remonte que quand l'ensemble des exercices change — pas à
+ * chaque série cochée, alors que le déroulé, lui, est reconstruit à chaque
+ * écriture. C'est ce que la clé de dépendance garantit : `exerciseIdsOf` rend une
+ * liste triée et dédupliquée, donc une chaîne stable tant qu'on travaille les
+ * mêmes exercices.
+ */
+export function useSessionHistory(program: SessionProgram): Map<number, ExerciseHistoryRow> {
+  const ids = useMemo(() => exerciseIdsOf(program), [program]);
+  const key = ids.join(',');
+  const { data } = useLiveQuery(exerciseHistoryQuery(ids), [key]);
+
+  return useMemo(() => new Map(data.map((row) => [row.exerciseId, row])), [data]);
+}
+
+/**
  * La bibliothèque locale filtrée par ce qui est tapé (KL-30).
  *
  * Le hook n'est monté que quand le sélecteur d'exercice est ouvert : la requête
@@ -139,6 +168,23 @@ export function useExerciseLibrary(term: string): ExerciseOption[] {
   const { data } = useLiveQuery(exerciseLibraryQuery());
 
   return useMemo(() => searchExercises(data, term), [data, term]);
+}
+
+/**
+ * Les réglages de l'appareil, en lecture vive (KL-31).
+ *
+ * Ils sortent toujours complets : la table n'a pas de ligne tant que rien n'a été
+ * réglé, et rendre `null` obligerait chaque appelant à connaître les valeurs par
+ * défaut — donc à les recopier, donc à diverger le jour où l'une change.
+ */
+export function usePreferences(): Omit<PreferenceRow, 'id'> {
+  const { data } = useLiveQuery(preferencesQuery());
+  const row = data[0];
+
+  return useMemo(
+    () => (row ? { restSeconds: row.restSeconds, vibrate: row.vibrate } : DEFAULT_PREFERENCES),
+    [row],
+  );
 }
 
 /** La bande de jours, chacun sachant s'il porte des séances. */

@@ -413,6 +413,44 @@ export function allExercises(program: SessionProgram): SessionExercise[] {
 }
 
 /**
+ * L'exercice de **bibliothèque** que cette ligne travaille vraiment, ou `null`
+ * quand plus rien ne le désigne (exercice sorti de la bibliothèque des deux
+ * côtés, exercice ajouté sans référence).
+ *
+ * Le réalisé prime sur le prescrit, exactement comme le nom affiché : un exercice
+ * remplacé en séance (KL-30) se lit contre l'historique de **ce qu'on fait**, pas
+ * de ce qui était prévu. C'est ce qui décide quelle dernière performance et quel
+ * record s'affichent sous l'exercice (KL-32).
+ */
+export function exerciseIdOf(exercise: SessionExercise): number | null {
+  return exercise.logged?.exerciseId ?? exercise.prescribed?.exerciseId ?? null;
+}
+
+/**
+ * Les exercices de bibliothèque travaillés dans ce déroulé, dédupliqués.
+ *
+ * **Triés**, et c'est le point : cette liste sert de clé de dépendance à la
+ * lecture d'historique (`useSessionHistory`). Rendue dans l'ordre d'apparition,
+ * elle changerait à chaque exercice ajouté ou retiré alors que l'ensemble
+ * interrogé est le même, et la requête se remonterait pour rien. Dédupliquée
+ * parce que deux lignes du programme peuvent travailler le même exercice — un
+ * bloc en deux temps — et qu'elles lisent alors le même point.
+ */
+export function exerciseIdsOf(program: SessionProgram): number[] {
+  const ids = new Set<number>();
+
+  for (const exercise of allExercises(program)) {
+    const id = exerciseIdOf(exercise);
+
+    if (id !== null) {
+      ids.add(id);
+    }
+  }
+
+  return [...ids].sort((a, b) => a - b);
+}
+
+/**
  * Retrouve un exercice du déroulé par sa clé (KL-30).
  *
  * Même raison que `findSetLine` : une feuille ouverte retient une **clé**, jamais

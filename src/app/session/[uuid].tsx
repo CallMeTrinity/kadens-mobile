@@ -17,36 +17,48 @@ import {
 import {
   addExercise,
   addSet,
+  adjustRest,
   beginWorkout,
   blockRoleLabel,
   canReplaceExercise,
   checkSet,
+  dayOffset,
   deleteSet,
+  exerciseIdOf,
   findExercise,
   findSetLine,
   longDate,
   removeExercise,
   replaceExercise,
+  REST_STEP,
   setCardioDone,
   setDeviates,
   setExerciseState,
   setTypeLabel,
   setTypeLetter,
+  shortDate,
+  startRestAfterSet,
+  stopRest,
   uncheckSet,
   updateSet,
   useExerciseLibrary,
+  useKeepScreenAwake,
+  useRestTimer,
+  useSessionHistory,
   useSessionProgram,
+  useToday,
   useWorkout,
   useWorkoutPendingSync,
   type ExerciseRef,
   type LoggedSetValues,
+  type RestState,
   type SessionBlock,
   type SessionExercise,
   type SessionGroup,
   type SessionSetLine,
 } from '@/session';
 import { colors, layout, space, text } from '@/theme';
-import type { SetType } from '@/db';
+import type { ExerciseHistoryRow, PerformanceBest, PerformanceSession, SetType } from '@/db';
 
 /**
  * Écran « Séance en cours » (KL-29, déviations en KL-30) — l'écran pour lequel
@@ -81,11 +93,30 @@ import type { SetType } from '@/db';
  * « la série 3 se fera à 82,5 kg ». On coche aux valeurs prescrites, puis on
  * corrige.
  *
+ * ## Le repos et la veille (KL-31)
+ *
+ * Cocher une série **démarre le repos** : c'est le geste qui marque la fin de la
+ * série, il n'y a rien de plus à demander. Le décompte vit dans `@/session`, pas
+ * ici — il doit survivre à la feuille d'ajustement qu'on ouvre par-dessus, et à
+ * l'écran qu'on quitte pour regarder demain. L'écran n'en peint que la barre, en
+ * bas, au pouce.
+ *
+ * L'écran reste **allumé tant que la séance est en cours**, et seulement dans ce
+ * cas : relire une séance close n'a pas à vider la batterie.
+ *
+ * ## L'historique, sous le nom de l'exercice (KL-32)
+ *
+ * « La dernière fois, j'avais fait quoi ? » et « c'est quoi mon record ? » se
+ * posent **avant** de charger la barre, pas après la séance : les deux lignes sont
+ * donc placées entre le nom de l'exercice et ses séries, au moment où elles
+ * servent. Elles sont lues en local (`useSessionHistory`), donc disponibles hors
+ * réseau, et rien ne s'affiche quand il n'y a rien à dire — pas de « — », pas de
+ * cadre vide.
+ *
  * ## Ce que l'écran ne fait pas, et à quel ticket ça revient
  *
- * Le timer de repos et la veille écran : **KL-31**. La dernière perf et le record
- * sous chaque exercice : **KL-32**. Clôturer : **KL-33**. Rien de tout ça n'est
- * esquissé — une demi-implémentation serait à défaire.
+ * Clôturer : **KL-33**. Rien n'en est esquissé — une demi-implémentation serait à
+ * défaire.
  *
  * ## Pourquoi tout tient dans un seul fichier
  *
@@ -101,6 +132,11 @@ export default function SessionScreen() {
   const workout = useWorkout(uuid);
   const program = useSessionProgram(uuid);
   const pendingSync = useWorkoutPendingSync(uuid);
+  const history = useSessionHistory(program);
+  // Le repère des dates d'historique : le vrai jour, pas celui de la séance
+  // affichée. Relire une séance d'il y a trois jours ne doit pas faire dire
+  // « aujourd'hui » à une performance qui date d'il y a trois jours.
+  const today = useToday();
 
   // Les trois feuilles retiennent une **clé**, jamais l'objet : chaque écriture
   // republie le déroulé, et un exercice figé dans un état de composant décrirait
@@ -108,18 +144,32 @@ export default function SessionScreen() {
   const [openSet, setOpenSet] = useState<string | null>(null);
   const [openExercise, setOpenExercise] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
+  // Mesurée, pas devinée : c'est ce qui dégage le bas de la page (voir plus bas).
+  const [restHeight, setRestHeight] = useState(0);
 
   const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
+  const rest = useRestTimer();
+
+  // L'écran ne s'éteint pas pendant une séance en cours (KL-31). Conditionné, et
+  // non `useKeepAwake()` : cet écran se monte aussi pour relire une séance close.
+  useKeepScreenAwake(running);
 
   // On ne consigne que dans une séance ouverte. Une séance close est close
   // (§2.3 point 5) ; une séance jamais commencée n'a pas d'heure de début, et un
   // réalisé sans borne de départ serait une séance qu'on n'a pas faite.
+  //
+  // Cocher **démarre le repos**, décocher l'arrête : la série qu'on annule n'a
+  // pas eu lieu, le repos qui la suivait non plus.
   const onCheck = useCallback(
     (exercise: SessionExercise, line: SessionSetLine) => {
       if (line.actionable) {
-        checkSet(uuid, exercise, line);
+        if (checkSet(uuid, exercise, line)) {
+          startRestAfterSet(exercise);
+        }
       } else if (line.undoable) {
-        uncheckSet(uuid, exercise, line);
+        if (uncheckSet(uuid, exercise, line)) {
+          stopRest();
+        }
       }
     },
     [uuid],
@@ -131,13 +181,16 @@ export default function SessionScreen() {
   );
 
   // Ajouter une série et en saisir les valeurs sont **un seul geste** : la série
-  // naît pré-remplie par la précédente, sa feuille s'ouvre dans la foulée.
+  // naît pré-remplie par la précédente, sa feuille s'ouvre dans la foulée. Le
+  // repos part quand même : une série ajoutée est une série faite, et corriger
+  // ses valeurs par-dessus n'est pas une raison de repartir sans décompte.
   const onAddSet = useCallback(
     (exercise: SessionExercise) => {
       const created = addSet(uuid, exercise);
 
       if (created) {
         setOpenSet(created);
+        startRestAfterSet(exercise);
       }
     },
     [uuid],
@@ -214,7 +267,19 @@ export default function SessionScreen() {
         {program.total > 0 ? <Progress done={program.done} total={program.total} /> : null}
       </View>
 
-      <ScrollView contentContainerStyle={styles.page}>
+      {/*
+        Le dégagement sous la page est la hauteur **mesurée** de la barre de
+        repos, pas une valeur devinée : elle change avec la longueur du nom
+        d'exercice et avec la taille de police du système, et un nombre écrit à la
+        main finirait par masquer la dernière série cochée — c'est-à-dire
+        exactement celle qu'on vient de faire.
+      */}
+      <ScrollView
+        contentContainerStyle={[
+          styles.page,
+          rest !== null && { paddingBottom: restHeight + space[13] },
+        ]}
+      >
         {!running && !closed ? (
           <View style={styles.notice}>
             <Text style={styles.body}>
@@ -229,6 +294,8 @@ export default function SessionScreen() {
             key={block.key}
             block={block}
             editable={running}
+            history={history}
+            today={today}
             onCheck={onCheck}
             onCardio={onCardio}
             onAdjustSet={setOpenSet}
@@ -252,6 +319,8 @@ export default function SessionScreen() {
                 key={exercise.key}
                 exercise={exercise}
                 editable={running}
+                history={history}
+                today={today}
                 onCheck={onCheck}
                 onCardio={onCardio}
                 onAdjustSet={setOpenSet}
@@ -282,6 +351,8 @@ export default function SessionScreen() {
           />
         ) : null}
       </ScrollView>
+
+      {rest ? <RestBar rest={rest} onHeight={setRestHeight} /> : null}
 
       {sheetSet ? (
         <SetSheet
@@ -347,9 +418,91 @@ function Progress({ done, total }: { done: number; total: number }) {
   );
 }
 
-/** Ce que chaque section d'exercice sait faire remonter à l'écran. */
+/**
+ * La barre de repos (KL-31).
+ *
+ * **En bas de l'écran, et c'est le point** : c'est là que le pouce arrive quand
+ * on tient le téléphone d'une main, et le ticket suivant (KL-39) en fait une
+ * règle. Elle ne défile pas, elle recouvre — d'où le rembourrage supplémentaire
+ * de la page tant qu'elle est là, sinon elle masquerait la dernière ligne de la
+ * séance, c'est-à-dire précisément la série qu'on vient de cocher.
+ *
+ * Trois choses à portée : ajouter du repos, en retirer, passer. « Passer » ferme
+ * la barre sans rien consigner — le repos n'est pas du réalisé, l'écourter ne se
+ * raconte nulle part.
+ *
+ * **Le décompte n'est pas une zone vive pour TalkBack.** Un nombre qui change
+ * chaque seconde et s'annonce à chaque fois rendrait l'écran inutilisable au
+ * lecteur d'écran ; la barre s'annonce une fois, à son apparition, et se relit à
+ * la demande.
+ */
+function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: number) => void }) {
+  const over = rest.remaining === 0;
+  const ratio = rest.totalSeconds > 0 ? rest.remaining / rest.totalSeconds : 0;
+
+  return (
+    <View onLayout={(event) => onHeight(event.nativeEvent.layout.height)} style={styles.rest}>
+      {/* La jauge se vide : ce qui reste de la barre est ce qui reste du repos. */}
+      <View style={styles.restTrack}>
+        <View style={[styles.restFill, { width: `${Math.round(ratio * 100)}%` }]} />
+      </View>
+
+      <View style={styles.restBody}>
+        <View style={styles.restLabels}>
+          <Text style={styles.restTitle}>{over ? 'Repos terminé' : 'Repos'}</Text>
+          {rest.exerciseName ? (
+            <Text style={styles.caption} numberOfLines={1}>
+              {rest.exerciseName}
+            </Text>
+          ) : null}
+        </View>
+
+        <Text
+          accessibilityLabel={
+            over ? 'Repos terminé' : `Repos, ${rest.remaining} secondes restantes`
+          }
+          style={[styles.restClock, over && styles.restClockOver]}
+        >
+          {duration(rest.remaining)}
+        </Text>
+      </View>
+
+      <View style={styles.restActions}>
+        <Button
+          label={`− ${REST_STEP} s`}
+          variant="secondary"
+          accessibilityLabel={`Retirer ${REST_STEP} secondes de repos`}
+          onPress={() => adjustRest(-REST_STEP)}
+        />
+        <Button
+          label={`+ ${REST_STEP} s`}
+          variant="secondary"
+          accessibilityLabel={`Ajouter ${REST_STEP} secondes de repos`}
+          onPress={() => adjustRest(REST_STEP)}
+        />
+        <View style={styles.spacer} />
+        <Button
+          label={over ? 'Fermer' : 'Passer'}
+          variant="ghost"
+          accessibilityHint="Le repos ne se consigne pas, l’écourter ne change rien à la séance"
+          onPress={stopRest}
+        />
+      </View>
+    </View>
+  );
+}
+
+/** Ce que chaque section d'exercice reçoit, et ce qu'elle sait faire remonter. */
 type SectionHandlers = {
   editable: boolean;
+  /**
+   * La dernière performance et le record, indexés par identifiant d'exercice
+   * (KL-32). Le déroulé entier en reçoit **une seule** copie : une lecture par
+   * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
+   */
+  history: Map<number, ExerciseHistoryRow>;
+  /** Le jour réel, repère des dates d'historique. */
+  today: string;
   onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
   onCardio: (exercise: SessionExercise) => void;
   onAdjustSet: (setUuid: string) => void;
@@ -413,6 +566,8 @@ function GroupSection({ group, ...handlers }: { group: SessionGroup } & SectionH
 function ExerciseSection({
   exercise,
   editable,
+  history,
+  today,
   onCheck,
   onCardio,
   onAdjustSet,
@@ -420,6 +575,8 @@ function ExerciseSection({
   onOpenExercise,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const { prescribed, lines } = exercise;
+  const exerciseId = exerciseIdOf(exercise);
+  const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
   // « Ajouter une série » n'a de sens qu'une fois le prescrit épuisé : tant qu'une
   // ligne de travail attend, cocher la suivante **est** le geste, et proposer les
   // deux ferait deux chemins pour un même fait.
@@ -469,6 +626,10 @@ function ExerciseSection({
       {/* La consigne du programme, adressée à celui qui exécute. */}
       {prescribed?.notes ? <Text style={styles.notes}>{prescribed.notes}</Text> : null}
 
+      {/* Ce qu'on cherche avant de charger la barre : la dernière fois, et le
+          record. Au-dessus des séries, parce que c'est là qu'on décide. */}
+      {past ? <ExerciseHistory entry={past} today={today} /> : null}
+
       {lines === null ? (
         <CardioRow
           exercise={exercise}
@@ -501,6 +662,133 @@ function ExerciseSection({
       {exercise.logged?.notes ? <Text style={styles.logNotes}>{exercise.logged.notes}</Text> : null}
     </View>
   );
+}
+
+/**
+ * La dernière performance et le record d'un exercice (KL-32).
+ *
+ * **Deux lignes au plus, et souvent une seule.** Un exercice jamais fait n'a pas
+ * d'entrée du tout et ce composant n'est pas monté ; un exercice fait au poids du
+ * corps a une dernière fois mais pas de record (il n'y a pas de record sans
+ * kilos, `docs/api-mobile.md §6.6`), et la ligne manquante ne laisse pas de trou :
+ * elle n'est pas rendue. C'est la troisième case du ticket — pas de case vide.
+ *
+ * **Ça ne ressemble pas à une série**, volontairement : ni filet, ni fond, ni
+ * case. Une ligne d'historique posée sous les séries prescrites avec la même peau
+ * s'appuierait du pouce par erreur, à bout de bras, entre deux séries.
+ *
+ * Le **type** de la série record (à l'échec, drop set) n'est pas affiché : ce sont
+ * deux lignes qu'on lit en levant les yeux, et la charge est ce qui s'y compare.
+ * La nuance vit sur la fiche d'exercice, quand KL-50 la posera.
+ */
+function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: string }) {
+  const { last, best } = entry;
+
+  // Une ligne d'historique sans dernière performance ni record ne devrait pas
+  // exister — le serveur n'en descend pas — mais la table est un cache, et un
+  // cadre vide serait exactement ce que le ticket refuse.
+  if (last === null && best === null) {
+    return null;
+  }
+
+  return (
+    <View style={styles.history}>
+      {last ? (
+        <HistoryRow
+          label="Dernière fois"
+          value={performanceSummary(last)}
+          date={performanceDate(last.date, today)}
+        />
+      ) : null}
+      {best ? (
+        <HistoryRow
+          label="Record"
+          value={bestSummary(best)}
+          date={performanceDate(best.date, today)}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/**
+ * Une ligne d'historique : ce que c'est, ce que c'était, quand.
+ *
+ * Le groupe s'annonce **d'un bloc** à TalkBack (`accessible`) : trois arrêts pour
+ * lire « Record », puis « 8 reps, 85 kg », puis « 12 juillet » feraient trois fois
+ * plus de gestes pour la même phrase.
+ */
+function HistoryRow({ label, value, date }: { label: string; value: string; date: string }) {
+  return (
+    <View accessible accessibilityLabel={`${label}, ${date}, ${value}`} style={styles.historyRow}>
+      <Text style={styles.historyLabel}>{label}</Text>
+      <Text style={styles.historyValue} numberOfLines={1}>
+        {value}
+      </Text>
+      <View style={styles.spacer} />
+      <Text style={styles.historyDate}>{date}</Text>
+    </View>
+  );
+}
+
+/**
+ * Ce qui a été fait la dernière fois, en **une ligne**.
+ *
+ * Les séries arrivent déjà condensées par le serveur (les consécutives identiques
+ * fusionnent, `count`), donc trois séries de 8 à 80 kg tiennent en un segment. La
+ * charge se factorise quand elle est la même partout — le cas courant — et rejoint
+ * la fin de la ligne : « 2 × 8 reps, 1 × 6 reps · 80 kg » plutôt que la répéter
+ * deux fois. Quand elle varie, chaque segment porte la sienne.
+ *
+ * L'échauffement n'y est pas : le serveur ne compte que les séries de travail
+ * (`PerformanceHistory`), ici comme dans le tonnage et les records.
+ */
+function performanceSummary(session: PerformanceSession): string {
+  if (session.sets.length === 0) {
+    // Ne devrait pas arriver — une performance sans série n'en est pas une — mais
+    // le nombre de séries de travail est toujours là et se lit tout seul.
+    return `${session.workingSets} série${session.workingSets > 1 ? 's' : ''}`;
+  }
+
+  const loads = new Set(session.sets.map((group) => group.weightKg));
+  const shared = loads.size === 1 ? session.sets[0].weightKg : null;
+  const segments = session.sets.map((group) => {
+    const effort = setEffort(group.reps, group.durationSeconds) ?? 'série';
+    const repeated = group.count > 1 ? `${group.count} × ${effort}` : effort;
+
+    return shared === null && group.weightKg !== null
+      ? `${repeated} · ${weight(group.weightKg)}`
+      : repeated;
+  });
+  const body = segments.join(', ');
+
+  return shared !== null ? `${body} · ${weight(shared)}` : body;
+}
+
+/** Le record : la série la plus lourde. Il a toujours des kilos, par définition. */
+function bestSummary(best: PerformanceBest): string {
+  const effort = setEffort(best.reps, best.durationSeconds);
+
+  return effort === null ? weight(best.weightKg) : `${effort} · ${weight(best.weightKg)}`;
+}
+
+/**
+ * La date d'un point d'historique, relative aux deux jours qui comptent.
+ *
+ * « Aujourd'hui » lève l'ambiguïté du seul cas trompeur : une séance poussée puis
+ * redescendue dans la journée fait de « la dernière fois » ce qu'on vient de
+ * faire. Au-delà d'hier, le quantième est plus parlant qu'un décompte de jours —
+ * on se souvient d'un jeudi, pas d'un « il y a 9 jours ».
+ */
+function performanceDate(date: string, today: string): string {
+  switch (dayOffset(date, today)) {
+    case 0:
+      return "aujourd'hui";
+    case -1:
+      return 'hier';
+    default:
+      return shortDate(date);
+  }
 }
 
 /**
@@ -1109,6 +1397,18 @@ const styles = StyleSheet.create({
   rank: { ...text.eyebrow, color: colors.text },
   marks: { flexDirection: 'row', flexWrap: 'wrap', gap: space[4], marginTop: space[2] },
 
+  // L'historique (KL-32) : deux lignes de texte, sans peau propre. Un fond ou un
+  // filet en ferait une ligne de série de plus, à un endroit où on appuie.
+  history: { gap: space[1], marginTop: space[4] },
+  // `center` et non `baseline`, comme partout ailleurs dans cet écran : la ligne
+  // porte un séparateur souple, et une vue sans contenu n'a pas de ligne de base.
+  historyRow: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  historyLabel: { ...text.eyebrow, color: colors.textFaint },
+  // En mono comme les charges de la séance : c'est la même grandeur, lue au même
+  // moment, et elle doit se comparer d'un coup d'œil à la ligne d'en dessous.
+  historyValue: { ...text.numeric, color: colors.textSecondary, flexShrink: 1 },
+  historyDate: { ...text.caption, color: colors.textFaint },
+
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1165,6 +1465,41 @@ const styles = StyleSheet.create({
   },
   boxChecked: { borderColor: colors.text, backgroundColor: colors.text },
   boxIdle: { borderColor: colors.borderMuted },
+
+  // La barre de repos : posée sur le bas de l'écran, filet en tête, fond appuyé.
+  // Elle ne flotte pas (aucune ombre dans cette identité), elle s'ancre.
+  rest: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: colors.surfaceRaised,
+    borderTopWidth: layout.hairline,
+    borderTopColor: colors.borderStrong,
+  },
+  restTrack: { height: 4, backgroundColor: colors.track },
+  restFill: { height: 4, backgroundColor: colors.text },
+  restBody: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[5],
+    paddingHorizontal: space[8],
+    paddingTop: space[5],
+  },
+  restLabels: { flex: 1, gap: space[1] },
+  restTitle: { ...text.sectionTitle, color: colors.text },
+  // Le chrono en grand, tabulaire : il se lit posé sur le banc, à un mètre.
+  restClock: { ...text.kpi, color: colors.text },
+  // Le rouge à l'échéance seulement, et c'est bien son emploi : ce n'est pas une
+  // catégorie qu'on colore, c'est l'appel à reprendre la série (§5 règle 2).
+  restClockOver: { color: colors.primary },
+  restActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[4],
+    paddingHorizontal: space[8],
+    paddingBottom: space[6],
+  },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   option: {
