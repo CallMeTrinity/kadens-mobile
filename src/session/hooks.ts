@@ -19,13 +19,21 @@ import { AppState, type AppStateStatus } from 'react-native';
 import {
   DEFAULT_PREFERENCES,
   localDate,
+  type ActivityType,
   type ExerciseHistoryRow,
   type PreferenceRow,
   type ScheduledWorkoutRow,
+  type TargetArea,
 } from '@/db';
 
 import { dayWindow, type DayCell } from './days';
-import { searchExercises, type ExerciseOption } from './library';
+import {
+  filterLibrary,
+  libraryActivities,
+  libraryAreas,
+  searchExercises,
+  type ExerciseOption,
+} from './library';
 import { buildProgram, exerciseIdsOf, type SessionProgram } from './program';
 import { elapsedSeconds } from './summary';
 import {
@@ -157,18 +165,50 @@ export function useSessionHistory(program: SessionProgram): Map<number, Exercise
   return useMemo(() => new Map(data.map((row) => [row.exerciseId, row])), [data]);
 }
 
+/** Ce que le sélecteur d'exercice affiche : sa liste, et les facettes qui la cadrent. */
+export interface ExerciseLibraryView {
+  results: ExerciseOption[];
+  /** Les activités présentes dans la bibliothèque entière. */
+  activities: ActivityType[];
+  /** Les zones présentes **dans l'activité retenue** — voir plus bas. */
+  areas: TargetArea[];
+}
+
 /**
- * La bibliothèque locale filtrée par ce qui est tapé (KL-30).
+ * La bibliothèque locale, filtrée par ce qui est tapé et par les facettes
+ * (KL-30, facettes en KL-34).
  *
  * Le hook n'est monté que quand le sélecteur d'exercice est ouvert : la requête
  * remonte toute la table, ce qui est bon marché mais inutile le reste du temps.
  * Le filtrage est pur et mémoïsé (`library.ts`) — il se rejoue à la frappe, pas à
  * chaque rendu de l'écran de séance.
+ *
+ * **Les deux facettes ne se cadrent pas sur la même liste, et c'est le point.**
+ * Les activités viennent de la bibliothèque entière : elles sont le premier
+ * choix, les restreindre n'aurait aucun sens. Les zones viennent de la
+ * bibliothèque **réduite à l'activité retenue** — choisir « Course à pied » doit
+ * faire disparaître « Pectoraux » — mais **pas** de la zone déjà choisie, sinon
+ * sa propre rangée se réduirait à elle-même et il n'y aurait plus de quoi en
+ * changer sans tout désélectionner.
+ *
+ * Deux primitives nullables plutôt qu'un objet de filtres : un objet reconstruit
+ * à chaque rendu par l'appelant relancerait les mémos à chaque frappe, et il n'y
+ * a aucun moyen de le lui interdire depuis ici.
  */
-export function useExerciseLibrary(term: string): ExerciseOption[] {
+export function useExerciseLibrary(
+  term: string,
+  activity: ActivityType | null = null,
+  area: TargetArea | null = null,
+): ExerciseLibraryView {
   const { data } = useLiveQuery(exerciseLibraryQuery());
 
-  return useMemo(() => searchExercises(data, term), [data, term]);
+  const activities = useMemo(() => libraryActivities(data), [data]);
+  const inActivity = useMemo(() => filterLibrary(data, activity, null), [data, activity]);
+  const areas = useMemo(() => libraryAreas(inActivity), [inActivity]);
+  const scoped = useMemo(() => filterLibrary(inActivity, null, area), [inActivity, area]);
+  const results = useMemo(() => searchExercises(scoped, term), [scoped, term]);
+
+  return useMemo(() => ({ results, activities, areas }), [results, activities, areas]);
 }
 
 /**

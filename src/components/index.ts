@@ -4,7 +4,7 @@
  * Un écran importe **d'ici** (`@/components`), jamais d'un fichier précis : le
  * jour où un composant se décompose, l'import ne bouge pas.
  *
- * Ce que ces huit composants ont en commun, et qui n'est pas négociable :
+ * Ce que ces neuf composants ont en commun, et qui n'est pas négociable :
  * aucune couleur ni police en dur — tout vient de `@/theme` (règle 1) — et
  * toute cible tactile fait au moins `layout.touchTarget` points.
  */
@@ -14,6 +14,7 @@ export { Card, type CardProps } from './Card';
 export { Chip, type ChipProps, type ChipRank, type ChipTone } from './Chip';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { Field, type FieldProps } from './Field';
+export { FilterChip, type FilterChipProps } from './FilterChip';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
 export { Sheet, type SheetProps } from './Sheet';

@@ -250,19 +250,31 @@ export function exerciseHistoryQuery(exerciseIds: number[]) {
 }
 
 /**
- * La bibliothèque locale, pour remplacer ou ajouter un exercice (KL-30).
+ * La bibliothèque locale, pour remplacer ou ajouter un exercice (KL-30, facettes
+ * en KL-34).
  *
  * Elle part **entière**, triée par nom, et se filtre en mémoire (`library.ts`) :
  * `LIKE` ne replierait pas les accents, et la table tient en quelques centaines de
- * lignes. Trois colonnes seulement — la description, les zones et le média ne
- * servent pas à choisir dans une liste au pouce.
+ * lignes.
+ *
+ * `activity` et `target_areas` sont montées depuis KL-34, qui en fait des
+ * facettes : elles ne servent pas à *lire* une ligne de la liste mais à la
+ * **retenir ou l'écarter**, et un filtre calculé sur une colonne qu'on n'a pas
+ * remontée n'existe pas. La description et le média, eux, restent dehors — on ne
+ * les lit ni ne les filtre dans une liste au pouce.
  *
  * Écoute `exercise` : un pull qui apporte un exercice neuf le rend choisissable
  * sans rouvrir la feuille.
  */
 export function exerciseLibraryQuery() {
   return db
-    .select({ id: exercise.id, name: exercise.name, global: exercise.global })
+    .select({
+      id: exercise.id,
+      name: exercise.name,
+      global: exercise.global,
+      activity: exercise.activity,
+      targetAreas: exercise.targetAreas,
+    })
     .from(exercise)
     .orderBy(asc(exercise.name));
 }

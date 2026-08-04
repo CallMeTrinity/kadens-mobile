@@ -11,7 +11,7 @@
  * prévue).
  */
 
-import type { BlockRole, SetType } from '@/db';
+import type { ActivityType, BlockRole, SetType, TargetArea } from '@/db';
 
 /** « Échauffement », « À l'échec »… `null` pour une série ordinaire, qui n'a rien à signaler. */
 export function setTypeLabel(type: SetType): string | null {
@@ -71,3 +71,53 @@ export function blockRoleLabel(role: BlockRole | null): string {
       return 'Bloc';
   }
 }
+
+/**
+ * « Salle de sport », « Course à pied »… (KL-34)
+ *
+ * Recopié de `ActivityType::getLabel()`, comme le reste de ce fichier. Le
+ * libellé complet et non un raccourci : c'est celui que le web affiche, et une
+ * facette qui dirait « Muscu » là où le site dit « Salle de sport » ferait
+ * douter qu'il s'agit du même filtre.
+ */
+export function activityLabel(activity: ActivityType): string {
+  switch (activity) {
+    case 'gym':
+      return 'Salle de sport';
+    case 'running':
+      return 'Course à pied';
+    case 'swimming':
+      return 'Natation';
+    case 'cycling':
+      return 'Cyclisme';
+    case 'mobility':
+      return 'Mobilité';
+    default:
+      return 'Autre';
+  }
+}
+
+/** « Pectoraux », « Ischio-jambiers »… Recopié de `TargetArea::getLabel()` (KL-34). */
+export function targetAreaLabel(area: TargetArea): string {
+  return AREA_LABELS[area] ?? area;
+}
+
+const AREA_LABELS: Record<TargetArea, string> = {
+  chest: 'Pectoraux',
+  back: 'Dos',
+  lower_back: 'Lombaires',
+  traps: 'Trapèzes',
+  shoulders: 'Épaules',
+  biceps: 'Biceps',
+  triceps: 'Triceps',
+  forearms: 'Avant-bras',
+  abs: 'Abdominaux',
+  obliques: 'Obliques',
+  glutes: 'Fessiers',
+  quadriceps: 'Quadriceps',
+  hamstrings: 'Ischio-jambiers',
+  adductors: 'Adducteurs',
+  calves: 'Mollets',
+  shins: 'Tibias',
+  full_body: 'Corps entier',
+};

@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import {
@@ -8,13 +8,16 @@ import {
   duration,
   EmptyState,
   Field,
+  FilterChip,
   Header,
   NumberStepper,
   setEffort,
   Sheet,
   weight,
+  type ChipRank,
 } from '@/components';
 import {
+  activityLabel,
   addExercise,
   addSet,
   adjustRest,
@@ -37,6 +40,7 @@ import {
   setTypeLabel,
   setTypeLetter,
   shortDate,
+  targetAreaLabel,
   startRestAfterSet,
   stopRest,
   uncheckSet,
@@ -58,7 +62,14 @@ import {
   type SessionSetLine,
 } from '@/session';
 import { colors, layout, space, text } from '@/theme';
-import type { ExerciseHistoryRow, PerformanceBest, PerformanceSession, SetType } from '@/db';
+import type {
+  ActivityType,
+  ExerciseHistoryRow,
+  PerformanceBest,
+  PerformanceSession,
+  SetType,
+  TargetArea,
+} from '@/db';
 
 /**
  * Écran « Séance en cours » (KL-29, déviations en KL-30) — l'écran pour lequel
@@ -313,12 +324,17 @@ export default function SessionScreen() {
 
         {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
             ajoute, et ce que le pull peut en descendre. Du réalisé invisible
-            serait la pire trahison de « rien n'est jamais perdu ». */}
+            serait la pire trahison de « rien n'est jamais perdu ».
+
+            Dans une séance vierge (KL-34), il n'y a **que** ça — il n'existe
+            aucun programme dont on puisse être « hors ». L'en-tête dit donc
+            simplement ce que c'est, sinon la séance entière se lirait comme une
+            longue déviation. */}
         {program.extras.length > 0 ? (
           <View style={styles.block}>
             <View style={styles.blockHead}>
               <Text accessibilityRole="header" style={styles.blockRole}>
-                Hors programme
+                {workout.freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme'}
               </Text>
             </View>
             {program.extras.map((exercise) => (
@@ -1254,12 +1270,28 @@ function ExerciseSheet({
 }
 
 /**
- * Le sélecteur d'exercice de la bibliothèque locale (KL-30).
+ * Le sélecteur d'exercice de la bibliothèque locale (KL-30, facettes en KL-34).
  *
  * **Local, comme tout le reste** : la bibliothèque est descendue par le bootstrap,
  * choisir un exercice ne demande pas de réseau. La recherche replie les accents
  * (`session/library.ts`) — « developpe » doit trouver « Développé couché », et le
  * `LIKE` de SQLite ne le ferait pas.
+ *
+ * ## Deux rangées de facettes, et pourquoi elles défilent
+ *
+ * KL-34 les demande parce que la séance vierge pose une autre question que la
+ * séance programmée : là on cherche un exercice précis, ici on cherche **quoi
+ * faire**. Le champ répond à la première, les facettes à la seconde.
+ *
+ * Elles défilent horizontalement plutôt que de passer à la ligne. Dix-sept zones
+ * enroulées, au plancher tactile de 44 points, mangeraient quatre lignes de
+ * feuille — donc la liste de résultats, qui est ce qu'on est venu voir. Le prix
+ * est connu : ce qui dépasse à droite ne se voit pas. Il est payable parce que
+ * les rangées sont **ordonnées** (`library.ts`) et **réduites à ce que la
+ * bibliothèque porte vraiment**, donc courtes en pratique.
+ *
+ * La rangée des zones ne se rend qu'à partir de deux : une facette qui n'offre
+ * qu'un choix ne filtre rien, elle occupe la place.
  */
 function ExercisePicker({
   title,
@@ -1271,7 +1303,21 @@ function ExercisePicker({
   onClose: () => void;
 }) {
   const [term, setTerm] = useState('');
-  const results = useExerciseLibrary(term);
+  const [activity, setActivity] = useState<ActivityType | null>(null);
+  const [area, setArea] = useState<TargetArea | null>(null);
+  const { results, activities, areas } = useExerciseLibrary(term, activity, area);
+
+  // Changer d'activité **relâche toujours la zone**. Une zone survit rarement au
+  // changement — la rangée est cadrée sur l'activité retenue (`hooks.ts`), et
+  // « Pectoraux » n'existe pas en course à pied. La garder quand elle disparaît
+  // de la rangée laisserait un filtre actif que plus rien ne permet de défaire,
+  // devant une liste vide sans raison visible. La relâcher au cas par cas
+  // demanderait de connaître les zones de l'activité *suivante*, que le rendu en
+  // cours n'a pas encore : mieux vaut une règle qu'on peut énoncer.
+  const chooseActivity = (next: ActivityType | null) => {
+    setActivity(next);
+    setArea(null);
+  };
 
   return (
     <Sheet visible onClose={onClose} title={title}>
@@ -1284,26 +1330,108 @@ function ExercisePicker({
         placeholder="Développé, squat, tirage…"
       />
 
+      {activities.length > 1 ? (
+        <FacetRow label="Activité">
+          <FilterChip
+            label="Toutes"
+            selected={activity === null}
+            accessibilityHint="Ne pas filtrer par activité"
+            onPress={() => chooseActivity(null)}
+          />
+          {activities.map((value) => (
+            <FilterChip
+              key={value}
+              label={activityLabel(value)}
+              selected={activity === value}
+              onPress={() => chooseActivity(activity === value ? null : value)}
+            />
+          ))}
+        </FacetRow>
+      ) : null}
+
+      {areas.length > 1 ? (
+        <FacetRow label="Zone">
+          <FilterChip
+            label="Toutes"
+            selected={area === null}
+            accessibilityHint="Ne pas filtrer par zone travaillée"
+            onPress={() => setArea(null)}
+          />
+          {areas.map((value) => (
+            <FilterChip
+              key={value}
+              label={targetAreaLabel(value)}
+              selected={area === value}
+              onPress={() => setArea(area === value ? null : value)}
+            />
+          ))}
+        </FacetRow>
+      ) : null}
+
       {results.length === 0 ? (
         <Text style={styles.body}>
-          Aucun exercice ne correspond. La bibliothèque du téléphone est celle du dernier bootstrap.
+          {activity !== null || area !== null
+            ? // Distinguer les deux vides : une facette trop serrée se desserre,
+              // une bibliothèque incomplète attend une synchronisation. Sans ça,
+              // on cherche la panne du mauvais côté.
+              'Aucun exercice ne correspond à ces filtres. Élargis l’activité ou la zone.'
+            : 'Aucun exercice ne correspond. La bibliothèque du téléphone est celle du dernier bootstrap.'}
         </Text>
       ) : (
         results.map((option) => (
           <Pressable
             key={option.id}
             accessibilityRole="button"
-            accessibilityLabel={option.name}
+            accessibilityLabel={`${option.name}, ${activityLabel(option.activity)}`}
             onPress={() => onPick({ id: option.id, name: option.name })}
             style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
           >
             <Text style={styles.name}>{option.name}</Text>
             <View style={styles.spacer} />
             {option.global ? null : <Chip label="Perso" />}
+            {/* L'activité est une **catégorie** : elle se code par son rang dans
+                l'échelle de gris, jamais par une teinte (règle 2). Elle se lit
+                surtout quand on parcourt la liste sans avoir rien tapé. */}
+            <Chip label={activityLabel(option.activity)} rank={ACTIVITY_RANKS[option.activity]} />
           </Pressable>
         ))
       )}
     </Sheet>
+  );
+}
+
+/**
+ * Le rang catégoriel d'une activité, transposé de `_activity.html.twig` et de
+ * `--color-activity-*` : course 1, muscu 2, natation et vélo 3, mobilité 4.
+ *
+ * « Autre » n'en a pas — le web non plus (son modificateur y est vide) : c'est
+ * l'absence de catégorie, la marquer d'un rang lui en inventerait une.
+ */
+const ACTIVITY_RANKS: Record<ActivityType, ChipRank | undefined> = {
+  running: 1,
+  gym: 2,
+  swimming: 3,
+  cycling: 3,
+  mobility: 4,
+  other: undefined,
+};
+
+/** Une rangée de facettes : son intitulé, et ses pilules qui défilent (KL-34). */
+function FacetRow({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={styles.facets}>
+      <Text style={styles.facetLabel}>{label}</Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        // Sans lui, la rangée mange le geste vertical de la feuille dès qu'elle
+        // est arrivée en bout de course.
+        overScrollMode="never"
+        contentContainerStyle={styles.facetRow}
+      >
+        {children}
+      </ScrollView>
+    </View>
   );
 }
 
@@ -1526,6 +1654,15 @@ const styles = StyleSheet.create({
   },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+
+  // Les facettes du sélecteur (KL-34). Le `gap` de la feuille sépare déjà les
+  // deux rangées : ici seulement l'intitulé et ses pilules.
+  facets: { gap: space[2] },
+  facetLabel: { ...text.eyebrow, color: colors.textFaint },
+  // Sur le `contentContainerStyle` et non sur le `ScrollView` : un `gap` posé
+  // sur le conteneur défilant lui-même ne s'applique pas à son contenu.
+  facetRow: { flexDirection: 'row', gap: space[3], paddingRight: space[8] },
+
   option: {
     flexDirection: 'row',
     alignItems: 'center',

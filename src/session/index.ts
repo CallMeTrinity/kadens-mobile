@@ -55,6 +55,16 @@
  *    conséquences : la lecture marche hors réseau, et « la dernière fois » ne
  *    devient jamais « à l'instant » — ce qui est en train d'être fait n'y entre
  *    qu'après avoir été poussé puis redescendu.
+ * 9. **Une séance vierge se garnit, elle ne se compose pas** (KL-34). Elle naît
+ *    sans prescrit (`createFreeWorkout`) et s'emplit par le seul geste qui
+ *    existe déjà, `addExercise` — le même que « ajouter un exercice hors
+ *    programme ». Il n'y a donc aucun chemin d'écriture propre à la séance
+ *    libre : tout ce qu'elle contient est du **réalisé**, exactement comme ce
+ *    qu'on ajoute à une séance programmée. C'est ce qui fait qu'elle ne crée
+ *    rien en bibliothèque côté serveur — improviser une séance n'est pas écrire
+ *    un programme. La bibliothèque, elle, gagne des **facettes** (`library.ts`) :
+ *    activité et zone se choisissent, le nom se tape, et les deux ne répondent
+ *    pas à la même question.
  */
 
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
@@ -75,6 +85,7 @@ export {
   useWorkout,
   useWorkoutPendingSync,
 } from './hooks';
+export type { ExerciseLibraryView } from './hooks';
 
 export {
   addExercise,
@@ -89,9 +100,23 @@ export {
 } from './deviations';
 export type { ExerciseRef, ExerciseState, LoggedSetValues } from './deviations';
 
-export { blockRoleLabel, countsAsWorking, setTypeLabel, setTypeLetter } from './labels';
+export {
+  activityLabel,
+  blockRoleLabel,
+  countsAsWorking,
+  setTypeLabel,
+  setTypeLetter,
+  targetAreaLabel,
+} from './labels';
 
-export { fold, searchExercises, SEARCH_LIMIT } from './library';
+export {
+  filterLibrary,
+  fold,
+  libraryActivities,
+  libraryAreas,
+  searchExercises,
+  SEARCH_LIMIT,
+} from './library';
 export type { ExerciseOption } from './library';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
