@@ -113,6 +113,27 @@ synchronise en différé avec Kadens.
   en avoir deux, sinon le téléphone et `/schedule/{id}` racontent deux histoires.
   **Corollaire : cocher est séquentiel** (première ligne non cochée de sa file,
   dernière cochée pour décocher). Détail dans `src/session/program.ts`.
+- **On dévie, on ne recompose pas — et on ne dévie que sur ce qui a été FAIT.**
+  Corriger une série, en ajouter, en supprimer, sauter, remplacer, ajouter un
+  exercice : oui (`src/session/deviations.ts`). Réordonner un bloc, créer un
+  superset, changer un tour : non, c'est le compositeur web. Et comme le prescrit
+  ne bouge jamais, il n'existe **aucun endroit** où écrire une valeur revue avant
+  la série : on coche aux valeurs prescrites, puis on corrige. Deux conséquences
+  à ne pas défaire — le **type** d'une série ne s'édite pas (il décide de la file
+  d'appariement, le changer déplacerait le rang de toutes les suivantes), et
+  **supprimer** une série est plus permissif que la décocher (supprimer resserre
+  la file, ça ne fait pas de trou).
+- **Sauter, annoter et remplacer sont des DÉCLARATIONS**, pas des états dérivés :
+  un exercice réalisé qui n'en porte aucune et n'a plus de série est nettoyé
+  (« fait, zéro série » serait faux une fois poussé), un qui en porte une survit.
+  Le remplacement est le cas piégeux — la base ne peut pas le voir seule, le
+  prescrit vivant dans un document JSON — donc l'appelant le passe à
+  `dropEmptyLoggedExercise`. Sans ça, décocher effacerait le remplacement en
+  silence.
+- **Les bornes du contrat se tiennent à l'écriture, jamais au push.** `reps`
+  0-200, charge 0-1000, durée 0-86 400, RPE 1-10 (`boundSetValues`). Une valeur
+  hors bornes ne serait refusée qu'au push, en `422`, sur un réalisé déjà
+  consigné — et la file la marquerait au bout de cinq essais.
 
 ## 4. Conventions de rangement
 
@@ -649,4 +670,57 @@ qu'il ne faut pas casser :
   cours d'utilisation. Les cibles tactiles, la densité des lignes de série et la
   lisibilité à bout de bras restent à valider à l'œil.
 
-Prochain ticket : **KL-30** (déviations en séance).
+**KL-30 livré (04/08/2026)** : les déviations en séance. Trois fichiers de plus
+dans `src/session/` — `deviations.ts` (les sept écritures du ticket), `writes.ts`
+(les gardes et briques que `log.ts` et `deviations.ts` partagent), `library.ts`
+(la recherche dans la bibliothèque locale, pure) — et les trois feuilles de
+l'écran de séance. Ce qu'ils posent et qu'il ne faut pas casser :
+
+- **On ne dévie que sur ce qui a été fait** (cf. §3). L'écran en tire sa forme :
+  une ligne **non cochée** coche d'un appui n'importe où (la grande cible de
+  KL-29) ; une ligne **cochée** offre deux cibles, chacune au plancher tactile —
+  la zone de valeurs ouvre la feuille d'ajustement, la case décoche. L'appui long
+  a été écarté : un geste qui ne se voit nulle part se découvre par accident, et
+  l'app n'aura jamais de tutoriel.
+- **Le remplacement conserve `sourcePrescribedId`**, et c'est ce qui le distingue
+  d'un ajout : `/schedule/{id}` lit « prévu X, fait Y » au lieu d'un trou d'un
+  côté et d'un intrus de l'autre. Il est **refusé dès qu'une série est
+  consignée** — elle a été faite sur l'exercice d'origine, la rattacher à un
+  autre la ferait entrer dans l'historique et les records de la mauvaise machine.
+  Le chemin pour ce cas-là : sauter avec sa raison, puis ajouter hors programme.
+- **Un seul type d'exercice, prescrit ou non.** `SessionExtra` a disparu,
+  `SessionExercise.prescribed` est nullable (jamais nul en même temps que
+  `logged`). Un second type aurait voulu dire un second composant d'affichage, un
+  second chemin d'écriture et une seconde façon de compter, pour la même chose.
+  Un exercice **hors programme n'entre pas dans la progression** : elle dit ce
+  qu'il reste à faire du programme.
+- **La raison d'un saut et la note d'exercice sont le même champ** (`notes`) : le
+  modèle n'en a qu'un, en inventer un second donnerait un texte que le serveur ne
+  saurait pas où mettre. Ne plus sauter ne l'efface donc pas.
+- **`session/library.ts` replie les accents à la main**, sans `String.normalize`
+  ni `localeCompare` : le `LIKE` de SQLite n'ignore la casse qu'en ASCII
+  (« developpe » ne trouverait pas « Développé couché »), et ICU dépend de la
+  variante d'Hermes embarquée — même arbitrage que les noms de jours de `days.ts`.
+  Chaque mot doit se retrouver dans le nom, dans n'importe quel ordre. **KL-34 la
+  réutilisera** telle quelle, et c'est le jour où le sélecteur d'exercice montera
+  dans `@/components`.
+- **Les feuilles retiennent une clé, jamais l'objet** (`openSet` = l'uuid de la
+  série, `openExercise` = la clé de l'exercice) : chaque écriture republie le
+  déroulé, un objet figé dans un état de composant décrirait la séance telle
+  qu'elle était avant le dernier appui. D'où `findSetLine` / `findExercise`.
+- **Tout tient dans `src/app/session/[uuid].tsx`** parce qu'`expo-router` charge
+  **tout** fichier de `src/app/` comme une route (son `require.context` n'exclut
+  que `+html`, `+api` et `+middleware`) : un voisin `_parts.tsx` deviendrait une
+  route fantôme, rendue par `expo export`.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et web (neuf routes,
+  aucune fantôme), plus **123 contrôles hors React Native** (`src/session` bundlé
+  pour Node, `expo-sqlite` posé sur `node:sqlite`, vraie migration) et **23
+  contrôles contre le vrai Symfony**. Ce sont les premiers qui ont trouvé le
+  défaut du remplacement effacé par un décochage ; ce sont les seconds qui
+  confirment que le serveur accepte un remplacement, un exercice sans lien, une
+  série surnuméraire et un saut sans série. **Rendu non observé sur appareil** :
+  les deux cibles d'une ligne cochée, le prévu affiché à côté du saisi et la
+  feuille d'ajustement restent à valider à l'œil.
+
+Prochain ticket : **KL-31** (timer de repos, veille écran, notification).

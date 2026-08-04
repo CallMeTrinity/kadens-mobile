@@ -39,10 +39,20 @@
  *
  * ## Ce que le réalisé peut porter et que le prescrit ne prévoit pas
  *
- * Une série de plus qu'annoncé, un exercice hors programme. KL-29 n'en crée
- * aucun — c'est KL-30 qui ouvrira les déviations — mais le pull, lui, peut en
- * descendre. Ils sont donc **affichés** (en lecture) plutôt qu'ignorés : du
- * réalisé invisible serait la pire des trahisons de « rien n'est jamais perdu ».
+ * Une série de plus qu'annoncé, un exercice hors programme. Le pull peut en
+ * descendre, et **KL-30 en crée** : ajouter une série, ajouter un exercice non
+ * prévu. Ils sont donc des lignes comme les autres — du réalisé invisible serait
+ * la pire des trahisons de « rien n'est jamais perdu ».
+ *
+ * ## Un seul type d'exercice, prescrit ou non (KL-30)
+ *
+ * `SessionExercise.prescribed` est **nullable** depuis que l'app sait ajouter un
+ * exercice hors programme. C'est ce qui évite le piège où KL-29 était tombé
+ * volontairement : un second type « exercice réalisé sans ligne en face » aurait
+ * demandé un second composant d'affichage, un second chemin d'écriture, une
+ * seconde façon de compter — pour décrire la même chose. Les deux moitiés ne sont
+ * jamais nulles ensemble : un exercice de séance vient du programme, du réalisé,
+ * ou des deux.
  */
 
 import type {
@@ -50,6 +60,7 @@ import type {
   LoggedSetRow,
   PrescribedBlock,
   PrescribedExerciseLine,
+  PrescribedSetLine,
   SetType,
 } from '@/db';
 
@@ -82,9 +93,12 @@ export interface SessionSetLine {
   undoable: boolean;
 }
 
-/** Un exercice du programme, avec son réalisé et son avancement. */
+/** Un exercice de la séance : prescrit, réalisé, ou les deux. */
 export interface SessionExercise {
-  prescribed: PrescribedExerciseLine;
+  /** Clé de rendu, stable d'un re-rendu à l'autre. */
+  key: string;
+  /** `null` pour un exercice **hors programme** — ajouté en séance, ou descendu par le pull. */
+  prescribed: PrescribedExerciseLine | null;
   /**
    * Rang de l'exercice dans la séance entière, blocs confondus. C'est la
    * `position` que prend son `logged_exercise` : le document poussé se trie
@@ -93,6 +107,13 @@ export interface SessionExercise {
    */
   position: number;
   logged: LoggedExerciseRow | null;
+  /** Le nom à afficher : celui du réalisé quand il diverge (remplacement), du prescrit sinon. */
+  name: string;
+  /**
+   * Le réalisé porte un **autre** exercice que celui prescrit : il a été remplacé
+   * en séance (KL-30). Le prescrit reste affiché à côté, sinon l'écart disparaît.
+   */
+  substituted: boolean;
   /**
    * Les lignes de série, ou `null` pour un exercice **sans séries à saisir** —
    * course, vélo, AMRAP, for time. Le cardio ne se saisit pas sur le téléphone
@@ -128,16 +149,19 @@ export interface SessionBlock {
   total: number;
 }
 
-/** Un exercice réalisé qu'aucune ligne du programme ne réclame. Lecture seule. */
-export interface SessionExtra {
-  logged: LoggedExerciseRow;
-  sets: LoggedSetRow[];
-}
-
 /** Le déroulé complet d'une séance. */
 export interface SessionProgram {
   blocks: SessionBlock[];
-  extras: SessionExtra[];
+  /** Le réalisé qu'aucune ligne du programme ne réclame. Éditable comme le reste (KL-30). */
+  extras: SessionExercise[];
+  /**
+   * Combien de lignes le programme compte, tous blocs confondus.
+   *
+   * C'est le plancher de position d'un exercice ajouté hors programme : sans lui,
+   * un exercice ajouté avant qu'aucun prescrit ne soit coché prendrait la position
+   * 0 et passerait devant tout le programme dans le document poussé.
+   */
+  prescribedCount: number;
   done: number;
   total: number;
 }
@@ -214,49 +238,96 @@ export function buildProgram(
     });
   });
 
-  const extras: SessionExtra[] = loggedExercises
+  // Le réalisé qu'aucune ligne du programme ne réclame. Même type que les autres
+  // (§ un seul type d'exercice) : il s'affiche, se complète et se retire pareil.
+  const extras: SessionExercise[] = loggedExercises
     .filter((logged) => !matched.has(logged.id))
-    .map((logged) => ({ logged, sets: setsByExercise.get(logged.id) ?? [] }));
+    .map((logged) =>
+      buildExercise(null, logged.position, logged, setsByExercise.get(logged.id) ?? []),
+    );
 
-  return { blocks: sessionBlocks, extras, done, total };
+  return { blocks: sessionBlocks, extras, prescribedCount: position, done, total };
 }
 
 function buildExercise(
-  prescribed: PrescribedExerciseLine,
+  prescribed: PrescribedExerciseLine | null,
   position: number,
   logged: LoggedExerciseRow | null,
   sets: LoggedSetRow[],
 ): SessionExercise {
   const skipped = logged?.skipped ?? false;
+  // Le réalisé porte-t-il un autre exercice que le prescrit ? On compare les
+  // **références**, pas les noms : un exercice renommé en bibliothèque n'est pas
+  // un remplacement. Les deux références absentes valent égalité (`-1`), c'est le
+  // cas d'un exercice sorti de la bibliothèque des deux côtés.
+  const substituted =
+    prescribed !== null &&
+    logged !== null &&
+    (logged.exerciseId ?? -1) !== (prescribed.exerciseId ?? -1);
   // Les lignes se construisent même pour un exercice sauté : ses séries
-  // abandonnées existent peut-être, et le prescrit reste à lire.
-  const lines = buildLines(prescribed, sets);
+  // abandonnées existent peut-être, et le prescrit reste à lire. Un exercice hors
+  // programme n'a aucune ligne prescrite, donc une liste vide — et **pas** `null`,
+  // qui est la marque du cardio.
+  const lines = buildLines(prescribed === null ? [] : prescribed.sets, sets);
+  const base = {
+    key: prescribed ? `e${prescribed.prescribedId}` : `x${logged?.id ?? position}`,
+    prescribed,
+    position,
+    logged,
+    name: exerciseName(prescribed, logged, substituted),
+    substituted,
+    lines,
+    skipped,
+  };
 
   if (skipped) {
     // Un exercice sauté est **réglé**, pas en attente : le laisser dans le
     // dénominateur ferait une progression qui ne peut plus atteindre son terme.
-    return { prescribed, position, logged, lines, skipped, done: 0, total: 0 };
+    return { ...base, done: 0, total: 0 };
+  }
+
+  if (prescribed === null) {
+    // Hors programme : il ne **réclame** rien, donc il n'entre ni au numérateur ni
+    // au dénominateur. La progression dit ce qu'il reste à faire du programme ;
+    // trois séries ajoutées ne rapprochent pas de sa fin, elles s'ajoutent à côté.
+    return { ...base, done: 0, total: 0 };
   }
 
   if (lines === null) {
     // Cardio : une seule chose à dire, fait ou pas fait.
-    return { prescribed, position, logged, lines, skipped, done: logged ? 1 : 0, total: 1 };
+    return { ...base, done: logged ? 1 : 0, total: 1 };
   }
 
   const plannedCount = lines.filter((line) => line.planned !== null).length;
   const loggedCount = lines.filter((line) => line.logged !== null).length;
 
   return {
-    prescribed,
-    position,
-    logged,
-    lines,
-    skipped,
+    ...base,
     done: loggedCount,
     // Le maximum des deux : une série faite en plus (KL-30) ne doit pas produire
     // un « 5 sur 4 », qui se lirait comme une erreur de compte.
     total: Math.max(plannedCount, loggedCount),
   };
+}
+
+/**
+ * Le nom affiché.
+ *
+ * Le prescrit prime tant qu'il n'a pas été remplacé : c'est un nom **vivant**, que
+ * le pull rafraîchit, là où `exerciseName` est un snapshot pris au moment du log.
+ * Dès qu'il y a remplacement — ou qu'il n'y a pas de prescrit — c'est le réalisé
+ * qui dit ce qui a été fait.
+ */
+function exerciseName(
+  prescribed: PrescribedExerciseLine | null,
+  logged: LoggedExerciseRow | null,
+  substituted: boolean,
+): string {
+  if (substituted || prescribed === null) {
+    return logged?.exerciseName ?? 'Exercice';
+  }
+
+  return prescribed.name ?? logged?.exerciseName ?? 'Exercice retiré de la bibliothèque';
 }
 
 /**
@@ -266,12 +337,15 @@ function buildExercise(
  * cardio, et elle vient du serveur (`sets: null` pour un type de prescription qui
  * ne compte pas de séries). On ne la déduit pas du type de prescription — un seul
  * fait, une seule source.
+ *
+ * Une liste prescrite **vide** n'est pas la même chose : c'est un exercice hors
+ * programme, dont toutes les séries sont surnuméraires par construction.
  */
 function buildLines(
-  prescribed: PrescribedExerciseLine,
+  prescribedSets: PrescribedSetLine[] | null,
   sets: LoggedSetRow[],
 ): SessionSetLine[] | null {
-  if (prescribed.sets === null) {
+  if (prescribedSets === null) {
     return null;
   }
 
@@ -281,7 +355,7 @@ function buildLines(
   };
   const ranks = { warmup: 0, work: 0 };
 
-  const lines: SessionSetLine[] = prescribed.sets.map((line) => {
+  const lines: SessionSetLine[] = prescribedSets.map((line) => {
     const file = line.type === 'warmup' ? 'warmup' : 'work';
     const queue = queues[file];
     const rank = ranks[file];
@@ -290,7 +364,9 @@ function buildLines(
     const logged = queue[rank] ?? null;
 
     return {
-      key: `p${prescribed.prescribedId}-${line.index}`,
+      // Une clé React n'a besoin d'être unique qu'entre frères : les lignes d'un
+      // exercice ne côtoient jamais celles d'un autre.
+      key: `p${line.index}`,
       index: line.index,
       // Le type de ce qui a été fait prime, comme dans le tableau du web : une
       // série passée à l'échec reste une série à l'échec.
@@ -328,6 +404,66 @@ function buildLines(
   return lines;
 }
 
+/** Tous les exercices d'un déroulé, blocs puis hors programme, dans l'ordre affiché. */
+export function allExercises(program: SessionProgram): SessionExercise[] {
+  return [
+    ...program.blocks.flatMap((block) => block.groups.flatMap((group) => group.exercises)),
+    ...program.extras,
+  ];
+}
+
+/**
+ * Retrouve un exercice du déroulé par sa clé (KL-30).
+ *
+ * Même raison que `findSetLine` : une feuille ouverte retient une **clé**, jamais
+ * l'objet, qui décrirait l'exercice tel qu'il était avant la dernière écriture.
+ */
+export function findExercise(program: SessionProgram, key: string): SessionExercise | null {
+  return allExercises(program).find((exercise) => exercise.key === key) ?? null;
+}
+
+/**
+ * Retrouve une série consignée dans le déroulé, par son uuid (KL-30).
+ *
+ * L'écran ouvre sa feuille d'ajustement sur un **uuid**, jamais sur l'objet
+ * `SessionSetLine` : chaque écriture republie le déroulé, et un objet retenu dans
+ * un état de composant décrirait la série telle qu'elle était avant. L'uuid, lui,
+ * ne bouge pas — il est posé à la création et c'est le pivot de l'idempotence.
+ */
+export function findSetLine(
+  program: SessionProgram,
+  setUuid: string,
+): { exercise: SessionExercise; line: SessionSetLine } | null {
+  for (const exercise of allExercises(program)) {
+    const line = exercise.lines?.find((candidate) => candidate.logged?.uuid === setUuid);
+
+    if (line) {
+      return { exercise, line };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Une série réalisée dévie-t-elle de ce qui était prescrit ?
+ *
+ * Sur l'axe demandé seulement : une charge ne se compare pas à une absence de
+ * charge (même règle que `LogComparator` côté serveur — un axe muet d'un côté ne
+ * tranche jamais). C'est ce qui décide d'afficher, ou non, la valeur prévue à
+ * côté de la valeur saisie.
+ */
+export function setDeviates(line: SessionSetLine, axis: keyof SetValues): boolean {
+  if (line.planned === null || line.logged === null) {
+    return false;
+  }
+
+  const planned = line.planned[axis];
+  const logged = line.logged[axis];
+
+  return planned !== null && logged !== null && planned !== logged;
+}
+
 /**
  * Regroupe les exercices liés d'un bloc.
  *
@@ -341,7 +477,7 @@ function groupExercises(exercises: SessionExercise[]): SessionGroup[] {
   const groups: SessionGroup[] = [];
 
   for (const exercise of exercises) {
-    const prefix = groupPrefix(exercise.prescribed.groupLabel);
+    const prefix = groupPrefix(exercise.prescribed?.groupLabel ?? null);
     const current = groups[groups.length - 1];
 
     if (prefix !== null && current && current.label === prefix) {
@@ -350,11 +486,7 @@ function groupExercises(exercises: SessionExercise[]): SessionGroup[] {
       continue;
     }
 
-    groups.push({
-      key: `g${exercise.prescribed.prescribedId}`,
-      label: prefix,
-      exercises: [exercise],
-    });
+    groups.push({ key: `g${exercise.key}`, label: prefix, exercises: [exercise] });
   }
 
   return groups;

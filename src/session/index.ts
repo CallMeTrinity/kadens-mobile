@@ -30,6 +30,11 @@
  *    files séparées (échauffement, travail). Ce n'est pas un choix d'écran : le
  *    contrat ne transporte aucune référence de la série vers la ligne, et c'est la
  *    règle que `LogComparator` tient déjà côté serveur. Voir `program.ts`.
+ * 5. **On dévie, on ne recompose pas.** `deviations.ts` (KL-30) corrige une
+ *    série, en ajoute, en retire, saute, remplace, ajoute un exercice — et rien
+ *    d'autre : pas de bloc réordonné, pas de superset créé, pas de tour modifié.
+ *    Corollaire : on ne dévie que sur ce qui a **été fait**, le prescrit n'ayant
+ *    aucun endroit où accueillir une valeur revue avant la série.
  */
 
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
@@ -38,6 +43,7 @@ export type { DayCell } from './days';
 export {
   useDayStrip,
   useDayWorkouts,
+  useExerciseLibrary,
   useRunningWorkout,
   useSessionProgram,
   useToday,
@@ -45,15 +51,30 @@ export {
   useWorkoutPendingSync,
 } from './hooks';
 
+export {
+  addExercise,
+  addSet,
+  boundSetValues,
+  canReplaceExercise,
+  deleteSet,
+  removeExercise,
+  replaceExercise,
+  setExerciseState,
+  updateSet,
+} from './deviations';
+export type { ExerciseRef, ExerciseState, LoggedSetValues } from './deviations';
+
 export { blockRoleLabel, countsAsWorking, setTypeLabel, setTypeLetter } from './labels';
+
+export { fold, searchExercises, SEARCH_LIMIT } from './library';
+export type { ExerciseOption } from './library';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 
-export { buildProgram } from './program';
+export { allExercises, buildProgram, findExercise, findSetLine, setDeviates } from './program';
 export type {
   SessionBlock,
   SessionExercise,
-  SessionExtra,
   SessionGroup,
   SessionProgram,
   SessionSetLine,
@@ -62,6 +83,7 @@ export type {
 
 export {
   dayCountsQuery,
+  exerciseLibraryQuery,
   loggedExercisesQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,

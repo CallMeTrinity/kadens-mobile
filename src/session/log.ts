@@ -1,10 +1,11 @@
 /**
- * Écrire le réalisé (KL-29).
+ * Cocher le réalisé (KL-29).
  *
- * Trois gestes, et pas un de plus : cocher une série, la décocher, marquer un
- * exercice cardio fait ou pas fait. Modifier les valeurs d'une série, en ajouter
- * une hors programme, sauter un exercice, en remplacer un : c'est **KL-30**, et
- * rien n'en est esquissé ici.
+ * Trois gestes : cocher une série, la décocher, marquer un exercice cardio fait
+ * ou pas fait. Les **déviations** — corriger une valeur, ajouter ou retirer une
+ * série, sauter, remplacer, ajouter un exercice — vivent à côté, dans
+ * `deviations.ts` (KL-30) ; les gardes et les briques d'écriture que les deux
+ * partagent sont dans `writes.ts`.
  *
  * ## La règle qui tient tout le fichier
  *
@@ -29,23 +30,13 @@
  * `started_at` a déjà été posé à l'ouverture (`start.ts`).
  */
 
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 
-import {
-  db,
-  // Sous alias : le paramètre `exercise` de ce fichier est une ligne du
-  // programme (`SessionExercise`), pas une entrée de bibliothèque.
-  exercise as exerciseTable,
-  loggedExercise,
-  loggedSet,
-  nowIso,
-  scheduledWorkout,
-  uuidv7,
-  type Writer,
-} from '@/db';
+import { db, loggedSet, nowIso, uuidv7 } from '@/db';
 import { enqueueSchedulePut } from '@/sync';
 
 import type { SessionExercise, SessionSetLine } from './program';
+import { dropEmptyLoggedExercise, ensureLoggedExercise, isOpen, nextSetPosition } from './writes';
 
 /**
  * Coche une série : elle vient d'être faite, aux valeurs prescrites.
@@ -55,9 +46,10 @@ import type { SessionExercise, SessionSetLine } from './program';
  * arriveraient tous les deux avec la vue d'avant l'écriture.
  *
  * Les valeurs sont **pré-remplies par le prescrit** et non demandées : c'est le
- * cas nominal en salle (on fait ce qui est écrit), et les corriger est le sujet
- * de KL-30. Une ligne sans prescrit ne se coche pas — elle n'existe que parce
- * qu'une série faite en trop est déjà là.
+ * cas nominal en salle (on fait ce qui est écrit). Les corriger après coup, ou
+ * ajouter une série que le programme ne réclame pas, est le sujet de KL-30 —
+ * d'où le fait qu'une ligne sans prescrit ne se coche pas ici : elle n'existe que
+ * parce qu'une série a déjà été consignée en face.
  */
 export function checkSet(
   scheduledUuid: string,
@@ -77,6 +69,10 @@ export function checkSet(
 
     const loggedExerciseId = ensureLoggedExercise(tx, scheduledUuid, exercise);
 
+    if (loggedExerciseId === null) {
+      return false;
+    }
+
     tx.insert(loggedSet)
       .values({
         // L'identifiant est posé **ici**, hors réseau, avant que le serveur sache
@@ -92,6 +88,7 @@ export function checkSet(
         weightKg: planned.weightKg,
         durationSeconds: planned.durationSeconds,
         // Le RPE se ressent, il ne se prescrit pas par série : rien à recopier.
+        // Il se saisit après coup, dans la feuille d'ajustement (KL-30).
         rpe: null,
         completedAt: nowIso(),
       })
@@ -128,7 +125,7 @@ export function uncheckSet(
     }
 
     tx.delete(loggedSet).where(eq(loggedSet.uuid, logged.uuid)).run();
-    dropEmptyLoggedExercise(tx, logged.loggedExerciseId);
+    dropEmptyLoggedExercise(tx, logged.loggedExerciseId, exercise.substituted);
 
     // La mutation part même quand il ne reste rien : le réalisé effacé doit
     // l'être **aussi** côté serveur, et `log: []` est ce qui l'y efface
@@ -169,147 +166,11 @@ export function setCardioDone(
     if (done) {
       ensureLoggedExercise(tx, scheduledUuid, exercise);
     } else if (exercise.logged) {
-      dropEmptyLoggedExercise(tx, exercise.logged.id);
+      dropEmptyLoggedExercise(tx, exercise.logged.id, exercise.substituted);
     }
 
     enqueueSchedulePut(scheduledUuid, tx);
 
     return true;
   });
-}
-
-/**
- * La séance est-elle ouverte — commencée, pas terminée ?
- *
- * C'est la garde que **toutes** les écritures franchissent, et elle est ici plutôt
- * que dans l'écran pour la même raison que `beginWorkout` refuse une séance close :
- * « on ne consigne que dans une séance ouverte » est une règle du domaine, et une
- * règle qui ne vit que dans un composant est invisible au composant suivant.
- *
- * Les deux moitiés comptent. **Terminée** : pas de reprise après clôture (§2.3
- * point 5) — une série qui arriverait après coup rouvrirait un fait déjà envoyé.
- * **Pas commencée** : un réalisé sans borne de départ décrirait une séance qu'on
- * n'a pas faite, et le pull ne protégerait même pas la séance, faute de
- * `started_at`.
- */
-function isOpen(tx: Writer, scheduledUuid: string): boolean {
-  const row = tx
-    .select({ startedAt: scheduledWorkout.startedAt, endedAt: scheduledWorkout.endedAt })
-    .from(scheduledWorkout)
-    .where(eq(scheduledWorkout.uuid, scheduledUuid))
-    .get();
-
-  return row !== undefined && row.startedAt !== null && row.endedAt === null;
-}
-
-/**
- * Retrouve l'exercice réalisé qui correspond à cette ligne du programme, ou le
- * crée. Rend son identifiant local.
- *
- * L'appariement se fait sur `sourcePrescribedId`, et sur lui seul : c'est ce que
- * le contrat désigne comme le lien entre prévu et fait, et c'est ce que le
- * serveur revalide (une ligne du programme **de cette séance**, sinon 422).
- */
-function ensureLoggedExercise(
-  tx: Writer,
-  scheduledUuid: string,
-  exercise: SessionExercise,
-): number {
-  const existing = tx
-    .select({ id: loggedExercise.id })
-    .from(loggedExercise)
-    .where(
-      and(
-        eq(loggedExercise.scheduledUuid, scheduledUuid),
-        eq(loggedExercise.sourcePrescribedId, exercise.prescribed.prescribedId),
-      ),
-    )
-    .get();
-
-  if (existing) {
-    return existing.id;
-  }
-
-  return tx
-    .insert(loggedExercise)
-    .values({
-      scheduledUuid,
-      exerciseId: referenceableExerciseId(tx, exercise.prescribed.exerciseId),
-      // Le snapshot du nom, pris au moment du log. Il part **toujours** au
-      // serveur, qui refuserait une ligne sans référence ni nom : c'est lui qui
-      // garde le réalisé lisible quand l'exercice quitte la bibliothèque.
-      exerciseName: exercise.prescribed.name ?? 'Exercice',
-      sourcePrescribedId: exercise.prescribed.prescribedId,
-      position: exercise.position,
-      skipped: false,
-      notes: null,
-    })
-    .returning({ id: loggedExercise.id })
-    .get().id;
-}
-
-/**
- * L'identifiant d'exercice, s'il désigne bien une ligne de la bibliothèque
- * locale. `null` sinon.
- *
- * `logged_exercise.exercise_id` porte une clé étrangère et les clés étrangères
- * sont actives (`foreign_keys = ON`) : un identifiant absent ferait **échouer
- * l'insertion**, donc perdre la série au moment précis où on la coche. Le cas est
- * rare — la bibliothèque locale contient normalement tout ce que le programme
- * référence — mais il existe, et KL-27 l'a déjà rencontré dans l'autre sens
- * (l'historique saute les exercices inconnus, pour la même raison).
- *
- * Le repli coûte le rattachement de cette ligne à l'historique et aux records ;
- * l'alternative coûterait la série elle-même. Le nom, lui, est conservé, donc le
- * réalisé reste lisible partout. La sortie propre reste celle que KL-27 a
- * identifiée : retirer cette clé étrangère, une FK vers un cache partiel étant
- * une erreur de catégorie.
- */
-function referenceableExerciseId(tx: Writer, exerciseId: number | null): number | null {
-  if (exerciseId === null) {
-    return null;
-  }
-
-  const known = tx
-    .select({ id: exerciseTable.id })
-    .from(exerciseTable)
-    .where(eq(exerciseTable.id, exerciseId))
-    .get();
-
-  return known ? exerciseId : null;
-}
-
-/** La prochaine position libre dans un exercice réalisé. */
-function nextSetPosition(tx: Writer, loggedExerciseId: number): number {
-  const row = tx
-    .select({ next: sql<number>`coalesce(max(${loggedSet.position}), -1) + 1` })
-    .from(loggedSet)
-    .where(eq(loggedSet.loggedExerciseId, loggedExerciseId))
-    .get();
-
-  return row?.next ?? 0;
-}
-
-/**
- * Retire un exercice réalisé devenu vide.
- *
- * « Vide » veut dire : plus aucune série, aucune note, et non sauté. Les deux
- * dernières conditions sont des **déclarations** de l'athlète (KL-30) : les
- * effacer parce qu'il n'y a pas de série effacerait ce qu'il a dit.
- *
- * Le filtre tient dans la clause `WHERE`, pas dans une lecture suivie d'un
- * `DELETE` : une seule requête, et la condition reste juste si cet appel sortait
- * un jour de sa transaction.
- */
-function dropEmptyLoggedExercise(tx: Writer, loggedExerciseId: number): void {
-  tx.delete(loggedExercise)
-    .where(
-      and(
-        eq(loggedExercise.id, loggedExerciseId),
-        eq(loggedExercise.skipped, false),
-        isNull(loggedExercise.notes),
-        sql`not exists (select 1 from logged_set where logged_set.logged_exercise_id = ${loggedExerciseId})`,
-      ),
-    )
-    .run();
 }

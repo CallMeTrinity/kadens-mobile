@@ -1,23 +1,47 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Button, Chip, EmptyState, Header, setEffort, weight } from '@/components';
 import {
+  Button,
+  Chip,
+  duration,
+  EmptyState,
+  Field,
+  Header,
+  NumberStepper,
+  setEffort,
+  Sheet,
+  weight,
+} from '@/components';
+import {
+  addExercise,
+  addSet,
   beginWorkout,
   blockRoleLabel,
+  canReplaceExercise,
   checkSet,
+  deleteSet,
+  findExercise,
+  findSetLine,
   longDate,
+  removeExercise,
+  replaceExercise,
   setCardioDone,
+  setDeviates,
+  setExerciseState,
   setTypeLabel,
   setTypeLetter,
   uncheckSet,
+  updateSet,
+  useExerciseLibrary,
   useSessionProgram,
   useWorkout,
   useWorkoutPendingSync,
+  type ExerciseRef,
+  type LoggedSetValues,
   type SessionBlock,
   type SessionExercise,
-  type SessionExtra,
   type SessionGroup,
   type SessionSetLine,
 } from '@/session';
@@ -25,7 +49,8 @@ import { colors, layout, space, text } from '@/theme';
 import type { SetType } from '@/db';
 
 /**
- * Écran « Séance en cours » (KL-29) — l'écran pour lequel toute l'app existe.
+ * Écran « Séance en cours » (KL-29, déviations en KL-30) — l'écran pour lequel
+ * toute l'app existe.
  *
  * Il se tient à bout de bras, barre en main, dans un sous-sol sans réseau. Trois
  * conséquences qui expliquent tout ce qui suit :
@@ -37,32 +62,52 @@ import type { SetType } from '@/db';
  *    même chose.
  * 2. **Un geste, une écriture, une transaction.** Cocher une série écrit son
  *    `logged_set` **et** empile la mutation de la séance dans la même transaction
- *    (`@/session`, `log.ts`). Rien n'est mis de côté pour être écrit « à la fin ».
+ *    (`@/session`, `log.ts` et `deviations.ts`). Rien n'est mis de côté pour être
+ *    écrit « à la fin ».
  * 3. **Une seule mutation par séance.** La file est coalescée par uuid et ne porte
  *    que l'uuid, le document se relisant au push : trente séries cochées ne font
  *    qu'un envoi.
  *
+ * ## Les deux gestes, et pourquoi ils sont distincts (KL-30)
+ *
+ * Une ligne **non cochée** se coche d'un appui n'importe où : c'est le geste
+ * nominal en salle, on fait ce qui est écrit. Une fois **cochée**, la ligne
+ * devient un objet qu'on corrige : sa zone de valeurs ouvre la feuille
+ * d'ajustement, sa case reste le décochage. Deux cibles dans une ligne plutôt
+ * qu'un appui long, qui n'est visible nulle part et se découvre par accident.
+ *
+ * Corollaire du modèle, pas de l'écran : **on ne dévie que sur ce qui a été
+ * fait**. Le prescrit ne bouge jamais (§0.3) et n'a aucun endroit où accueillir
+ * « la série 3 se fera à 82,5 kg ». On coche aux valeurs prescrites, puis on
+ * corrige.
+ *
  * ## Ce que l'écran ne fait pas, et à quel ticket ça revient
  *
- * Corriger un poids, ajouter ou retirer une série, sauter ou remplacer un
- * exercice : **KL-30**. Le timer de repos et la veille écran : **KL-31**. La
- * dernière perf et le record sous chaque exercice : **KL-32**. Clôturer :
- * **KL-33**. Rien de tout ça n'est esquissé — une demi-implémentation serait à
- * défaire.
+ * Le timer de repos et la veille écran : **KL-31**. La dernière perf et le record
+ * sous chaque exercice : **KL-32**. Clôturer : **KL-33**. Rien de tout ça n'est
+ * esquissé — une demi-implémentation serait à défaire.
  *
- * ## Cocher est séquentiel, et ce n'est pas une contrainte d'écran
+ * ## Pourquoi tout tient dans un seul fichier
  *
- * Seule la prochaine série de sa file est cochable, seule la dernière cochée se
- * décoche. La raison est dans le contrat, pas dans l'ergonomie : rien ne relie une
- * série réalisée à une ligne prescrite, l'appariement se fait au rang, et un
- * « trou » ne survivrait pas à un aller-retour serveur. Le raisonnement complet
- * est dans `session/program.ts`.
+ * Parce qu'`expo-router` charge **tout** fichier de `src/app/` comme une route
+ * (son `require.context` n'exclut que `+html`, `+api` et `+middleware`) : un
+ * voisin `_parts.tsx` deviendrait une route fantôme, rendue par `expo export`.
+ * Les feuilles de cet écran restent donc chez lui, comme la carte de séance reste
+ * dans « Aujourd'hui ». Le sélecteur d'exercice est le seul candidat à monter
+ * dans `@/components` — le jour où KL-34 (séance vierge) l'emploiera à son tour.
  */
 export default function SessionScreen() {
   const { uuid } = useLocalSearchParams<{ uuid: string }>();
   const workout = useWorkout(uuid);
   const program = useSessionProgram(uuid);
   const pendingSync = useWorkoutPendingSync(uuid);
+
+  // Les trois feuilles retiennent une **clé**, jamais l'objet : chaque écriture
+  // republie le déroulé, et un exercice figé dans un état de composant décrirait
+  // la séance telle qu'elle était avant le dernier appui.
+  const [openSet, setOpenSet] = useState<string | null>(null);
+  const [openExercise, setOpenExercise] = useState<string | null>(null);
+  const [picker, setPicker] = useState<PickerTarget | null>(null);
 
   const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
 
@@ -85,6 +130,36 @@ export default function SessionScreen() {
     [uuid],
   );
 
+  // Ajouter une série et en saisir les valeurs sont **un seul geste** : la série
+  // naît pré-remplie par la précédente, sa feuille s'ouvre dans la foulée.
+  const onAddSet = useCallback(
+    (exercise: SessionExercise) => {
+      const created = addSet(uuid, exercise);
+
+      if (created) {
+        setOpenSet(created);
+      }
+    },
+    [uuid],
+  );
+
+  const onPick = useCallback(
+    (target: PickerTarget, reference: ExerciseRef) => {
+      if (target.mode === 'add') {
+        addExercise(uuid, reference, program.prescribedCount);
+      } else {
+        const exercise = findExercise(program, target.exerciseKey);
+
+        if (exercise) {
+          replaceExercise(uuid, exercise, reference);
+        }
+      }
+
+      setPicker(null);
+    },
+    [uuid, program],
+  );
+
   // `undefined` = la base n'a pas encore répondu. Ne rien peindre vaut mieux
   // qu'un « séance introuvable » qui clignoterait à chaque ouverture.
   if (workout === undefined) {
@@ -105,6 +180,8 @@ export default function SessionScreen() {
   }
 
   const closed = workout.endedAt !== null;
+  const sheetSet = openSet === null ? null : findSetLine(program, openSet);
+  const sheetExercise = openExercise === null ? null : findExercise(program, openExercise);
 
   return (
     <View style={styles.screen}>
@@ -154,30 +231,92 @@ export default function SessionScreen() {
             editable={running}
             onCheck={onCheck}
             onCardio={onCardio}
+            onAdjustSet={setOpenSet}
+            onAddSet={onAddSet}
+            onOpenExercise={setOpenExercise}
           />
         ))}
 
-        {/* Du réalisé qu'aucune ligne du programme ne réclame. KL-29 n'en crée
-            pas ; le pull, lui, peut en descendre, et du réalisé invisible serait
-            la pire trahison de « rien n'est jamais perdu ». */}
-        {program.extras.map((extra) => (
-          <ExtraSection key={`x${extra.logged.id}`} extra={extra} />
-        ))}
+        {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
+            ajoute, et ce que le pull peut en descendre. Du réalisé invisible
+            serait la pire trahison de « rien n'est jamais perdu ». */}
+        {program.extras.length > 0 ? (
+          <View style={styles.block}>
+            <View style={styles.blockHead}>
+              <Text accessibilityRole="header" style={styles.blockRole}>
+                Hors programme
+              </Text>
+            </View>
+            {program.extras.map((exercise) => (
+              <ExerciseSection
+                key={exercise.key}
+                exercise={exercise}
+                editable={running}
+                onCheck={onCheck}
+                onCardio={onCardio}
+                onAdjustSet={setOpenSet}
+                onAddSet={onAddSet}
+                onOpenExercise={setOpenExercise}
+              />
+            ))}
+          </View>
+        ) : null}
 
-        {program.blocks.length === 0 ? (
+        {program.blocks.length === 0 && program.extras.length === 0 ? (
           <EmptyState
             title={workout.freeform ? 'Séance libre, sans programme' : 'Aucun programme'}
             hint={
               workout.freeform
-                ? 'Choisir des exercices au fil de la séance arrive avec un prochain lot.'
+                ? 'Ajoute les exercices au fur et à mesure, ils partiront avec la séance.'
                 : 'Le programme de cette séance n’est pas descendu. Une synchronisation le rapportera.'
             }
           />
         ) : null}
+
+        {running ? (
+          <Button
+            label="Ajouter un exercice"
+            variant="secondary"
+            block
+            onPress={() => setPicker({ mode: 'add' })}
+          />
+        ) : null}
       </ScrollView>
+
+      {sheetSet ? (
+        <SetSheet
+          scheduledUuid={uuid}
+          exercise={sheetSet.exercise}
+          line={sheetSet.line}
+          onClose={() => setOpenSet(null)}
+        />
+      ) : null}
+
+      {sheetExercise ? (
+        <ExerciseSheet
+          scheduledUuid={uuid}
+          exercise={sheetExercise}
+          onClose={() => setOpenExercise(null)}
+          onReplace={(key) => {
+            setOpenExercise(null);
+            setPicker({ mode: 'replace', exerciseKey: key });
+          }}
+        />
+      ) : null}
+
+      {picker ? (
+        <ExercisePicker
+          title={picker.mode === 'add' ? 'Ajouter un exercice' : 'Remplacer par'}
+          onPick={(reference) => onPick(picker, reference)}
+          onClose={() => setPicker(null)}
+        />
+      ) : null}
     </View>
   );
 }
+
+/** Ce que le sélecteur d'exercice sert à faire : garnir la séance, ou substituer. */
+type PickerTarget = { mode: 'add' } | { mode: 'replace'; exerciseKey: string };
 
 /**
  * Séries faites sur séries prévues.
@@ -186,7 +325,8 @@ export default function SessionScreen() {
  * contrairement au tonnage et aux records où il est exclu partout : ce qui se lit
  * ici, c'est ce qu'il reste à faire, et un échauffement reste à faire. Un exercice
  * cardio compte pour une unité — il n'a qu'une chose à dire, fait ou pas fait — et
- * un exercice sauté sort du compte, puisqu'il est réglé.
+ * un exercice sauté sort du compte, puisqu'il est réglé. Un exercice **hors
+ * programme** n'y entre pas non plus : il ne réclame rien.
  */
 function Progress({ done, total }: { done: number; total: number }) {
   const ratio = total > 0 ? done / total : 0;
@@ -207,18 +347,18 @@ function Progress({ done, total }: { done: number; total: number }) {
   );
 }
 
-/** Une section de la séance. Le bloc est une section, jamais un superset. */
-function BlockSection({
-  block,
-  editable,
-  onCheck,
-  onCardio,
-}: {
-  block: SessionBlock;
+/** Ce que chaque section d'exercice sait faire remonter à l'écran. */
+type SectionHandlers = {
   editable: boolean;
   onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
   onCardio: (exercise: SessionExercise) => void;
-}) {
+  onAdjustSet: (setUuid: string) => void;
+  onAddSet: (exercise: SessionExercise) => void;
+  onOpenExercise: (key: string) => void;
+};
+
+/** Une section de la séance. Le bloc est une section, jamais un superset. */
+function BlockSection({ block, ...handlers }: { block: SessionBlock } & SectionHandlers) {
   return (
     <View style={styles.block}>
       <View style={styles.blockHead}>
@@ -238,13 +378,7 @@ function BlockSection({
       </View>
 
       {block.groups.map((group) => (
-        <GroupSection
-          key={group.key}
-          group={group}
-          editable={editable}
-          onCheck={onCheck}
-          onCardio={onCardio}
-        />
+        <GroupSection key={group.key} group={group} {...handlers} />
       ))}
     </View>
   );
@@ -258,25 +392,9 @@ function BlockSection({
  * croire qu'il en a un. Ni tours ni repos propres non plus — le nombre de tours
  * est déjà dans les séries de chaque exercice.
  */
-function GroupSection({
-  group,
-  editable,
-  onCheck,
-  onCardio,
-}: {
-  group: SessionGroup;
-  editable: boolean;
-  onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
-  onCardio: (exercise: SessionExercise) => void;
-}) {
+function GroupSection({ group, ...handlers }: { group: SessionGroup } & SectionHandlers) {
   const body = group.exercises.map((exercise) => (
-    <ExerciseSection
-      key={`e${exercise.prescribed.prescribedId}`}
-      exercise={exercise}
-      editable={editable}
-      onCheck={onCheck}
-      onCardio={onCardio}
-    />
+    <ExerciseSection key={exercise.key} exercise={exercise} {...handlers} />
   ));
 
   if (group.label === null) {
@@ -291,25 +409,31 @@ function GroupSection({
   );
 }
 
-/** Un exercice du programme : son en-tête, sa consigne, ses séries. */
+/** Un exercice de la séance : son en-tête, sa consigne, ses séries, ses déviations. */
 function ExerciseSection({
   exercise,
   editable,
   onCheck,
   onCardio,
-}: {
-  exercise: SessionExercise;
-  editable: boolean;
-  onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
-  onCardio: (exercise: SessionExercise) => void;
-}) {
-  const { prescribed } = exercise;
+  onAdjustSet,
+  onAddSet,
+  onOpenExercise,
+}: { exercise: SessionExercise } & SectionHandlers) {
+  const { prescribed, lines } = exercise;
+  // « Ajouter une série » n'a de sens qu'une fois le prescrit épuisé : tant qu'une
+  // ligne de travail attend, cocher la suivante **est** le geste, et proposer les
+  // deux ferait deux chemins pour un même fait.
+  const canAddSet =
+    editable &&
+    !exercise.skipped &&
+    lines !== null &&
+    lines.every((line) => line.planned === null || line.type === 'warmup' || line.logged !== null);
 
   return (
     <View style={styles.exercise}>
       <View style={styles.exerciseHead}>
-        {prescribed.groupLabel ? <Text style={styles.rank}>{prescribed.groupLabel}</Text> : null}
-        <Text style={styles.name}>{prescribed.name ?? 'Exercice retiré de la bibliothèque'}</Text>
+        {prescribed?.groupLabel ? <Text style={styles.rank}>{prescribed.groupLabel}</Text> : null}
+        <Text style={styles.name}>{exercise.name}</Text>
         <View style={styles.spacer} />
         {exercise.skipped ? (
           <Chip label="Sauté" />
@@ -318,34 +442,60 @@ function ExerciseSection({
             {exercise.done}/{exercise.total}
           </Text>
         ) : null}
+        {editable ? (
+          <Button
+            label="Ajuster"
+            variant="ghost"
+            size="sm"
+            accessibilityHint={`Sauter, remplacer ou annoter ${exercise.name}`}
+            onPress={() => onOpenExercise(exercise.key)}
+          />
+        ) : null}
       </View>
 
+      {/* Le prescrit reste visible à côté du fait, même quand ce n'est plus le
+          même exercice : sans lui, l'écart disparaît de la séance. */}
+      {exercise.substituted && prescribed?.name ? (
+        <Text style={styles.caption}>Prévu : {prescribed.name}</Text>
+      ) : null}
+
       <View style={styles.marks}>
-        {prescribed.rpe !== null ? <Text style={styles.caption}>RPE {prescribed.rpe}</Text> : null}
-        {prescribed.restSeconds !== null && prescribed.restSeconds > 0 ? (
+        {prescribed?.rpe != null ? <Text style={styles.caption}>RPE {prescribed.rpe}</Text> : null}
+        {prescribed?.restSeconds != null && prescribed.restSeconds > 0 ? (
           <Text style={styles.caption}>repos {prescribed.restSeconds} s</Text>
         ) : null}
       </View>
 
       {/* La consigne du programme, adressée à celui qui exécute. */}
-      {prescribed.notes ? <Text style={styles.notes}>{prescribed.notes}</Text> : null}
+      {prescribed?.notes ? <Text style={styles.notes}>{prescribed.notes}</Text> : null}
 
-      {exercise.lines === null ? (
+      {lines === null ? (
         <CardioRow
           exercise={exercise}
           editable={editable && !exercise.skipped}
           onPress={() => onCardio(exercise)}
         />
       ) : (
-        exercise.lines.map((line) => (
+        lines.map((line) => (
           <SetRow
             key={line.key}
             line={line}
             editable={editable && !exercise.skipped}
-            onPress={() => onCheck(exercise, line)}
+            onToggle={() => onCheck(exercise, line)}
+            onAdjust={() => line.logged && onAdjustSet(line.logged.uuid)}
           />
         ))
       )}
+
+      {canAddSet ? (
+        <Button
+          label="+ Série"
+          variant="ghost"
+          block
+          accessibilityHint="Consigner une série de plus que prévu"
+          onPress={() => onAddSet(exercise)}
+        />
+      ) : null}
 
       {/* Ce que l'athlète a écrit à la salle. Rien à voir avec la consigne. */}
       {exercise.logged?.notes ? <Text style={styles.logNotes}>{exercise.logged.notes}</Text> : null}
@@ -372,9 +522,11 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
 /**
  * Une série : une ligne, une case.
  *
- * La ligne entière est la cible tactile (pas la seule case) : on la vise avec un
- * pouce moite, à bout de bras, entre deux séries. La case reste dessinée à droite
- * parce que c'est là qu'on la cherche.
+ * **Deux états, deux gestes** (KL-30). Tant qu'elle n'est pas faite, la ligne
+ * entière coche : on la vise avec un pouce moite, à bout de bras, entre deux
+ * séries. Une fois faite, elle se scinde en deux cibles — la zone de valeurs
+ * ouvre l'ajustement, la case décoche — chacune au plancher tactile. C'est ce qui
+ * évite l'appui long, qui ne se voit nulle part.
  *
  * **Pas de glyphe** : le projet n'embarque pas de jeu d'icônes (KL-23), et un « ✓ »
  * dépendrait de ce que Barlow contient. Une case pleine à l'encre dit la même
@@ -383,44 +535,22 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
 function SetRow({
   line,
   editable,
-  onPress,
+  onToggle,
+  onAdjust,
 }: {
   line: SessionSetLine;
   editable: boolean;
-  onPress: () => void;
+  onToggle: () => void;
+  onAdjust: () => void;
 }) {
   const checked = line.logged !== null;
   const values = line.logged ?? line.planned;
   const effort = values ? setEffort(values.reps, values.durationSeconds) : null;
   const load = values?.weightKg ?? null;
-  const letter = setTypeLetter(line.type);
-  const skin = SET_BADGES[line.type];
   const actionable = editable && (line.actionable || line.undoable);
 
-  return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked, disabled: !actionable }}
-      accessibilityLabel={setRowLabel(line, effort, load)}
-      accessibilityHint={
-        actionable
-          ? checked
-            ? 'Annuler cette série'
-            : 'Consigner cette série'
-          : // Dire *pourquoi* la ligne ne répond pas : sans ça, un appui sans
-            // effet passe pour un écran figé.
-            checked
-            ? 'Seule la dernière série faite peut être annulée'
-            : 'La série précédente n’est pas encore faite'
-      }
-      disabled={!actionable}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.setRow,
-        checked && styles.setRowChecked,
-        pressed && actionable && styles.setRowPressed,
-      ]}
-    >
+  const body = (
+    <>
       <Text style={[styles.setRank, checked && styles.setRankChecked]}>
         {String(line.index).padStart(2, '0')}
       </Text>
@@ -428,29 +558,103 @@ function SetRow({
       {/* Le sigle du type, dans une gouttière de largeur fixe : les lignes
           restent alignées qu'elles soient qualifiées ou non. */}
       <View style={styles.setBadgeSlot}>
-        {letter ? (
-          <View style={[styles.setBadge, { borderColor: skin.ink, backgroundColor: skin.tint }]}>
-            <Text style={[styles.setBadgeText, { color: skin.ink }]}>{letter}</Text>
-          </View>
-        ) : null}
+        <SetBadge type={line.type} />
       </View>
 
       <Text style={[styles.setEffort, !checked && !actionable && styles.setFaint]}>
         {effort ?? '—'}
       </Text>
+      {/* Le prévu reste à côté du saisi dès qu'ils divergent : c'est l'écart, et
+          c'est la seule chose que la ligne ne peut pas se permettre de taire. */}
+      {setDeviates(line, 'reps') || setDeviates(line, 'durationSeconds') ? (
+        <Text style={styles.setPlanned}>
+          {setEffort(line.planned?.reps ?? null, line.planned?.durationSeconds ?? null)}
+        </Text>
+      ) : null}
+
       <View style={styles.spacer} />
+
       <Text style={[styles.setLoad, !checked && !actionable && styles.setFaint]}>
         {load !== null ? weight(load) : ''}
       </Text>
+      {setDeviates(line, 'weightKg') ? (
+        <Text style={styles.setPlanned}>{weight(line.planned?.weightKg ?? 0)}</Text>
+      ) : null}
+    </>
+  );
 
-      <View
-        style={[
-          styles.box,
-          checked && styles.boxChecked,
-          !checked && !actionable && styles.boxIdle,
-        ]}
-      />
+  // Ligne faite : deux cibles. La zone de valeurs ajuste, la case décoche — et
+  // elle ne décoche que la dernière de sa file (l'appariement par rang, KL-29).
+  if (checked) {
+    return (
+      <View style={[styles.setRow, styles.setRowChecked]}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${setRowLabel(line, effort, load)}. Ajuster`}
+          accessibilityHint="Corriger les valeurs, ou supprimer cette série"
+          disabled={!editable}
+          onPress={onAdjust}
+          style={({ pressed }) => [styles.setValues, pressed && editable && styles.setRowPressed]}
+        >
+          {body}
+        </Pressable>
+
+        <Pressable
+          accessibilityRole="checkbox"
+          accessibilityState={{ checked: true, disabled: !actionable }}
+          accessibilityLabel="Annuler cette série"
+          accessibilityHint={
+            actionable ? undefined : 'Seule la dernière série faite peut être annulée'
+          }
+          disabled={!actionable}
+          onPress={onToggle}
+          style={({ pressed }) => [styles.boxTarget, pressed && actionable && styles.setRowPressed]}
+        >
+          <View style={[styles.box, styles.boxChecked]} />
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <Pressable
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: false, disabled: !actionable }}
+      accessibilityLabel={setRowLabel(line, effort, load)}
+      accessibilityHint={
+        actionable
+          ? 'Consigner cette série'
+          : // Dire *pourquoi* la ligne ne répond pas : sans ça, un appui sans
+            // effet passe pour un écran figé.
+            'La série précédente n’est pas encore faite'
+      }
+      disabled={!actionable}
+      onPress={onToggle}
+      style={({ pressed }) => [
+        styles.setRow,
+        styles.setRowPadded,
+        pressed && actionable && styles.setRowPressed,
+      ]}
+    >
+      {body}
+      <View style={[styles.box, !actionable && styles.boxIdle]} />
     </Pressable>
+  );
+}
+
+/** Le sigle W / D / F / DS. Rien pour une série de travail ordinaire. */
+function SetBadge({ type }: { type: SetType }) {
+  const letter = setTypeLetter(type);
+  const skin = SET_BADGES[type];
+
+  if (!letter) {
+    return null;
+  }
+
+  return (
+    <View style={[styles.setBadge, { borderColor: skin.ink, backgroundColor: skin.tint }]}>
+      <Text style={[styles.setBadgeText, { color: skin.ink }]}>{letter}</Text>
+    </View>
   );
 }
 
@@ -471,23 +675,23 @@ function CardioRow({
   onPress: () => void;
 }) {
   const checked = exercise.logged !== null;
+  const summary = exercise.prescribed?.summary ?? exercise.name;
 
   return (
     <Pressable
       accessibilityRole="checkbox"
       accessibilityState={{ checked, disabled: !editable }}
-      accessibilityLabel={`${exercise.prescribed.summary}. ${checked ? 'Fait' : 'Pas encore fait'}`}
+      accessibilityLabel={`${summary}. ${checked ? 'Fait' : 'Pas encore fait'}`}
       disabled={!editable}
       onPress={onPress}
       style={({ pressed }) => [
         styles.setRow,
+        styles.setRowPadded,
         checked && styles.setRowChecked,
         pressed && editable && styles.setRowPressed,
       ]}
     >
-      <Text style={[styles.setEffort, !checked && !editable && styles.setFaint]}>
-        {exercise.prescribed.summary}
-      </Text>
+      <Text style={[styles.setEffort, !checked && !editable && styles.setFaint]}>{summary}</Text>
       <View style={styles.spacer} />
       <Text style={styles.caption}>{checked ? 'Fait' : 'À faire'}</Text>
       <View style={[styles.box, checked && styles.boxChecked, !editable && styles.boxIdle]} />
@@ -496,45 +700,314 @@ function CardioRow({
 }
 
 /**
- * Un exercice réalisé sans ligne du programme en face.
+ * La feuille d'ajustement d'une série (KL-30).
  *
- * En lecture stricte : le modifier depuis ici demanderait de savoir le
- * reconstruire, ce qui est le sujet de KL-30. L'afficher suffit à tenir « rien
- * n'est jamais perdu ».
+ * Le prescrit est en tête, jamais remplacé par ce qu'on saisit : c'est la
+ * dernière case du ticket, et c'est la seule façon de voir l'écart au moment où
+ * on le crée.
+ *
+ * **Zéro veut dire « rien à dire », pas « zéro »**. Le compteur ne sait pas
+ * représenter l'absence, et une série au poids du corps n'a pas de charge — la
+ * distinction se perdrait dans un champ vide. Une série à 0 répétition n'existe
+ * pas de toute façon : elle se supprime.
+ *
+ * **Le type de série ne s'édite pas** : il décide de la file d'appariement, le
+ * changer déplacerait le rang de toutes les suivantes (`deviations.ts`).
  */
-function ExtraSection({ extra }: { extra: SessionExtra }) {
+function SetSheet({
+  scheduledUuid,
+  exercise,
+  line,
+  onClose,
+}: {
+  scheduledUuid: string;
+  exercise: SessionExercise;
+  line: SessionSetLine;
+  onClose: () => void;
+}) {
+  const logged = line.logged;
+  // La feuille s'ouvre sur ce qui est consigné et n'écoute plus la base ensuite :
+  // une saisie en cours ne doit pas être réécrite sous les doigts. Elle est
+  // rendue par une clé (`openSet`), donc remontée si la série change d'identité.
+  const [values, setValues] = useState<LoggedSetValues>(() => ({
+    reps: logged?.reps ?? null,
+    weightKg: logged?.weightKg ?? null,
+    durationSeconds: logged?.durationSeconds ?? null,
+    rpe: logged?.rpe ?? null,
+  }));
+
+  // Reps ou durée : ce que la série porte, à défaut ce que le prescrit demandait.
+  // Jamais les deux — un exercice se compte en répétitions ou en secondes.
+  const timed =
+    (logged?.durationSeconds ?? line.planned?.durationSeconds ?? null) !== null &&
+    (logged?.reps ?? line.planned?.reps ?? null) === null;
+
+  const patch = (part: Partial<LoggedSetValues>) =>
+    setValues((current) => ({ ...current, ...part }));
+  const zeroToNull = (value: number) => (value > 0 ? value : null);
+
   return (
-    <View style={styles.block}>
-      <View style={styles.blockHead}>
-        <Text accessibilityRole="header" style={styles.blockRole}>
-          Hors programme
-        </Text>
-      </View>
-
-      <View style={styles.exercise}>
-        <View style={styles.exerciseHead}>
-          <Text style={styles.name}>{extra.logged.exerciseName}</Text>
+    <Sheet
+      visible
+      onClose={onClose}
+      title={`Série ${String(line.index).padStart(2, '0')}`}
+      footer={
+        <View style={styles.sheetActions}>
+          <Button
+            label="Supprimer"
+            variant="ghost"
+            accessibilityHint="Cette série n’a finalement pas été faite"
+            onPress={() => {
+              deleteSet(scheduledUuid, exercise, line);
+              onClose();
+            }}
+          />
           <View style={styles.spacer} />
-          {extra.logged.skipped ? <Chip label="Sauté" /> : null}
+          <Button
+            label="Valider"
+            onPress={() => {
+              updateSet(scheduledUuid, line, values);
+              onClose();
+            }}
+          />
         </View>
+      }
+    >
+      <Text style={styles.caption}>
+        {exercise.name}
+        {' · '}
+        {line.planned
+          ? `prévu ${plannedSummary(line, exercise)}`
+          : 'série hors programme, rien à comparer'}
+      </Text>
 
-        {extra.sets.map((set, index) => (
-          <View key={set.uuid} style={[styles.setRow, styles.setRowChecked]}>
-            <Text style={[styles.setRank, styles.setRankChecked]}>
-              {String(index + 1).padStart(2, '0')}
-            </Text>
-            <View style={styles.setBadgeSlot} />
-            <Text style={styles.setEffort}>{setEffort(set.reps, set.durationSeconds) ?? '—'}</Text>
-            <View style={styles.spacer} />
-            <Text style={styles.setLoad}>{set.weightKg !== null ? weight(set.weightKg) : ''}</Text>
-            <View style={[styles.box, styles.boxChecked]} />
-          </View>
-        ))}
+      {timed ? (
+        <NumberStepper
+          label="Durée"
+          value={values.durationSeconds ?? 0}
+          onChange={(next) => patch({ durationSeconds: zeroToNull(next) })}
+          step={5}
+          max={86_400}
+          unit="s"
+        />
+      ) : (
+        <NumberStepper
+          label="Répétitions"
+          value={values.reps ?? 0}
+          onChange={(next) => patch({ reps: zeroToNull(next) })}
+          step={1}
+          max={200}
+          unit="reps"
+        />
+      )}
 
-        {extra.logged.notes ? <Text style={styles.logNotes}>{extra.logged.notes}</Text> : null}
-      </View>
-    </View>
+      <NumberStepper
+        label="Charge"
+        value={values.weightKg ?? 0}
+        onChange={(next) => patch({ weightKg: zeroToNull(next) })}
+        max={1000}
+        unit="kg"
+      />
+
+      <NumberStepper
+        label="RPE ressenti"
+        value={values.rpe ?? 0}
+        onChange={(next) => patch({ rpe: zeroToNull(next) })}
+        step={1}
+        max={10}
+      />
+      <Text style={styles.caption}>RPE à 0 : non renseigné. Le prescrit garde le sien.</Text>
+    </Sheet>
   );
+}
+
+/**
+ * La feuille d'un exercice : sauter, annoter, remplacer, retirer (KL-30).
+ *
+ * Sauter et annoter sont **un seul enregistrement** — le modèle n'a qu'un champ
+ * `notes`, qui sert de raison quand l'exercice est sauté. Deux boutons de
+ * validation pour deux champs de la même ligne auraient produit deux mutations
+ * pour un seul geste.
+ */
+function ExerciseSheet({
+  scheduledUuid,
+  exercise,
+  onClose,
+  onReplace,
+}: {
+  scheduledUuid: string;
+  exercise: SessionExercise;
+  onClose: () => void;
+  onReplace: (key: string) => void;
+}) {
+  const [skipped, setSkipped] = useState(exercise.skipped);
+  const [notes, setNotes] = useState(exercise.logged?.notes ?? '');
+  const replaceable = canReplaceExercise(exercise);
+  const removable = exercise.prescribed === null;
+
+  const apply = () => setExerciseState(scheduledUuid, exercise, { skipped, notes });
+
+  return (
+    <Sheet
+      visible
+      onClose={onClose}
+      title="Ajuster l’exercice"
+      footer={
+        <Button
+          label="Valider"
+          block
+          onPress={() => {
+            apply();
+            onClose();
+          }}
+        />
+      }
+    >
+      <Text style={styles.name}>{exercise.name}</Text>
+
+      <Button
+        label={skipped ? 'Ne plus sauter' : 'Sauter cet exercice'}
+        variant="secondary"
+        block
+        accessibilityHint={
+          skipped
+            ? 'Le remettre dans la séance'
+            : 'Il est déclaré non fait, avec sa raison si tu en donnes une'
+        }
+        onPress={() => setSkipped((current) => !current)}
+      />
+
+      <Field
+        label={skipped ? 'Raison' : 'Note'}
+        value={notes}
+        onChangeText={setNotes}
+        multiline
+        placeholder={
+          skipped ? 'Machine occupée, douleur…' : 'Ce qu’il faut retenir de cet exercice'
+        }
+        hint="Elle part avec la séance et se lit sur le web."
+      />
+
+      <Button
+        label="Remplacer par un autre exercice"
+        variant="secondary"
+        block
+        disabled={!replaceable}
+        accessibilityHint={
+          replaceable
+            ? 'Choisir dans la bibliothèque, le lien au programme est conservé'
+            : 'Impossible : des séries sont déjà consignées ici'
+        }
+        onPress={() => {
+          // L'état en cours est enregistré avant de partir : la note tapée juste
+          // avant ne doit pas se perdre au passage d'une feuille à l'autre.
+          apply();
+          onReplace(exercise.key);
+        }}
+      />
+
+      {!replaceable && exercise.prescribed !== null ? (
+        <Text style={styles.caption}>
+          Des séries sont déjà consignées sur cet exercice : elles ont été faites ici. Pour
+          continuer sur une autre machine, saute celui-ci et ajoute l’autre hors programme.
+        </Text>
+      ) : null}
+
+      {removable ? (
+        <Button
+          label="Retirer cet exercice"
+          variant="ghost"
+          block
+          onPress={() =>
+            Alert.alert(
+              'Retirer cet exercice ?',
+              'Ses séries consignées seront supprimées de la séance.',
+              [
+                { text: 'Annuler', style: 'cancel' },
+                {
+                  text: 'Retirer',
+                  style: 'destructive',
+                  onPress: () => {
+                    removeExercise(scheduledUuid, exercise);
+                    onClose();
+                  },
+                },
+              ],
+            )
+          }
+        />
+      ) : null}
+    </Sheet>
+  );
+}
+
+/**
+ * Le sélecteur d'exercice de la bibliothèque locale (KL-30).
+ *
+ * **Local, comme tout le reste** : la bibliothèque est descendue par le bootstrap,
+ * choisir un exercice ne demande pas de réseau. La recherche replie les accents
+ * (`session/library.ts`) — « developpe » doit trouver « Développé couché », et le
+ * `LIKE` de SQLite ne le ferait pas.
+ */
+function ExercisePicker({
+  title,
+  onPick,
+  onClose,
+}: {
+  title: string;
+  onPick: (reference: ExerciseRef) => void;
+  onClose: () => void;
+}) {
+  const [term, setTerm] = useState('');
+  const results = useExerciseLibrary(term);
+
+  return (
+    <Sheet visible onClose={onClose} title={title}>
+      <Field
+        label="Chercher"
+        value={term}
+        onChangeText={setTerm}
+        autoFocus
+        autoCorrect={false}
+        placeholder="Développé, squat, tirage…"
+      />
+
+      {results.length === 0 ? (
+        <Text style={styles.body}>
+          Aucun exercice ne correspond. La bibliothèque du téléphone est celle du dernier bootstrap.
+        </Text>
+      ) : (
+        results.map((option) => (
+          <Pressable
+            key={option.id}
+            accessibilityRole="button"
+            accessibilityLabel={option.name}
+            onPress={() => onPick({ id: option.id, name: option.name })}
+            style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
+          >
+            <Text style={styles.name}>{option.name}</Text>
+            <View style={styles.spacer} />
+            {option.global ? null : <Chip label="Perso" />}
+          </Pressable>
+        ))
+      )}
+    </Sheet>
+  );
+}
+
+/** « 8 reps × 80 kg », tel que le prescrit le demandait. */
+function plannedSummary(line: SessionSetLine, exercise: SessionExercise): string {
+  const planned = line.planned;
+
+  if (planned === null) {
+    return exercise.name;
+  }
+
+  const effort =
+    setEffort(planned.reps, planned.durationSeconds) ??
+    (planned.durationSeconds !== null ? duration(planned.durationSeconds) : 'série');
+
+  return planned.weightKg !== null ? `${effort} × ${weight(planned.weightKg)}` : effort;
 }
 
 /** Ce que TalkBack annonce sur une ligne de série. Le rang d'abord : c'est le repère. */
@@ -639,29 +1112,50 @@ const styles = StyleSheet.create({
   setRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[4],
     minHeight: layout.touchTarget,
     marginTop: space[3],
-    paddingHorizontal: space[4],
     borderWidth: layout.hairline,
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
+  // Une ligne non cochée est une seule cible : le rembourrage est sur elle. Une
+  // ligne cochée en porte deux, chacune avec le sien (§ deux gestes).
+  setRowPadded: { gap: space[4], paddingHorizontal: space[4] },
   // Une série faite se pose sur un fond appuyé et garde son filet : elle ne
   // disparaît pas, elle se range.
   setRowChecked: { backgroundColor: colors.fill, borderColor: colors.borderStrong },
   setRowPressed: { backgroundColor: colors.surfaceHover },
+  setValues: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[4],
+    minHeight: layout.touchTarget,
+    paddingLeft: space[4],
+    paddingRight: space[3],
+  },
   setRank: { ...text.numeric, color: colors.textFaint, width: 24 },
   setRankChecked: { color: colors.textSecondary },
   setEffort: { ...text.numeric, color: colors.text },
   setLoad: { ...text.numeric, color: colors.text },
   setFaint: { color: colors.textFaint },
+  // Le prévu, à côté du saisi. Atténué et plus petit : il est le repère, pas la
+  // valeur — celle qui compte est ce qui a été fait.
+  setPlanned: { ...text.caption, color: colors.textFaint },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
   setBadge: { borderWidth: layout.hairline, paddingHorizontal: space[1] },
   setBadgeText: { ...text.eyebrow },
 
+  // La case d'une ligne cochée est une cible à part entière : elle porte donc son
+  // propre plancher tactile, pas seulement la taille du carré dessiné.
+  boxTarget: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: layout.touchTarget,
+    minHeight: layout.touchTarget,
+  },
   box: {
     width: 24,
     height: 24,
@@ -671,4 +1165,17 @@ const styles = StyleSheet.create({
   },
   boxChecked: { borderColor: colors.text, backgroundColor: colors.text },
   boxIdle: { borderColor: colors.borderMuted },
+
+  sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  option: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[4],
+    minHeight: layout.touchTarget,
+    paddingHorizontal: space[5],
+    borderWidth: layout.hairline,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceRaised,
+  },
+  optionPressed: { backgroundColor: colors.fill },
 });

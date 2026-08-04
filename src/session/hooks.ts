@@ -19,9 +19,11 @@ import { AppState, type AppStateStatus } from 'react-native';
 import { localDate, type ScheduledWorkoutRow } from '@/db';
 
 import { dayWindow, type DayCell } from './days';
+import { searchExercises, type ExerciseOption } from './library';
 import { buildProgram, type SessionProgram } from './program';
 import {
   dayCountsQuery,
+  exerciseLibraryQuery,
   loggedExercisesQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
@@ -123,6 +125,20 @@ export function useSessionProgram(uuid: string): SessionProgram {
     () => buildProgram(snapshot[0]?.blocks ?? [], exercises, sets),
     [snapshot, exercises, sets],
   );
+}
+
+/**
+ * La bibliothèque locale filtrée par ce qui est tapé (KL-30).
+ *
+ * Le hook n'est monté que quand le sélecteur d'exercice est ouvert : la requête
+ * remonte toute la table, ce qui est bon marché mais inutile le reste du temps.
+ * Le filtrage est pur et mémoïsé (`library.ts`) — il se rejoue à la frappe, pas à
+ * chaque rendu de l'écran de séance.
+ */
+export function useExerciseLibrary(term: string): ExerciseOption[] {
+  const { data } = useLiveQuery(exerciseLibraryQuery());
+
+  return useMemo(() => searchExercises(data, term), [data, term]);
 }
 
 /** La bande de jours, chacun sachant s'il porte des séances. */
