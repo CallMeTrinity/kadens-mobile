@@ -96,6 +96,15 @@ synchronise en différé avec Kadens.
 - **`?since` prend `sync_state.serverTime`, jamais `lastPulledAt`.** Le premier
   est l'horloge du serveur, le second celle du téléphone ; s'en remettre au
   second ferait dépendre la synchro d'un désaccord de pendules.
+- **Ouvrir une séance n'empile pas de mutation.** La règle précédente vaut pour
+  le **réalisé** — une série cochée, une clôture. Poser `started_at` n'en est
+  pas : rien n'a été fait, et le pull protège déjà par son second critère
+  (« commencée et pas terminée »). Le contraire enverrait au calendrier web des
+  séances ouvertes puis refermées à vide.
+- **La programmation ne se modifie jamais depuis le téléphone.** Rattraper la
+  veille consiste à **ouvrir** la séance d'hier, pas à la redater : `date`,
+  `title` et `status` appartiennent au serveur, les bornes et le réalisé au
+  téléphone.
 
 ## 4. Conventions de rangement
 
@@ -104,7 +113,13 @@ synchronise en différé avec Kadens.
   des migrations, les résoudre, les générer). Les créer implique de redéclarer ce
   qu'Expo appliquait par défaut : ne pas les vider.
 - Route → `src/app/` (`expo-router`, une route = un fichier)
-- Composant de base → `src/components/`
+- Composant de base → `src/components/`. Un composant **propre à un écran**
+  (bande de jours, carte de séance) reste dans le fichier de sa route : il
+  n'entre dans `src/components/` que le jour où un deuxième écran l'emploie.
+- Métier de séance → `src/session/` (démarrer, reprendre, et demain cocher,
+  dévier, clôturer). Le module où `@/db` et `@/sync` se rencontrent pour le
+  domaine, comme `src/sync/` est celui où `@/api` et `@/db` se rencontrent pour
+  le transport.
 - Thème et tokens → `src/theme/`
 - Base locale, schéma et migrations → `src/db/`
 - Client API → `src/api/`
@@ -507,4 +522,61 @@ faut pas casser :
   ni d'`expo-network` ; la carte « Synchro » de `src/app/index.tsx` est là pour
   ça.
 
-Prochain ticket : **KL-28** (écran Aujourd'hui).
+**KL-28 livré (04/08/2026) — le lot 4 est ouvert.** L'écran « Aujourd'hui »
+(`src/app/index.tsx`) et le module `src/session/`, importé par `@/session`. Ce
+qu'ils posent et qu'il ne faut pas casser :
+
+- **`src/session/` existe parce que le domaine n'est ni du stockage ni du
+  transport.** « Démarrer une séance » veut dire : poser `started_at`, pas le
+  statut ; refuser une séance close (§2.3 point 5) ; faire naître une séance libre
+  à la date du jour avec un uuid posé localement. Ni `@/db` ni `@/sync` ne
+  connaissent ces règles, et un écran qui les porterait les rendrait invisibles au
+  suivant. Cinq fichiers, et c'est là que KL-29, KL-30 et KL-33 poseront cocher,
+  dévier et clôturer.
+- **Ouvrir n'empile pas de mutation** (cf. §3). Vérifié dans les deux sens contre
+  la vraie fonction de pull : un bootstrap qui ignore la séance libre locale ne
+  l'emporte pas, un bootstrap qui renvoie la séance programmée avec
+  `startedAt: null` ne l'écrase pas.
+- **Reprendre est idempotent.** `beginWorkout` ne réécrit pas `started_at` s'il
+  est déjà posé — sinon la durée de la séance repartirait de zéro à chaque retour
+  sur l'écran, et c'est elle que KL-33 affichera au résumé.
+- **La sélection du jour est un écart, pas une date.** L'état de l'écran est
+  `offset ∈ [-2, +2]` ; le jour s'en déduit. Une app laissée en arrière-plan
+  rouvre le lendemain : avec une date absolue, « Aujourd'hui » afficherait hier.
+  `useToday()` relit la date locale au retour au premier plan, et c'est le seul
+  état à tenir.
+- **Les dates de `days.ts` se parsent à midi**, jamais à minuit : un changement
+  d'heure appliqué à minuit peut faire basculer la date d'un jour. Les libellés
+  français sont écrits à la main, sans `Intl` — la présence d'ICU dépend de la
+  variante d'Hermes embarquée, et un repli silencieux donnerait « Tuesday ».
+- **Aucune lecture d'écran ne touche `prescribed_snapshot`.** C'est l'invariant de
+  KL-24 : lister un jour ne remonte pas le plus gros document de la base.
+  Conséquence assumée — une carte ne peut pas annoncer « 5 exercices » avant
+  l'ouverture, et le compter demanderait `json_extract` / `json_array_length`,
+  donc l'extension json1 sur tous les Android visés.
+- **`useLiveQuery` n'écoute que la table du `from`**, pas les tables jointes
+  (vérifié dans son implémentation). Le `from` de chaque requête de
+  `session/queries.ts` est choisi pour ça : le compte de séries part de
+  `logged_set`, pas de `scheduled_workout`.
+- **Un seul bouton primaire par écran**, et c'est le plus urgent : reprendre s'il
+  y a une séance ouverte, sinon démarrer la première séance actionnable du jour.
+  La bande de jours n'est pas un `Chip` (qui ne se tape pas, KL-23) mais un
+  contrôle avec son plancher tactile.
+- **`src/app/session/[uuid].tsx` est une coquille assumée**, née de « Démarrer a
+  besoin d'une destination » — même statut que `login.tsx` en KL-25. Elle montre
+  que la séance est ouverte et rien de plus : KL-29 la remplit, une
+  demi-implémentation du déroulé serait à défaire.
+- **`src/app/diagnostics.tsx` est l'ancien écran d'accueil**, déplacé pour que
+  « Aujourd'hui » prenne la route `index`. Il n'est pas supprimé parce qu'il porte
+  encore la **seule déconnexion de l'app** et les seuls contrôles qui ne
+  s'observent que sur un appareil. KL-35 le remplace.
+- **Vérification** : `npm run typecheck`, `npm run lint`,
+  `npx prettier --check .`, `npx expo export` pour Android et web (neuf routes
+  statiques), plus un banc d'essai de **44 contrôles hors React Native** —
+  `src/session` bundlé pour Node, `expo-sqlite` posé sur `node:sqlite`, la vraie
+  migration appliquée. **Pas de contrôle sur appareil** : le build natif reste
+  bloqué par le problème de toolchain Kotlin/AGP de KL-48 (préexistant). Le rendu,
+  les cibles tactiles de la bande de jours et la bascule de minuit n'ont donc pas
+  été vus sur un vrai téléphone.
+
+Prochain ticket : **KL-29** (écran Séance en cours).

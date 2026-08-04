@@ -1,5 +1,6 @@
 import { count } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import type { SQLiteTable } from 'drizzle-orm/sqlite-core';
@@ -27,20 +28,19 @@ import { isExhausted, MAX_ATTEMPTS, rearmExhausted, syncNow, useSyncStatus } fro
 import { colors, space, text } from '@/theme';
 
 // Écran de vérification du socle. Il montrait l'échelle typographique (KL-22),
-// il montre désormais les huit composants de base : c'est le moyen le plus court
-// de voir sur un vrai téléphone qu'une cible se vise au doigt, qu'un pas de
-// 2,5 kg part au premier appui et qu'une feuille monte du bas. Il est remplacé
-// par l'écran de connexion (KL-26) puis par « Aujourd'hui » (KL-28).
+// il montre les huit composants de base, le compteur de la base locale (KL-24),
+// la carte « API » (KL-25) et la carte « Synchro » (KL-27) : c'est le moyen le
+// plus court de voir sur un vrai téléphone qu'une cible se vise au doigt, que
+// les migrations sont passées, qu'un jeton révoqué depuis `/profile/settings`
+// renvoie bien à l'écran de connexion, et que le cycle de synchronisation tourne
+// sur un vrai réseau. Rien de tout ça n'est observable hors appareil.
 //
-// KL-24 y ajoute le compteur de la base locale : c'est ce qui permet de voir que
-// les migrations sont passées et que le jeu de démonstration s'injecte, sans
-// écran dédié — il disparaîtra avec le reste de cet écran.
-//
-// KL-25 y ajoute la carte « API » : elle exerce le client sur un vrai réseau,
-// ce qu'aucun contrôle hors téléphone ne fait. C'est là qu'on voit qu'un jeton
-// révoqué depuis `/profile/settings` renvoie bien à l'écran de connexion — le
-// seul moyen d'observer la purge de bout en bout.
-export default function IndexScreen() {
+// **Il occupait la route `index` jusqu'à KL-28**, qui l'a déplacé ici pour que
+// « Aujourd'hui » prenne l'accueil. Le supprimer aurait été plus propre s'il ne
+// portait pas encore la **seule déconnexion de l'app** et les seuls contrôles
+// d'appareil du chantier : KL-35 le remplace par le vrai écran de réglages, qui
+// reprendra la déconnexion, l'état de synchronisation et la file en échec.
+export default function DiagnosticsScreen() {
   const [weight, setWeight] = useState(82.5);
   const [reps, setReps] = useState(8);
   const [rest, setRest] = useState(2);
@@ -60,7 +60,12 @@ export default function IndexScreen() {
 
   return (
     <View style={styles.screen}>
-      <Header eyebrow="Composants — KL-23" title="Kadens" right={<Chip label="Local" rank={2} />} />
+      <Header
+        eyebrow="Socle et synchronisation"
+        title="Diagnostic"
+        onBack={() => router.back()}
+        right={<Chip label="Local" rank={2} />}
+      />
 
       <ScrollView contentContainerStyle={styles.page}>
         <Card title="Actions">
