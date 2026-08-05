@@ -40,7 +40,10 @@
  *    série, en ajoute, en retire, saute, remplace, ajoute un exercice — et rien
  *    d'autre : pas de bloc réordonné, pas de superset créé, pas de tour modifié.
  *    Corollaire : on ne dévie que sur ce qui a **été fait**, le prescrit n'ayant
- *    aucun endroit où accueillir une valeur revue avant la série.
+ *    aucun endroit où accueillir une valeur revue avant la série. Seule
+ *    exception, et elle ne va pas en base : la **série en brouillon**
+ *    (`withDraftSets`, `program.ts`), qui est une série de plus qu'on annonce
+ *    avant de la faire et qui se coche ensuite par la voie normale.
  * 7. **Clôturer est du réalisé, ouvrir ne l'est pas.** `close.ts` (KL-33) pose
  *    `ended_at`, passe la séance en `done` et empile sa mutation dans la même
  *    transaction, là où `beginWorkout` n'empile rien. Et c'est terminal : une
@@ -90,7 +93,6 @@ export type { ExerciseLibraryView } from './hooks';
 
 export {
   addExercise,
-  addSet,
   boundSetValues,
   canReplaceExercise,
   deleteSet,
@@ -125,12 +127,14 @@ export { checkSet, setCardioDone, uncheckSet } from './log';
 export {
   allExercises,
   buildProgram,
+  draftSetValues,
   exerciseIdOf,
   exerciseIdsOf,
   findExercise,
   findSetLine,
   nextTarget,
   setDeviates,
+  withDraftSets,
 } from './program';
 export type {
   SessionBlock,

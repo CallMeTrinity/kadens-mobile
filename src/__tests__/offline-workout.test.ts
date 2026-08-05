@@ -22,7 +22,6 @@ import type { ScheduleUpsertInput, ScheduledWorkoutPayload } from '@/api';
 import { db, scheduledWorkout } from '@/db';
 import {
   addExercise,
-  addSet,
   beginWorkout,
   checkSet,
   closeWorkout,
@@ -40,7 +39,7 @@ import {
   today,
 } from '@/test/fixtures';
 import { networkFailure, stubFetch } from '@/test/http';
-import { exerciseAt, nextLine, programOf } from '@/test/program';
+import { draftedExerciseAt, exerciseAt, nextLine, programOf } from '@/test/program';
 import { signIn } from '@/test/session';
 import { waitForIdle } from '@/test/sync';
 
@@ -169,7 +168,18 @@ it('fait la séance hors réseau et ne perd rien en la synchronisant', async () 
 
   // Et un exercice qui n'était pas prévu prend sa place.
   addExercise(UUID, { id: 303, name: 'Tirage poulie' }, programOf(UUID).prescribedCount);
-  addSet(UUID, programOf(UUID).extras[0]);
+
+  // Une série de plus s'annonce d'abord (l'écran la pose, rien n'est écrit) puis
+  // se coche : c'est le seul chemin par lequel du réalisé entre en base.
+  const extra = draftedExerciseAt(UUID, 2);
+
+  expect(
+    checkSet(
+      UUID,
+      extra,
+      extra.lines!.find((line) => line.draft)!,
+    ),
+  ).toBe(true);
 
   // Tout ça n'a produit qu'une entrée en file : elle ne porte que l'uuid, le
   // document se relit au moment du push.

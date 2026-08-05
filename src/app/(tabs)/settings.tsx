@@ -409,6 +409,19 @@ function RestCard() {
           toujours.
         </Text>
 
+        {/* Le même interrupteur qu'en séance, où il vit vraiment (barre basse) :
+            ici il est **trouvable**, là-bas il est sous le pouce au moment où on
+            s'aperçoit qu'un décompte n'a rien à faire dans ce qu'on fait. */}
+        <Button
+          label={
+            preferences.autoRest ? 'Départ automatique : activé' : 'Départ automatique : désactivé'
+          }
+          variant="secondary"
+          block
+          accessibilityHint="Démarrer le repos en validant une série"
+          onPress={() => patchPreferences({ autoRest: !preferences.autoRest })}
+        />
+
         <Button
           label={preferences.vibrate ? 'Vibration : activée' : 'Vibration : désactivée'}
           variant="secondary"

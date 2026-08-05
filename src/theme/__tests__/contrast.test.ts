@@ -58,7 +58,7 @@ const INK: InkCase[] = [
   { ink: 'text', on: 'surfaceRaised', role: 'numeric', where: 'charge et répétitions' },
   { ink: 'text', on: 'surfaceSubtle', role: 'numeric', where: "séries de l'exercice courant" },
   { ink: 'text', on: 'surfaceRaised', role: 'sectionTitle', where: 'titre de section' },
-  { ink: 'text', on: 'surfaceRaised', role: 'kpi', where: 'chrono de repos' },
+  { ink: 'text', on: 'surfaceRaised', role: 'inputValue', where: 'chrono de repos' },
   { ink: 'text', on: 'fill', role: 'blockRole', where: 'rôle de bloc' },
   { ink: 'textStrong', on: 'surfaceRaised', role: 'body', where: 'valeur saisie dans un champ' },
   { ink: 'textStrong', on: 'surfaceRaised', role: 'inputValue', where: 'valeur du compteur' },
@@ -94,7 +94,15 @@ const INK: InkCase[] = [
   // Le rouge : plein sous un libellé blanc, foncé quand il écrit.
   { ink: 'onPrimary', on: 'primary', role: 'action', where: 'bouton primaire' },
   { ink: 'onPrimary', on: 'primaryHover', role: 'action', where: 'bouton primaire pressé' },
-  { ink: 'primary', on: 'surfaceRaised', role: 'kpi', where: 'chrono de repos échu' },
+  {
+    // Le chrono a maigri (une ligne fine au lieu d'un étage) : il n'est plus un
+    // « grand texte » au sens WCAG, donc le rouge plein n'y suffit plus. C'est
+    // exactement la règle « le rouge qui écrit est `primaryOnTint` ».
+    ink: 'primaryOnTint',
+    on: 'surfaceRaised',
+    role: 'inputValue',
+    where: 'chrono de repos échu',
+  },
   { ink: 'primaryOnTint', on: 'bg', role: 'body', where: "message d'échec" },
   { ink: 'primaryOnTint', on: 'bg', role: 'caption', where: "aide d'un champ en erreur" },
   { ink: 'primaryOnTint', on: 'surface', role: 'caption', where: 'champ en erreur, en feuille' },

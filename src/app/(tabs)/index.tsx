@@ -84,6 +84,14 @@ export default function TodayScreen() {
     }
   }
 
+  // Une séance close **s'ouvre sans passer par `beginWorkout`** : la clôture est
+  // terminale (§2.3 point 5), il la refuse, et un bouton dont l'appui n'ouvrait
+  // rien ressemblait à un écran figé. C'est la règle que l'historique tient déjà
+  // (`(tabs)/history.tsx`), elle vaut ici pour la même raison.
+  function view(uuid: string) {
+    router.push(`/session/${uuid}`);
+  }
+
   function openFreeSheet() {
     // Le brouillon repart du défaut à chaque ouverture : la feuille est un
     // geste, pas un formulaire qu'on retrouve à moitié rempli trois jours plus
@@ -127,7 +135,7 @@ export default function TodayScreen() {
               key={workout.uuid}
               workout={workout}
               primary={workout.uuid === primaryUuid}
-              onOpen={() => open(workout.uuid)}
+              onOpen={() => (workout.closed ? view(workout.uuid) : open(workout.uuid))}
             />
           ))
         ) : (

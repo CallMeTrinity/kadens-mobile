@@ -245,7 +245,10 @@ export function usePreferences(): Omit<PreferenceRow, 'id'> {
   const row = data[0];
 
   return useMemo(
-    () => (row ? { restSeconds: row.restSeconds, vibrate: row.vibrate } : DEFAULT_PREFERENCES),
+    () =>
+      row
+        ? { restSeconds: row.restSeconds, vibrate: row.vibrate, autoRest: row.autoRest }
+        : DEFAULT_PREFERENCES,
     [row],
   );
 }

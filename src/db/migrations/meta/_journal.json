@@ -15,6 +15,13 @@
       "when": 1785851755505,
       "tag": "0001_preference",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1785921726125,
+      "tag": "0002_auto_rest",
+      "breakpoints": true
     }
   ]
 }

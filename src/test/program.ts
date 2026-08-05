@@ -14,10 +14,12 @@
  */
 
 import {
+  allExercises,
   buildProgram,
   loggedExercisesQuery,
   loggedSetsOfWorkoutQuery,
   prescribedSnapshotQuery,
+  withDraftSets,
   type SessionExercise,
   type SessionProgram,
   type SessionSetLine,
@@ -33,12 +35,26 @@ export function programOf(uuid: string): SessionProgram {
 
 /** Le n-ième exercice du déroulé, blocs puis hors programme. */
 export function exerciseAt(uuid: string, index = 0): SessionExercise {
+  return at(programOf(uuid), index, uuid);
+}
+
+/**
+ * Le même exercice, sa série annoncée posée : ce que l'écran a sous les yeux
+ * après un appui sur « + Série ».
+ *
+ * L'écran tient les clés en mémoire et les projette au rendu (`withDraftSets`) :
+ * un test qui fabriquerait la ligne à la main exercerait sa propre idée du
+ * brouillon, pas celle de l'app.
+ */
+export function draftedExerciseAt(uuid: string, index = 0): SessionExercise {
   const program = programOf(uuid);
-  const exercises = [
-    ...program.blocks.flatMap((block) => block.groups.flatMap((group) => group.exercises)),
-    ...program.extras,
-  ];
-  const exercise = exercises[index];
+  const exercise = at(program, index, uuid);
+
+  return at(withDraftSets(program, new Set([exercise.key])), index, uuid);
+}
+
+function at(program: SessionProgram, index: number, uuid: string): SessionExercise {
+  const exercise = allExercises(program)[index];
 
   if (!exercise) {
     throw new Error(`Aucun exercice au rang ${index} dans la séance ${uuid}.`);

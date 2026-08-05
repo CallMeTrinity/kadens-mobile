@@ -44,6 +44,10 @@
  * prévu. Ils sont donc des lignes comme les autres — du réalisé invisible serait
  * la pire des trahisons de « rien n'est jamais perdu ».
  *
+ * S'y ajoute une ligne qui n'est **ni prescrite ni réalisée** : la série qu'on
+ * annonce avant de la faire (`withDraftSets`, plus bas). Elle ne vit qu'en
+ * mémoire, le temps du rendu, et disparaît en devenant du réalisé.
+ *
  * ## Un seul type d'exercice, prescrit ou non (KL-30)
  *
  * `SessionExercise.prescribed` est **nullable** depuis que l'app sait ajouter un
@@ -91,6 +95,12 @@ export interface SessionSetLine {
   actionable: boolean;
   /** Décochable : c'est la dernière série cochée de sa file. */
   undoable: boolean;
+  /**
+   * Série **ajoutée en séance et pas encore faite** (§ la série en plus, plus
+   * bas). Elle n'existe qu'en mémoire : ni prescrit, ni réalisé, donc rien en
+   * base. La cocher la consigne comme n'importe quelle autre.
+   */
+  draft: boolean;
 }
 
 /** Un exercice de la séance : prescrit, réalisé, ou les deux. */
@@ -379,6 +389,7 @@ function buildLines(
       logged,
       actionable: logged === null && rank === queue.length,
       undoable: logged !== null && rank === queue.length - 1,
+      draft: false,
     };
   });
 
@@ -397,11 +408,111 @@ function buildLines(
         logged: set,
         actionable: false,
         undoable: set.uuid === queues[file][queues[file].length - 1].uuid,
+        draft: false,
       });
     }
   }
 
   return lines;
+}
+
+/**
+ * La série en plus : ajoutée d'abord, cochée ensuite (KL-39 bis).
+ *
+ * « + Série » ne consigne plus rien (c'était le défaut d'ergonomie : la série
+ * naissait **faite**, avant d'avoir été faite, et le repos partait avec). Elle
+ * pose maintenant une ligne cochable de plus, pré-remplie par la précédente, qui
+ * se valide comme les autres — à la ligne, ou à la barre basse.
+ *
+ * ## Elle ne va pas en base, et c'est le point
+ *
+ * Une série non faite n'est **ni du prescrit ni du réalisé** : le prescrit ne
+ * bouge jamais (`deviations.ts`, § en-tête) et le réalisé décrit ce qui a eu
+ * lieu. Il n'existe donc aucune colonne où l'écrire, et en inventer une ferait
+ * partir au serveur une série qu'on n'a pas faite. Le brouillon vit dans l'écran,
+ * qui en tient les clés, et cette fonction le **projette** sur le déroulé le
+ * temps du rendu. Conséquence assumée : l'app tuée avec un brouillon en attente
+ * le perd — il ne portait aucune information, seulement une intention.
+ *
+ * ## Ce qu'il ne change pas
+ *
+ * Les compteurs. `done`/`total` disent ce que le **programme** réclame et ce qui
+ * y répond ; une série qu'on décide d'ajouter n'ajoute rien à ce que le programme
+ * demande. Elle entre dans les compteurs au moment où elle est cochée, par la
+ * voie normale (`Math.max(plannedCount, loggedCount)`, plus haut).
+ */
+export function withDraftSets(program: SessionProgram, keys: ReadonlySet<string>): SessionProgram {
+  if (keys.size === 0) {
+    return program;
+  }
+
+  const draft = (exercise: SessionExercise): SessionExercise => {
+    const line = keys.has(exercise.key) ? draftLineFor(exercise) : null;
+
+    return line === null ? exercise : { ...exercise, lines: [...(exercise.lines ?? []), line] };
+  };
+
+  return {
+    ...program,
+    blocks: program.blocks.map((block) => ({
+      ...block,
+      groups: block.groups.map((group) => ({ ...group, exercises: group.exercises.map(draft) })),
+    })),
+    extras: program.extras.map(draft),
+  };
+}
+
+/**
+ * La ligne en brouillon de cet exercice, ou `null` s'il n'y a pas lieu.
+ *
+ * Trois refus, tous repris du geste d'origine (`addSet`) : un cardio ne se
+ * saisit pas, un exercice sauté est réglé, et une ligne du programme qui attend
+ * encore **est** la prochaine série — en ajouter une par-dessus donnerait deux
+ * cibles pour un seul fait.
+ */
+function draftLineFor(exercise: SessionExercise): SessionSetLine | null {
+  const lines = exercise.lines;
+
+  if (lines === null || exercise.skipped || lines.some((line) => line.actionable)) {
+    return null;
+  }
+
+  return {
+    // Une seule ligne en brouillon par exercice : la clé n'a pas à être numérotée.
+    key: `d${exercise.key}`,
+    index: (lines[lines.length - 1]?.index ?? 0) + 1,
+    // Toujours de travail. Le type décide de la file d'appariement : un
+    // échauffement ajouté après coup décalerait la lecture de toute la séance.
+    type: 'normal',
+    planned: draftSetValues(exercise),
+    logged: null,
+    actionable: true,
+    undoable: false,
+    draft: true,
+  };
+}
+
+/**
+ * Les valeurs d'une série ajoutée : la dernière faite, sinon la dernière prescrite.
+ *
+ * L'échauffement est écarté des deux côtés — une série ajoutée est une série de
+ * travail, la pré-remplir avec la barre à vide serait le pire des défauts.
+ */
+export function draftSetValues(exercise: SessionExercise): SetValues {
+  const empty: SetValues = { reps: null, weightKg: null, durationSeconds: null };
+  const lines = exercise.lines ?? [];
+  const work = lines.filter((line) => line.type !== 'warmup' && !line.draft);
+  const lastLogged = [...work].reverse().find((line) => line.logged !== null)?.logged;
+
+  if (lastLogged) {
+    return {
+      reps: lastLogged.reps,
+      weightKg: lastLogged.weightKg,
+      durationSeconds: lastLogged.durationSeconds,
+    };
+  }
+
+  return [...work].reverse().find((line) => line.planned !== null)?.planned ?? empty;
 }
 
 /**

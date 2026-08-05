@@ -147,17 +147,29 @@ export function useRestTimer(): RestState | null {
  * tait, ce qui est le cas de la quasi-totalité des séances et de toutes les
  * séances libres.
  *
+ * **Le démarrage automatique se débranche** (`autoRest`, basculé depuis la barre
+ * basse). C'est la seule chose que le réglage coupe : un repos lancé à la main
+ * part quand même, et celui qui court garde ses ajustements. La coupure est ici
+ * plutôt que dans l'écran parce que « cocher démarre le repos » est une règle du
+ * domaine, et que trois appelants la partagent.
+ *
  * Rend `false` quand il n'y a rien à démarrer : un repos de zéro seconde est une
  * consigne d'enchaîner (superset), la respecter c'est ne pas afficher de barre.
  */
 export function startRestAfterSet(exercise: SessionExercise): boolean {
+  const preferences = getPreferences();
+
+  if (!preferences.autoRest) {
+    return false;
+  }
+
   const prescribed = exercise.prescribed?.restSeconds ?? null;
 
   if (prescribed !== null && prescribed <= 0) {
     return false;
   }
 
-  return startRest(prescribed ?? getPreferences().restSeconds, exercise.name);
+  return startRest(prescribed ?? preferences.restSeconds, exercise.name);
 }
 
 /** Démarre un repos d'une durée donnée, en remplaçant celui qui court. */

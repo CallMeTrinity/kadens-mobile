@@ -284,6 +284,21 @@ export const preference = sqliteTable(
     restSeconds: integer('rest_seconds').notNull().default(90),
     /** La vibration de fin de repos. Désactivable, comme le ticket le demande. */
     vibrate: integer('vibrate', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * Le repos part-il tout seul quand une série est cochée ?
+     *
+     * Vrai par défaut : c'est le cas nominal en muscu, et c'est ce que KL-31 a
+     * posé. Le réglage existe parce que le contraire est un vrai mode de séance —
+     * circuit mené à la montre, séance chronométrée de bout en bout, échauffement
+     * enchaîné — où un décompte qui repart à chaque coche est du bruit sous le
+     * pouce. Il se bascule **en séance**, depuis la barre basse, là où on s'en
+     * aperçoit ; les réglages le portent aussi, pour qu'il soit trouvable.
+     *
+     * Il ne débranche que le **démarrage automatique** : un repos lancé à la main
+     * (« Tester un repos », KL-35) part quand même, et un repos qui court garde
+     * ses ajustements.
+     */
+    autoRest: integer('auto_rest', { mode: 'boolean' }).notNull().default(true),
   },
   (t) => [check('preference_singleton', sql`${t.id} = 1`)],
 );

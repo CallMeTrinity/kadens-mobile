@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,6 +11,7 @@ import {
   Field,
   FilterChip,
   Header,
+  Icon,
   NumberStepper,
   setEffort,
   Sheet,
@@ -20,7 +21,6 @@ import {
 import {
   activityLabel,
   addExercise,
-  addSet,
   adjustRest,
   beginWorkout,
   blockRoleLabel,
@@ -49,12 +49,14 @@ import {
   updateSet,
   useExerciseLibrary,
   useKeepScreenAwake,
+  usePreferences,
   useRestTimer,
   useSessionHistory,
   useSessionProgram,
   useToday,
   useWorkout,
   useWorkoutPendingSync,
+  withDraftSets,
   type ExerciseRef,
   type LoggedSetValues,
   type RestState,
@@ -65,13 +67,14 @@ import {
   type SessionTarget,
 } from '@/session';
 import { colors, layout, space, text, useReducedMotion } from '@/theme';
-import type {
-  ActivityType,
-  ExerciseHistoryRow,
-  PerformanceBest,
-  PerformanceSession,
-  SetType,
-  TargetArea,
+import {
+  patchPreferences,
+  type ActivityType,
+  type ExerciseHistoryRow,
+  type PerformanceBest,
+  type PerformanceSession,
+  type SetType,
+  type TargetArea,
 } from '@/db';
 
 /**
@@ -125,11 +128,14 @@ import type {
  * d'ajustement, sa case reste le décochage. Deux cibles dans une ligne plutôt
  * qu'un appui long, qui n'est visible nulle part et se découvre par accident.
  *
- * **Ajouter une série n'ouvre rien** (KL-39). Elle naît pré-remplie par la
- * précédente, ce qui est juste dans le cas courant ; ouvrir la feuille d'office
- * imposait un clavier et deux appuis de plus à chaque série supplémentaire,
- * pour corriger une valeur qui n'avait presque jamais besoin de l'être. La
- * ligne créée s'ajuste comme les autres, en la touchant.
+ * **Ajouter une série n'ouvre rien, et ne la coche pas** (KL-39, revu). Elle naît
+ * pré-remplie par la précédente — ce qui est juste dans le cas courant — mais
+ * **pas faite** : c'est une ligne cochable de plus, en attente comme les autres.
+ * La version d'origine la consignait d'office, si bien qu'annoncer une série de
+ * plus revenait à déclarer l'avoir faite, et le repos partait avant l'effort. La
+ * ligne se coche ensuite par le même geste que toutes les autres, à la ligne ou à
+ * la barre basse, et rien ne va en base avant. Le brouillon vit donc ici, dans
+ * l'écran (`drafts`), et se projette sur le déroulé par `withDraftSets`.
  *
  * Corollaire du modèle, pas de l'écran : **on ne dévie que sur ce qui a été
  * fait**. Le prescrit ne bouge jamais (§0.3) et n'a aucun endroit où accueillir
@@ -180,8 +186,13 @@ import type {
 export default function SessionScreen() {
   const { uuid } = useLocalSearchParams<{ uuid: string }>();
   const workout = useWorkout(uuid);
-  const program = useSessionProgram(uuid);
+  const base = useSessionProgram(uuid);
   const pendingSync = useWorkoutPendingSync(uuid);
+  // Les séries annoncées et pas encore faites, par clé d'exercice. En mémoire
+  // seulement : une série non faite n'est ni du prescrit ni du réalisé, elle n'a
+  // aucune colonne où s'écrire (`withDraftSets`).
+  const [drafts, setDrafts] = useState<ReadonlySet<string>>(() => new Set());
+  const program = useMemo(() => withDraftSets(base, drafts), [base, drafts]);
   const history = useSessionHistory(program);
   // Le repère des dates d'historique : le vrai jour, pas celui de la séance
   // affichée. Relire une séance d'il y a trois jours ne doit pas faire dire
@@ -200,6 +211,9 @@ export default function SessionScreen() {
 
   const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
   const rest = useRestTimer();
+  // Lues en vif : la bascule de la barre basse et celle des réglages écrivent la
+  // même ligne, et l'écran doit suivre l'une comme l'autre.
+  const preferences = usePreferences();
   // Ce que la séance attend maintenant. C'est ce que la barre basse propose, et
   // ce que le déroulé garde en vue.
   const target = running ? nextTarget(program) : null;
@@ -212,6 +226,23 @@ export default function SessionScreen() {
   // non `useKeepAwake()` : cet écran se monte aussi pour relire une séance close.
   useKeepScreenAwake(running);
 
+  // La série annoncée est **consommée par la validation suivante**, quelle
+  // qu'elle soit : cochée, elle devient du réalisé et la ligne repousse par le
+  // bas ; décochée, l'exercice repart d'une ligne en attente et deux cibles
+  // vaudraient une de trop. Une seule règle, donc aucune clé qui traîne.
+  const dropDraft = useCallback((key: string) => {
+    setDrafts((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+
+      const next = new Set(current);
+      next.delete(key);
+
+      return next;
+    });
+  }, []);
+
   // On ne consigne que dans une séance ouverte. Une séance close est close
   // (§2.3 point 5) ; une séance jamais commencée n'a pas d'heure de début, et un
   // réalisé sans borne de départ serait une séance qu'on n'a pas faite.
@@ -222,15 +253,17 @@ export default function SessionScreen() {
     (exercise: SessionExercise, line: SessionSetLine) => {
       if (line.actionable) {
         if (checkSet(uuid, exercise, line)) {
+          dropDraft(exercise.key);
           startRestAfterSet(exercise);
         }
       } else if (line.undoable) {
         if (uncheckSet(uuid, exercise, line)) {
+          dropDraft(exercise.key);
           stopRest();
         }
       }
     },
-    [uuid],
+    [uuid, dropDraft],
   );
 
   const onCardio = useCallback(
@@ -238,19 +271,12 @@ export default function SessionScreen() {
     [uuid],
   );
 
-  // Ajouter une série est **un seul geste**, et il s'arrête là (KL-39) : la
-  // série naît pré-remplie par la précédente — ce qui est juste presque à chaque
-  // fois — et le repos part, parce qu'une série ajoutée est une série faite. La
-  // feuille ne s'ouvre plus d'office : elle imposait un clavier et deux appuis
-  // de plus pour corriger une valeur qui n'en avait pas besoin. La ligne créée
-  // s'ajuste comme les autres, en la touchant.
+  // Ajouter une série **annonce**, elle ne consigne pas : la ligne apparaît en
+  // attente, pré-remplie par la précédente, et rien ne part en base tant qu'elle
+  // n'est pas cochée. Le repos non plus — il suit l'effort, pas l'intention.
   const onAddSet = useCallback(
-    (exercise: SessionExercise) => {
-      if (addSet(uuid, exercise)) {
-        startRestAfterSet(exercise);
-      }
-    },
-    [uuid],
+    (exercise: SessionExercise) => setDrafts((current) => new Set(current).add(exercise.key)),
+    [],
   );
 
   // La cible de la barre basse : le même geste que cocher la ligne, au pouce.
@@ -263,20 +289,30 @@ export default function SessionScreen() {
       }
 
       if (checkSet(uuid, pending.exercise, pending.line)) {
+        dropDraft(pending.exercise.key);
         startRestAfterSet(pending.exercise);
       }
     },
-    [uuid],
+    [uuid, dropDraft],
   );
 
+  // Le sélecteur rend **une liste** : garnir une séance vierge, c'est y poser
+  // cinq exercices d'affilée, et rouvrir la feuille entre chacun est cinq fois
+  // la même recherche. Le remplacement, lui, n'en accepte qu'un — deux
+  // exercices ne remplacent pas une ligne du programme.
   const onPick = useCallback(
-    (target: PickerTarget, reference: ExerciseRef) => {
+    (target: PickerTarget, references: ExerciseRef[]) => {
       if (target.mode === 'add') {
-        addExercise(uuid, reference, program.prescribedCount);
+        // La position se relit en base à chaque insertion (`nextExercisePosition`) :
+        // la liste garde son ordre, du premier choisi au dernier.
+        for (const reference of references) {
+          addExercise(uuid, reference, program.prescribedCount);
+        }
       } else {
         const exercise = findExercise(program, target.exerciseKey);
+        const reference = references[0];
 
-        if (exercise) {
+        if (exercise && reference) {
           replaceExercise(uuid, exercise, reference);
         }
       }
@@ -388,6 +424,7 @@ export default function SessionScreen() {
               onCardio={onCardio}
               onAdjustSet={setOpenSet}
               onAddSet={onAddSet}
+              onDropSet={dropDraft}
               onOpenExercise={setOpenExercise}
             />
           ))}
@@ -420,6 +457,7 @@ export default function SessionScreen() {
                   onCardio={onCardio}
                   onAdjustSet={setOpenSet}
                   onAddSet={onAddSet}
+                  onDropSet={dropDraft}
                   onOpenExercise={setOpenExercise}
                 />
               ))}
@@ -474,6 +512,8 @@ export default function SessionScreen() {
           rest={rest}
           target={target}
           finishable={running}
+          autoRest={preferences.autoRest}
+          onToggleAutoRest={() => patchPreferences({ autoRest: !preferences.autoRest })}
           onHeight={setDockHeight}
           onValidate={onValidate}
           onFinish={() => router.push(`/session/${uuid}/close`)}
@@ -504,7 +544,8 @@ export default function SessionScreen() {
       {picker ? (
         <ExercisePicker
           title={picker.mode === 'add' ? 'Ajouter un exercice' : 'Remplacer par'}
-          onPick={(reference) => onPick(picker, reference)}
+          multiple={picker.mode === 'add'}
+          onPick={(references) => onPick(picker, references)}
           onClose={() => setPicker(null)}
         />
       ) : null}
@@ -555,11 +596,21 @@ function Progress({ done, total }: { done: number; total: number }) {
  * Elle ne défile pas, elle recouvre : d'où le rembourrage de la page à sa
  * hauteur **mesurée**, sinon elle masquerait la dernière ligne cochée, c'est-à-
  * dire précisément celle qu'on vient de faire.
+ *
+ * **La bascule du repos automatique est ici, contre la validation**, et pas
+ * seulement dans les réglages : c'est en cochant une série qu'on s'aperçoit
+ * qu'un décompte n'a rien à faire là (circuit mené à la montre, échauffement
+ * enchaîné), et repartir chercher un écran de réglages au milieu d'une séance
+ * n'arrive pas. Elle ne se montre qu'avec une cible : sans série à valider, il
+ * n'y a pas de repos à démarrer, et un interrupteur inerte à côté du bouton de
+ * clôture serait une cible de plus pour rien.
  */
 function SessionDock({
   rest,
   target,
   finishable,
+  autoRest,
+  onToggleAutoRest,
   onHeight,
   onValidate,
   onFinish,
@@ -568,6 +619,9 @@ function SessionDock({
   target: SessionTarget | null;
   /** La séance court : elle peut être close, et la barre porte cette porte-là. */
   finishable: boolean;
+  /** Le repos part-il tout seul à la validation ? */
+  autoRest: boolean;
+  onToggleAutoRest: () => void;
   onHeight: (height: number) => void;
   onValidate: (target: SessionTarget) => void;
   onFinish: () => void;
@@ -606,11 +660,16 @@ function SessionDock({
                   {targetValues(target)}
                 </Text>
               </View>
+              <AutoRestToggle enabled={autoRest} onToggle={onToggleAutoRest} />
               <Button
                 label={target.line === null ? 'Fait' : 'Valider'}
                 size="lg"
                 accessibilityLabel={`Valider : ${targetLabel(target)}`}
-                accessibilityHint="Elle est consignée aux valeurs affichées, et le repos démarre"
+                accessibilityHint={
+                  autoRest
+                    ? 'Elle est consignée aux valeurs affichées, et le repos démarre'
+                    : 'Elle est consignée aux valeurs affichées. Le repos automatique est coupé'
+                }
                 onPress={() => onValidate(target)}
               />
             </>
@@ -630,12 +689,65 @@ function SessionDock({
 }
 
 /**
- * L'étage du repos (KL-31).
+ * L'interrupteur du repos automatique, contre le bouton de validation.
  *
- * Trois choses à portée : ajouter du repos, en retirer, passer. « Passer » ferme
- * l'étage sans rien consigner — le repos n'est pas du réalisé, l'écourter ne se
- * raconte nulle part. Il n'a pas à être passé pour valider la série suivante :
- * la validation est en dessous, elle reste sous le pouce pendant le décompte.
+ * **Deux dessins, pas deux teintes.** L'état ne peut pas se lire à la seule
+ * couleur du trait : l'identité n'a qu'une couleur et elle est prise par
+ * l'action primaire, juste à côté (règle 2). C'est donc `timer` ou `timer-off`,
+ * la barre du second disant l'arrêt comme dans tout le jeu Lucide, doublé du
+ * cadre encre quand il est actif. TalkBack, lui, l'annonce comme un
+ * interrupteur — `accessibilityRole="switch"` et son état.
+ *
+ * Elle fait la **hauteur** du bouton `lg` qu'elle jouxte (56 points) mais pas sa
+ * largeur : 48 suffisent, et les 8 points économisés vont au nom de l'exercice,
+ * qui partage la ligne et se tronque à une ligne. C'est le seul arbitrage de
+ * cette barre — une cible de plus y prend forcément sur ce qui se lit.
+ */
+function AutoRestToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      accessibilityRole="switch"
+      accessibilityState={{ checked: enabled }}
+      accessibilityLabel="Repos automatique"
+      accessibilityHint={
+        enabled
+          ? 'Le désactiver : le repos ne partira plus tout seul en validant une série'
+          : 'Le réactiver : le repos repartira à chaque série validée'
+      }
+      onPress={onToggle}
+      style={({ pressed }) => [
+        styles.autoRest,
+        enabled && styles.autoRestOn,
+        pressed && styles.autoRestPressed,
+      ]}
+    >
+      <Icon
+        name={enabled ? 'timer' : 'timer-off'}
+        size={24}
+        color={enabled ? colors.text : colors.textSecondary}
+      />
+    </Pressable>
+  );
+}
+
+/**
+ * L'étage du repos (KL-31), **réduit à une ligne**.
+ *
+ * Il occupait trois étages — jauge, titre et chrono géant, rangée d'actions —
+ * soit près du tiers de l'écran pour une information qui se lit d'un coup d'œil.
+ * Or il pousse vers le haut ce qui compte, le déroulé des séries, au moment
+ * précis où on le consulte. Tout tient donc sur une ligne : retirer, le temps,
+ * ajouter, passer. Ce qui a sauté n'était pas de l'information — le mot
+ * « Repos » que la jauge et le chrono disent déjà, et le nom de l'exercice, qui
+ * est écrit dans la barre juste en dessous.
+ *
+ * La jauge reste : c'est le seul élément qui se lit **sans lire**, de loin, banc
+ * en face. Elle fait 3 points.
+ *
+ * « Passer » ferme l'étage sans rien consigner — le repos n'est pas du réalisé,
+ * l'écourter ne se raconte nulle part. Il n'a pas à être passé pour valider la
+ * série suivante : la validation est en dessous, elle reste sous le pouce
+ * pendant le décompte.
  *
  * **Le décompte n'est pas une zone vive pour TalkBack.** Un nombre qui change
  * chaque seconde et s'annonce à chaque fois rendrait l'écran inutilisable au
@@ -654,14 +766,13 @@ function RestStrip({ rest }: { rest: RestState }) {
       </View>
 
       <View style={styles.restBody}>
-        <View style={styles.restLabels}>
-          <Text style={styles.restTitle}>{over ? 'Repos terminé' : 'Repos'}</Text>
-          {rest.exerciseName ? (
-            <Text style={styles.caption} numberOfLines={1}>
-              {rest.exerciseName}
-            </Text>
-          ) : null}
-        </View>
+        <Button
+          label={`− ${REST_STEP} s`}
+          variant="ghost"
+          size="sm"
+          accessibilityLabel={`Retirer ${REST_STEP} secondes de repos`}
+          onPress={() => adjustRest(-REST_STEP)}
+        />
 
         <Text
           accessibilityLabel={
@@ -671,24 +782,17 @@ function RestStrip({ rest }: { rest: RestState }) {
         >
           {duration(rest.remaining)}
         </Text>
-      </View>
 
-      <View style={styles.restActions}>
-        <Button
-          label={`− ${REST_STEP} s`}
-          variant="secondary"
-          size="sm"
-          accessibilityLabel={`Retirer ${REST_STEP} secondes de repos`}
-          onPress={() => adjustRest(-REST_STEP)}
-        />
         <Button
           label={`+ ${REST_STEP} s`}
-          variant="secondary"
+          variant="ghost"
           size="sm"
           accessibilityLabel={`Ajouter ${REST_STEP} secondes de repos`}
           onPress={() => adjustRest(REST_STEP)}
         />
+
         <View style={styles.spacer} />
+
         <Button
           label={over ? 'Fermer' : 'Passer'}
           variant="ghost"
@@ -803,6 +907,8 @@ type SectionHandlers = {
   onCardio: (exercise: SessionExercise) => void;
   onAdjustSet: (setUuid: string) => void;
   onAddSet: (exercise: SessionExercise) => void;
+  /** Retire la série annoncée et pas encore faite. Prend la clé de l'exercice. */
+  onDropSet: (exerciseKey: string) => void;
   onOpenExercise: (key: string) => void;
 };
 
@@ -870,12 +976,17 @@ function ExerciseSection({
   onCardio,
   onAdjustSet,
   onAddSet,
+  onDropSet,
   onOpenExercise,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const { prescribed, lines } = exercise;
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
+  // Une série annoncée attend d'être faite : le bouton devient sa reprise, pas un
+  // second ajout. C'est aussi ce qui limite l'annonce à une ligne à la fois — on
+  // n'annonce pas trois séries d'avance, on en fait une.
+  const drafted = editable && (lines?.some((line) => line.draft) ?? false);
   // « Ajouter une série » n'a de sens qu'une fois le prescrit épuisé : tant qu'une
   // ligne de travail attend, cocher la suivante **est** le geste, et proposer les
   // deux ferait deux chemins pour un même fait.
@@ -950,12 +1061,20 @@ function ExerciseSection({
         ))
       )}
 
-      {canAddSet ? (
+      {drafted ? (
+        <Button
+          label="Retirer la série"
+          variant="ghost"
+          block
+          accessibilityHint="Elle n’a pas encore été consignée : rien ne sera perdu"
+          onPress={() => onDropSet(exercise.key)}
+        />
+      ) : canAddSet ? (
         <Button
           label="+ Série"
           variant="ghost"
           block
-          accessibilityHint="Consigner une série de plus que prévu"
+          accessibilityHint="Ajouter une série de plus que prévu. Elle reste à cocher"
           onPress={() => onAddSet(exercise)}
         />
       ) : null}
@@ -1631,20 +1750,56 @@ function ExerciseSheet({
  *
  * La rangée des zones ne se rend qu'à partir de deux : une facette qui n'offre
  * qu'un choix ne filtre rien, elle occupe la place.
+ *
+ * ## Choisir, puis valider (`multiple`)
+ *
+ * Un appui **retient** l'exercice au lieu de fermer la feuille, et le pied
+ * l'ajoute — ou les ajoute tous. Garnir une séance vierge, c'est y poser cinq
+ * exercices d'affilée : la version d'origine refermait la feuille à chaque
+ * choix, donc rouvrait, refocalisait le champ, recomposait les mêmes filtres,
+ * cinq fois. Ce que ça coûte est un appui de plus dans le cas d'un seul
+ * exercice ; ce que ça rend est une recherche au lieu de cinq.
+ *
+ * Le **remplacement** n'en profite pas et garde l'appui unique : deux exercices
+ * ne remplacent pas une ligne du programme, et un pied « Remplacer (2) » serait
+ * une promesse fausse.
  */
 function ExercisePicker({
   title,
+  multiple,
   onPick,
   onClose,
 }: {
   title: string;
-  onPick: (reference: ExerciseRef) => void;
+  /** Le choix s'accumule et se valide au pied, au lieu de fermer la feuille. */
+  multiple: boolean;
+  onPick: (references: ExerciseRef[]) => void;
   onClose: () => void;
 }) {
   const [term, setTerm] = useState('');
   const [activity, setActivity] = useState<ActivityType | null>(null);
   const [area, setArea] = useState<TargetArea | null>(null);
+  // Retenus **dans l'ordre des appuis**, et non dans celui de la liste : c'est
+  // celui dans lequel ils entreront dans la séance, et c'est ce que l'ordre des
+  // gestes annonce. Une entrée porte son nom en plus de son identifiant — la
+  // liste se refiltre sous les doigts, et un exercice retenu puis filtré hors de
+  // la vue doit rester ajoutable.
+  const [picked, setPicked] = useState<ExerciseRef[]>([]);
   const { results, activities, areas } = useExerciseLibrary(term, activity, area);
+
+  const choose = (reference: ExerciseRef) => {
+    if (!multiple) {
+      onPick([reference]);
+
+      return;
+    }
+
+    setPicked((current) =>
+      current.some((entry) => entry.id === reference.id)
+        ? current.filter((entry) => entry.id !== reference.id)
+        : [...current, reference],
+    );
+  };
 
   // Changer d'activité **relâche toujours la zone**. Une zone survit rarement au
   // changement — la rangée est cadrée sur l'activité retenue (`hooks.ts`), et
@@ -1661,7 +1816,25 @@ function ExercisePicker({
   const filtered = activity !== null || area !== null;
 
   return (
-    <Sheet visible onClose={onClose} title={title}>
+    <Sheet
+      visible
+      onClose={onClose}
+      title={title}
+      footer={
+        multiple ? (
+          // Toujours rendu, désactivé tant que rien n'est retenu : un bouton qui
+          // apparaît sous le doigt déplacerait la liste au moment du premier
+          // choix, c'est-à-dire pile là où on regarde.
+          <Button
+            label={picked.length > 1 ? `Ajouter les ${picked.length}` : 'Ajouter'}
+            block
+            disabled={picked.length === 0}
+            accessibilityHint="Les exercices retenus entrent dans la séance, dans l’ordre choisi"
+            onPress={() => onPick(picked)}
+          />
+        ) : null
+      }
+    >
       <Field
         label="Chercher"
         value={term}
@@ -1736,23 +1909,40 @@ function ExercisePicker({
           }
         />
       ) : (
-        results.map((option) => (
-          <Pressable
-            key={option.id}
-            accessibilityRole="button"
-            accessibilityLabel={`${option.name}, ${activityLabel(option.activity)}`}
-            onPress={() => onPick({ id: option.id, name: option.name })}
-            style={({ pressed }) => [styles.option, pressed && styles.optionPressed]}
-          >
-            <Text style={styles.name}>{option.name}</Text>
-            <View style={styles.spacer} />
-            {option.global ? null : <Chip label="Perso" />}
-            {/* L'activité est une **catégorie** : elle se code par son rang dans
-                l'échelle de gris, jamais par une teinte (règle 2). Elle se lit
-                surtout quand on parcourt la liste sans avoir rien tapé. */}
-            <Chip label={activityLabel(option.activity)} rank={ACTIVITY_RANKS[option.activity]} />
-          </Pressable>
-        ))
+        results.map((option) => {
+          const selected = picked.some((entry) => entry.id === option.id);
+
+          return (
+            <Pressable
+              key={option.id}
+              // Un choix qui s'accumule est une **case**, pas un bouton : c'est
+              // ce qui fait dire à TalkBack qu'il reste coché, et qu'on peut le
+              // décocher. Un « bouton » aurait laissé croire que la feuille se
+              // ferme.
+              accessibilityRole={multiple ? 'checkbox' : 'button'}
+              accessibilityState={multiple ? { checked: selected } : undefined}
+              accessibilityLabel={`${option.name}, ${activityLabel(option.activity)}`}
+              onPress={() => choose({ id: option.id, name: option.name })}
+              style={({ pressed }) => [
+                styles.option,
+                selected && styles.optionSelected,
+                pressed && styles.optionPressed,
+              ]}
+            >
+              <Text style={styles.name}>{option.name}</Text>
+              <View style={styles.spacer} />
+              {option.global ? null : <Chip label="Perso" />}
+              {/* L'activité est une **catégorie** : elle se code par son rang dans
+                  l'échelle de gris, jamais par une teinte (règle 2). Elle se lit
+                  surtout quand on parcourt la liste sans avoir rien tapé. */}
+              <Chip label={activityLabel(option.activity)} rank={ACTIVITY_RANKS[option.activity]} />
+              {/* La même case que les séries, au même endroit du regard : à
+                  droite, en bout de ligne. Elle ne se rend qu'en choix multiple —
+                  sinon elle promettrait une accumulation qui n'existe pas. */}
+              {multiple ? <View style={[styles.box, selected && styles.boxChecked]} /> : null}
+            </Pressable>
+          );
+        })
       )}
     </Sheet>
   );
@@ -2014,7 +2204,9 @@ const styles = StyleSheet.create({
   dockAction: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[5],
+    // Resserré depuis que l'interrupteur de repos partage la ligne : ce que les
+    // gouttières prennent, le nom de l'exercice le perd.
+    gap: space[4],
     paddingHorizontal: space[8],
     paddingVertical: space[6],
   },
@@ -2023,34 +2215,43 @@ const styles = StyleSheet.create({
   dockName: { ...text.name, color: colors.text },
   dockValues: { ...text.numeric, color: colors.text },
 
-  // L'étage du repos, empilé au-dessus de la validation.
+  // L'étage du repos : une jauge et une ligne, empilées au-dessus de la
+  // validation. Rien de plus — ce qui est au-dessus, c'est la séance.
   rest: {
     borderBottomWidth: layout.hairline,
     borderBottomColor: colors.border,
   },
-  restTrack: { height: 4, backgroundColor: colors.track },
-  restFill: { height: 4, backgroundColor: colors.text },
+  restTrack: { height: 3, backgroundColor: colors.track },
+  restFill: { height: 3, backgroundColor: colors.text },
   restBody: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: space[5],
-    paddingHorizontal: space[8],
-    paddingTop: space[5],
+    gap: space[3],
+    paddingHorizontal: space[5],
   },
-  restLabels: { flex: 1, gap: space[1] },
-  restTitle: { ...text.sectionTitle, color: colors.text },
-  // Le chrono en grand, tabulaire : il se lit posé sur le banc, à un mètre.
-  restClock: { ...text.kpi, color: colors.text },
+  // Le chrono tabulaire, deux crans sous l'ancien : il se lit encore à bout de
+  // bras sans prendre l'étage entier. Le rembourrage horizontal l'écarte des
+  // deux boutons qui l'encadrent, sinon « − 15 s 1:23 + 15 s » se lit d'un bloc.
+  restClock: { ...text.inputValue, color: colors.text, paddingHorizontal: space[2] },
   // Le rouge à l'échéance seulement, et c'est bien son emploi : ce n'est pas une
   // catégorie qu'on colore, c'est l'appel à reprendre la série (§5 règle 2).
-  restClockOver: { color: colors.primary },
-  restActions: {
-    flexDirection: 'row',
+  // `primaryOnTint` et non `primary` : à cette taille, le chrono n'est plus un
+  // « grand texte » au sens WCAG, et le rouge plein y tomberait sous AA.
+  restClockOver: { color: colors.primaryOnTint },
+
+  // La bascule du repos automatique, contre la validation. Carrée, de la hauteur
+  // du bouton `lg` qu'elle jouxte : elle se tape sans regarder, elle aussi.
+  autoRest: {
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: space[4],
-    paddingHorizontal: space[8],
-    paddingBottom: space[5],
+    width: 48,
+    height: 56,
+    borderWidth: layout.hairline,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
+  autoRestOn: { borderColor: colors.text },
+  autoRestPressed: { backgroundColor: colors.fill },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
 
@@ -2073,4 +2274,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
   },
   optionPressed: { backgroundColor: colors.fill },
+  // Un exercice retenu se pose sur le même fond appuyé qu'une série faite, et
+  // gagne le filet encre : c'est le même vocabulaire, « ceci est acquis ».
+  optionSelected: { backgroundColor: colors.fill, borderColor: colors.borderStrong },
 });

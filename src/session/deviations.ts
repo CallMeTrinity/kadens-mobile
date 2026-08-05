@@ -5,6 +5,13 @@
  * en supprimer une, sauter un exercice (avec une raison), le remplacer par un
  * autre de la bibliothèque locale, ajouter un exercice non prévu.
  *
+ * **Ajouter une série n'écrit plus rien ici.** Le geste posait autrefois une
+ * série déjà faite (`addSet`) : elle naissait cochée, avant d'avoir été faite, et
+ * le repos partait avec. Il pose maintenant une ligne cochable de plus, projetée
+ * sur le déroulé le temps du rendu (`withDraftSets`, `program.ts`) ; la cocher
+ * passe par `checkSet` comme n'importe quelle autre série. Il n'y a donc plus
+ * qu'un seul chemin d'écriture pour « une série a été faite ».
+ *
  * ## Ce que ce fichier ne fera jamais
  *
  * **On dévie, on ne recompose pas** (§0.3 point 3, règle verrouillée). Pas de
@@ -41,7 +48,7 @@
 
 import { eq } from 'drizzle-orm';
 
-import { db, loggedExercise, loggedSet, nowIso, uuidv7, type Writer } from '@/db';
+import { db, loggedExercise, loggedSet, type Writer } from '@/db';
 import { enqueueSchedulePut } from '@/sync';
 
 import type { SessionExercise, SessionSetLine, SetValues } from './program';
@@ -50,7 +57,6 @@ import {
   ensureLoggedExercise,
   isOpen,
   nextExercisePosition,
-  nextSetPosition,
   referenceableExerciseId,
 } from './writes';
 
@@ -147,87 +153,6 @@ export function updateSet(
 
     return true;
   });
-}
-
-/**
- * Ajoute une série de travail à la suite. Rend son uuid, `null` si refusé.
- *
- * Pré-remplie par la **dernière série faite** de cet exercice, à défaut par la
- * dernière ligne prescrite : une série de plus se fait presque toujours dans la
- * continuité de la précédente, et repartir d'un champ vide obligerait à ressaisir
- * ce qu'on vient de faire.
- *
- * Elle est toujours de type `normal`. Le type décide de la file d'appariement
- * (§ en-tête) : ajouter un échauffement après coup décalerait la lecture de toutes
- * les séries de travail.
- *
- * L'uuid rendu sert à l'écran, qui ouvre la feuille d'ajustement dessus dans la
- * foulée — ajouter une série et en saisir les valeurs sont un seul geste.
- */
-export function addSet(scheduledUuid: string, exercise: SessionExercise): string | null {
-  // Pas de série sur un cardio (règle verrouillée : il se coche, il ne se saisit
-  // pas), ni sur un exercice déclaré sauté — il est réglé, pas en cours.
-  if (exercise.lines === null || exercise.skipped) {
-    return null;
-  }
-
-  const uuid = uuidv7();
-  const values = nextSetDefaults(exercise);
-
-  const created = db.transaction((tx) => {
-    if (!isOpen(tx, scheduledUuid)) {
-      return false;
-    }
-
-    const loggedExerciseId = ensureLoggedExercise(tx, scheduledUuid, exercise);
-
-    if (loggedExerciseId === null) {
-      return false;
-    }
-
-    tx.insert(loggedSet)
-      .values({
-        uuid,
-        loggedExerciseId,
-        position: nextSetPosition(tx, loggedExerciseId),
-        type: 'normal',
-        reps: values.reps,
-        weightKg: values.weightKg,
-        durationSeconds: values.durationSeconds,
-        rpe: null,
-        completedAt: nowIso(),
-      })
-      .run();
-
-    enqueueSchedulePut(scheduledUuid, tx);
-
-    return true;
-  });
-
-  return created ? uuid : null;
-}
-
-/**
- * Les valeurs d'une série ajoutée : la dernière faite, sinon la dernière prescrite.
- *
- * L'échauffement est écarté des deux côtés — une série ajoutée est une série de
- * travail, la pré-remplir avec la barre à vide serait le pire des défauts.
- */
-function nextSetDefaults(exercise: SessionExercise): SetValues {
-  const empty: SetValues = { reps: null, weightKg: null, durationSeconds: null };
-  const lines = exercise.lines ?? [];
-  const work = lines.filter((line) => line.type !== 'warmup');
-  const lastLogged = [...work].reverse().find((line) => line.logged !== null)?.logged;
-
-  if (lastLogged) {
-    return {
-      reps: lastLogged.reps,
-      weightKg: lastLogged.weightKg,
-      durationSeconds: lastLogged.durationSeconds,
-    };
-  }
-
-  return [...work].reverse().find((line) => line.planned !== null)?.planned ?? empty;
 }
 
 /**

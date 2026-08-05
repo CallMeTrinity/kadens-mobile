@@ -19,7 +19,6 @@
 
 import {
   addExercise,
-  addSet,
   beginWorkout,
   canReplaceExercise,
   checkSet,
@@ -38,7 +37,7 @@ import {
   scheduledWorkout as scheduledWorkoutPayload,
   seedBootstrap,
 } from '@/test/fixtures';
-import { exerciseAt, nextLine, programOf } from '@/test/program';
+import { draftedExerciseAt, exerciseAt, nextLine, programOf } from '@/test/program';
 
 const UUID = '01890000-0000-7000-8000-0000000000f1';
 
@@ -55,6 +54,20 @@ function checkNext(): void {
   const exercise = exerciseAt(UUID);
 
   checkSet(UUID, exercise, nextLine(exercise));
+}
+
+/**
+ * Consigne une série de plus sur un exercice : annoncée, puis cochée. C'est le
+ * seul chemin depuis que « + Série » n'écrit plus rien de lui-même.
+ */
+function checkExtraSet(index: number): void {
+  const exercise = draftedExerciseAt(UUID, index);
+
+  checkSet(
+    UUID,
+    exercise,
+    exercise.lines!.find((line) => line.draft)!,
+  );
 }
 
 beforeEach(() => {
@@ -110,8 +123,28 @@ describe('updateSet', () => {
   });
 });
 
-describe('addSet', () => {
-  it('reprend les valeurs de la dernière série faite', () => {
+describe('la série annoncée en plus', () => {
+  it('n’écrit rien tant qu’elle n’est pas cochée', () => {
+    openStrengthWorkout();
+    // Les quatre séries prescrites d'abord : tant qu'une ligne du programme
+    // attend, cocher la suivante **est** le geste.
+    checkNext();
+    checkNext();
+    checkNext();
+    checkNext();
+
+    const drafted = draftedExerciseAt(UUID);
+    const line = drafted.lines!.find((candidate) => candidate.draft)!;
+
+    // Elle est bien là, cochable, et la base n'en sait rien : une série non
+    // faite n'est ni du prescrit ni du réalisé.
+    expect(line.actionable).toBe(true);
+    expect(line.logged).toBeNull();
+    expect(exerciseAt(UUID).lines!.some((candidate) => candidate.draft)).toBe(false);
+    expect(exerciseAt(UUID).done).toBe(4);
+  });
+
+  it('reprend les valeurs de la dernière série faite, puis se consigne en la cochant', () => {
     openStrengthWorkout();
     checkNext();
     updateSet(UUID, exerciseAt(UUID).lines![0], {
@@ -120,23 +153,31 @@ describe('addSet', () => {
       durationSeconds: null,
       rpe: null,
     });
+    checkNext();
+    checkNext();
+    checkNext();
 
-    const uuid = addSet(UUID, exerciseAt(UUID));
+    const drafted = draftedExerciseAt(UUID);
+    const line = drafted.lines!.find((candidate) => candidate.draft)!;
 
-    expect(uuid).not.toBeNull();
+    // La dernière série **faite** est la quatrième, aux valeurs prescrites : la
+    // correction portait sur la première.
+    expect(line.planned).toMatchObject({ reps: 8, weightKg: 80 });
+    expect(checkSet(UUID, drafted, line)).toBe(true);
 
-    const added = exerciseAt(UUID).lines!.find((line) => line.logged?.uuid === uuid);
+    const added = exerciseAt(UUID).lines![4];
 
-    expect(added?.logged).toMatchObject({ reps: 6, weightKg: 82.5, type: 'normal' });
+    expect(added.logged).toMatchObject({ reps: 8, weightKg: 80, type: 'normal' });
+    // Elle n'était réclamée par aucune ligne du programme : elle s'ajoute à la
+    // suite, sans prescrit en face.
+    expect(added.planned).toBeNull();
   });
 
   it('reprend la dernière ligne prescrite quand rien n’a encore été fait', () => {
     openStrengthWorkout();
 
-    const uuid = addSet(UUID, exerciseAt(UUID));
-    const added = exerciseAt(UUID).lines!.find((line) => line.logged?.uuid === uuid);
-
-    expect(added?.logged).toMatchObject({ reps: 8, weightKg: 80 });
+    // Aucune série faite : le prescrit attend, donc rien à annoncer par-dessus.
+    expect(draftedExerciseAt(UUID).lines!.some((line) => line.draft)).toBe(false);
   });
 
   it('refuse un cardio et un exercice déclaré sauté', () => {
@@ -154,11 +195,13 @@ describe('addSet', () => {
     });
     beginWorkout(UUID);
 
-    expect(addSet(UUID, exerciseAt(UUID, 0))).toBeNull();
+    // Un cardio se coche entier, il n'a pas de série à saisir.
+    expect(draftedExerciseAt(UUID, 0).lines).toBeNull();
 
     setExerciseState(UUID, exerciseAt(UUID, 1), { skipped: true, notes: 'machine occupée' });
 
-    expect(addSet(UUID, exerciseAt(UUID, 1))).toBeNull();
+    // Un exercice sauté est réglé, pas en cours.
+    expect(draftedExerciseAt(UUID, 1).lines!.some((line) => line.draft)).toBe(false);
   });
 });
 
@@ -298,14 +341,11 @@ describe('addExercise', () => {
 
     expect(added.lines).toEqual([]);
 
-    const uuid = addSet(UUID, added);
+    checkExtraSet(1);
+
     const withSet = programOf(UUID).extras[0];
 
-    deleteSet(
-      UUID,
-      withSet,
-      withSet.lines!.find((line) => line.logged?.uuid === uuid)!,
-    );
+    deleteSet(UUID, withSet, withSet.lines![0]);
 
     // Sans ligne prescrite pour le faire revenir, le retirer effacerait le geste
     // « je fais aussi ça aujourd'hui ».
@@ -317,7 +357,7 @@ describe('removeExercise', () => {
   it('emporte les séries de l’exercice hors programme', () => {
     openStrengthWorkout();
     addExercise(UUID, { id: 202, name: 'Développé guidé' }, programOf(UUID).prescribedCount);
-    addSet(UUID, programOf(UUID).extras[0]);
+    checkExtraSet(1);
 
     expect(removeExercise(UUID, programOf(UUID).extras[0])).toBe(true);
     expect(programOf(UUID).extras).toHaveLength(0);

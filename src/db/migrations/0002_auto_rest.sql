@@ -1,0 +1,1 @@
+ALTER TABLE `preference` ADD `auto_rest` integer DEFAULT true NOT NULL;

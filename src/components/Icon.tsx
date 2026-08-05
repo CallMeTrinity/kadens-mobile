@@ -44,6 +44,14 @@ const ICONS = {
   'settings-2': [{ d: 'M14 17H5M19 7h-9' }, { cx: 17, cy: 17, r: 3 }, { cx: 7, cy: 7, r: 3 }],
   /** Retour arrière. */
   'arrow-left': [{ d: 'm12 19l-7-7l7-7m7 7H5' }],
+  /** Le repos automatique, actif. */
+  timer: [{ d: 'M10 2h4m-2 12l3-3' }, { cx: 12, cy: 14, r: 8 }],
+  /** Le repos automatique, débranché. Barrée, comme tous les `*-off` de Lucide. */
+  'timer-off': [
+    {
+      d: 'M10 2h4m-9.4 9a8 8 0 0 0 1.7 8.7a8 8 0 0 0 8.7 1.7m-7.6-14a8 8 0 0 1 10.3 1a8 8 0 0 1 .9 10.2M2 2l20 20M12 12v-2',
+    },
+  ],
 } as const satisfies Record<string, readonly Shape[]>;
 
 export type IconName = keyof typeof ICONS;
