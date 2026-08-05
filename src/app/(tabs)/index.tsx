@@ -84,10 +84,12 @@ export default function TodayScreen() {
     }
   }
 
-  // Une séance close **s'ouvre sans passer par `beginWorkout`** : la clôture est
-  // terminale (§2.3 point 5), il la refuse, et un bouton dont l'appui n'ouvrait
-  // rien ressemblait à un écran figé. C'est la règle que l'historique tient déjà
-  // (`(tabs)/history.tsx`), elle vaut ici pour la même raison.
+  // Ouvrir **sans** passer par `beginWorkout` : c'est ce que fait « Voir la
+  // séance », et c'est le seul chemin possible pour une séance close — la
+  // clôture est terminale (§2.3 point 5), `beginWorkout` la refuse, et un bouton
+  // dont l'appui n'ouvrait rien ressemblait à un écran figé. C'est la règle que
+  // l'historique tient déjà (`(tabs)/history.tsx`), elle vaut ici pour la même
+  // raison.
   function view(uuid: string) {
     router.push(`/session/${uuid}`);
   }
@@ -135,7 +137,8 @@ export default function TodayScreen() {
               key={workout.uuid}
               workout={workout}
               primary={workout.uuid === primaryUuid}
-              onOpen={() => (workout.closed ? view(workout.uuid) : open(workout.uuid))}
+              onView={() => view(workout.uuid)}
+              onStart={() => open(workout.uuid)}
             />
           ))
         ) : (
@@ -258,15 +261,34 @@ function ResumeBanner({
   );
 }
 
-/** Une séance du jour. */
+/**
+ * Une séance du jour.
+ *
+ * **Lire avant de commencer.** Une séance pas encore ouverte offre deux chemins :
+ * « Voir la séance », qui déroule le programme sans rien écrire, et « Démarrer »,
+ * qui pose `started_at`. Un seul gros bouton « Démarrer » obligeait à commencer
+ * la séance pour savoir ce qu'elle contient — or on regarde ce qu'on a à faire
+ * avant de poser son sac, parfois la veille, et démarrer n'est pas anodin : c'est
+ * l'heure de début du réalisé, et le pull cesse alors de toucher la séance.
+ *
+ * Le rouge reste sur **« Démarrer »**, et seulement sur la séance élue (règle 2) :
+ * c'est l'action, pas la lecture. Il est le plus petit des deux, ce qui ne pose
+ * pas de problème ici — cet écran se tape debout mais posément, contrairement à
+ * la barre de validation d'une séance en cours (KL-39).
+ *
+ * Une séance **en cours** ne se scinde pas : « Reprendre » ouvre le même écran
+ * que « Voir la séance » l'aurait fait, deux cibles pour un seul chemin.
+ */
 function WorkoutCard({
   workout,
   primary,
-  onOpen,
+  onView,
+  onStart,
 }: {
   workout: DayWorkout;
   primary: boolean;
-  onOpen: () => void;
+  onView: () => void;
+  onStart: () => void;
 }) {
   const state = workoutStateLabel(workout);
 
@@ -295,14 +317,33 @@ function WorkoutCard({
         {workout.closed ? (
           // Pas de reprise après clôture (§2.3 point 5). L'ouvrir reste utile —
           // on relit ce qu'on a fait — mais ce n'est plus une séance à dérouler.
-          <Button label="Voir la séance" variant="ghost" onPress={onOpen} />
-        ) : (
+          <Button label="Voir la séance" variant="ghost" onPress={onView} />
+        ) : workout.running ? (
           <Button
-            label={workout.running ? 'Reprendre' : 'Démarrer'}
+            label="Reprendre"
             variant={primary ? 'primary' : 'secondary'}
             block
-            onPress={onOpen}
+            onPress={onStart}
           />
+        ) : (
+          <View style={styles.cardActions}>
+            {/* La lecture prend la largeur restante, l'action garde la sienne :
+                « Démarrer » est court, et une cible de taille constante d'une
+                carte à l'autre se vise mieux qu'une moitié d'écran variable. */}
+            <Button
+              label="Voir la séance"
+              variant="secondary"
+              style={styles.grow}
+              accessibilityHint="Dérouler le programme sans la commencer"
+              onPress={onView}
+            />
+            <Button
+              label="Démarrer"
+              variant={primary ? 'primary' : 'secondary'}
+              accessibilityHint="Elle passe en cours : c’est le début du réalisé"
+              onPress={onStart}
+            />
+          </View>
         )}
       </View>
     </Card>
@@ -373,6 +414,11 @@ const styles = StyleSheet.create({
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
   marks: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[3] },
+  cardActions: { flexDirection: 'row', alignItems: 'stretch', gap: space[4] },
+  // `flexShrink: 1` en plus de `flexGrow` : sans lui, un libellé plus long que
+  // la place disponible (grande police système) pousserait « Démarrer » hors de
+  // la carte au lieu de se tronquer.
+  grow: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
   name: { ...text.name, color: colors.text },
   caption: { ...text.caption, color: colors.textSecondary },
   body: { ...text.body, color: colors.textSecondary },

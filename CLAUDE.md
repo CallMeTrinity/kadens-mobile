@@ -186,7 +186,10 @@ none of them is cosmetic.
 
 - **The live workout's only primary action lives in `SessionDock`**, pinned to the bottom of the screen. It
   stacks the rest strip (when one runs) and then the **validate row, always last** — so the main target sits at
-  a constant distance from the edge whether resting or not. It offers `nextTarget()` (`@/session`, pure and
+  a constant distance from the edge whether resting or not. A workout that hasn't started yet shows one button
+  there and nothing else ("Démarrer la séance"): the screen is now reachable **without** starting, since Today's
+  card splits into "Voir la séance" + a small "Démarrer", and the thumb shouldn't relearn a position between
+  opening the workout and logging its first set. It offers `nextTarget()` (`@/session`, pure and
   tested): the first checkable set in reading order, except inside a superset, where members **alternate** by
   fewest logged sets. No target left means the row becomes the close button, which is why the in-flow "Terminer
   la séance" button is `secondary` — one primary per screen. Set rows stay individually tappable; the dock is
@@ -226,7 +229,10 @@ state through a path the app doesn't use. Note `@testing-library/react-native` v
 
 ### Navigation: three tab destinations, a live workout on top of them
 
-`src/app/(tabs)/` holds Today, History and Settings behind a hand-drawn bar built on the **headless**
+`src/app/(tabs)/` holds History, Today and Settings — in that order, chronological rather than hierarchical,
+with the app's default destination in the **centre**, the safest spot for a thumb on a three-target bar. The
+order is `TabList` child order only; the navigator's initial route still comes from the file system (`index`).
+They sit behind a hand-drawn bar built on the **headless**
 `expo-router/ui` components (`Tabs`/`TabList`/`TabTrigger`/`TabSlot`) — the classic `<Tabs>` navigator
 configures a bar, it doesn't let you draw one, and the Presse identity is not a configuration. A live
 workout (`session/[uuid]/…`) is a `Stack` screen **above** the group, not a tab: it runs full-screen and

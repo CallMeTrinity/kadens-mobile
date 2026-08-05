@@ -9,7 +9,7 @@
  * et pour cause : le téléphone ne compose pas, il déroule. Ce qui se transpose
  * est donc la **forme** — trois cibles au pouce, filet d'encre, liséré haut sur
  * l'actif — appliquée aux trois questions que cette app-ci sait traiter :
- * qu'est-ce que je fais maintenant, qu'est-ce que j'ai fait, comment est réglé
+ * qu'est-ce que j'ai fait, qu'est-ce que je fais maintenant, comment est réglé
  * cet appareil.
  *
  * ## Ce qui n'est pas dans la barre, et pourquoi
@@ -83,12 +83,17 @@ export default function TabsLayout() {
         que `--kd-navbar-h` côté web, qui compte l'`env(safe-area-inset-bottom)`
         dans la place occupée plutôt que de l'ignorer.
       */}
+      {/* L'ordre est **chronologique**, pas hiérarchique : ce qui a été fait à
+          gauche, ce qui se fait maintenant au centre, le réglage de l'appareil à
+          droite. Le centre est la position la plus sûre au pouce d'une barre de
+          trois, et c'est la destination par défaut de l'app — mettre « Aujourd'hui »
+          en tête l'aurait posée là où le pouce dérape. */}
       <TabList style={[styles.bar, { paddingBottom: insets.bottom }]}>
-        <TabTrigger name="today" href="/" asChild>
-          <Tab icon="calendar-days" label="Aujourd’hui" />
-        </TabTrigger>
         <TabTrigger name="history" href="/history" asChild>
           <Tab icon="history" label="Historique" />
+        </TabTrigger>
+        <TabTrigger name="today" href="/" asChild>
+          <Tab icon="calendar-days" label="Aujourd’hui" />
         </TabTrigger>
         <TabTrigger name="settings" href="/settings" asChild>
           <Tab icon="settings-2" label="Réglages" />

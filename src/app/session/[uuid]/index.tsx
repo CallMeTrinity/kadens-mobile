@@ -344,6 +344,9 @@ export default function SessionScreen() {
   }
 
   const closed = isClosed(workout);
+  // Ni commencée ni close : elle s'ouvre depuis ici, et c'est le seul écran qui
+  // la montre avant de l'ouvrir (« Voir la séance », écran « Aujourd'hui »).
+  const startable = !running && !closed;
   // Fermée sans jamais avoir tourné ici : elle a été cochée « faite » sur le web.
   // Il n'y a donc ni durée, ni série, ni écart à résumer — l'écran se lit, il ne
   // se clôture pas.
@@ -408,12 +411,16 @@ export default function SessionScreen() {
               : { paddingBottom: space[13] + insets.bottom },
           ]}
         >
-          {!running && !closed ? (
+          {/* Le bouton de démarrage n'est plus ici mais dans la barre basse : on
+              arrive sur cet écran pour **lire** ce qu'il y a à faire (« Voir la
+              séance », écran « Aujourd'hui »), on déroule, et l'action reste au
+              pouce où qu'on soit rendu. La même action aux deux endroits ferait
+              douter qu'elle fait la même chose. */}
+          {startable ? (
             <View style={styles.notice}>
               <Text style={styles.body}>
                 Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
               </Text>
-              <Button label="Démarrer" onPress={() => beginWorkout(uuid)} block />
             </View>
           ) : null}
 
@@ -523,11 +530,13 @@ export default function SessionScreen() {
         </ScrollView>
       </View>
 
-      {running || rest ? (
+      {running || rest || startable ? (
         <SessionDock
           rest={rest}
           target={target}
+          startable={startable}
           finishable={running}
+          onStart={() => beginWorkout(uuid)}
           autoRest={preferences.autoRest}
           onToggleAutoRest={() => patchPreferences({ autoRest: !preferences.autoRest })}
           onHeight={setDockHeight}
@@ -602,7 +611,11 @@ function Progress({ done, total }: { done: number; total: number }) {
 }
 
 /**
- * La barre basse : le repos (KL-31) et la validation (KL-39).
+ * La barre basse : le démarrage, le repos (KL-31) et la validation (KL-39).
+ *
+ * Trois états qui ne coexistent pas — ouvrir la séance, la valider série par
+ * série, la clore — et **une seule position** pour tous : la cible principale de
+ * l'écran est toujours à la même distance du bord, du premier appui au dernier.
  *
  * **Tout ce qui se tape sans regarder vit ici**, et l'ordre n'est pas décoratif :
  * la validation est le dernier étage, donc toujours à la même distance du bord,
@@ -624,21 +637,26 @@ function Progress({ done, total }: { done: number; total: number }) {
 function SessionDock({
   rest,
   target,
+  startable,
   finishable,
   autoRest,
   onToggleAutoRest,
   onHeight,
+  onStart,
   onValidate,
   onFinish,
 }: {
   rest: RestState | null;
   target: SessionTarget | null;
+  /** La séance n'est pas commencée : la barre ne porte qu'un geste, l'ouvrir. */
+  startable: boolean;
   /** La séance court : elle peut être close, et la barre porte cette porte-là. */
   finishable: boolean;
   /** Le repos part-il tout seul à la validation ? */
   autoRest: boolean;
   onToggleAutoRest: () => void;
   onHeight: (height: number) => void;
+  onStart: () => void;
   onValidate: (target: SessionTarget) => void;
   onFinish: () => void;
 }) {
@@ -661,7 +679,20 @@ function SessionDock({
     >
       {rest ? <RestStrip rest={rest} /> : null}
 
-      {target === null && !finishable ? null : (
+      {/* Une séance pas encore commencée n'a qu'un geste, et il est au même
+          endroit que la validation qui lui succédera : le pouce ne se rééduque
+          pas entre l'ouverture et la première série. */}
+      {startable ? (
+        <View style={styles.dockAction}>
+          <Button
+            label="Démarrer la séance"
+            size="lg"
+            block
+            accessibilityHint="Elle passe en cours : c’est le début du réalisé, et les séries deviennent cochables"
+            onPress={onStart}
+          />
+        </View>
+      ) : target === null && !finishable ? null : (
         <View style={styles.dockAction}>
           {target ? (
             <>
