@@ -2,13 +2,14 @@ import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { Linking } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { restoreSession, setApiBaseUrl, useSession } from '@/api';
 import { Fault } from '@/components';
 import { getSyncState, useDatabaseMigrations } from '@/db';
 import { initRestNotifications } from '@/session';
-import { useSyncTriggers } from '@/sync';
+import { useAppVersionCheck, useSyncTriggers } from '@/sync';
 import { colors, useKadensFonts } from '@/theme';
 
 // L'écran de démarrage reste affiché tant que les polices ne sont pas prêtes.
@@ -43,6 +44,14 @@ export default function RootLayout() {
   // en arrière-plan doit partir au retour, même si plus rien n'est affiché.
   // Montés une seule fois, et retenus tant que la session n'est pas ouverte.
   useSyncTriggers(readyForApp);
+
+  // Le contrôle de version (KL-43), une fois par ouverture d'app. Il attend la
+  // **restauration** (migrations puis URL du serveur) : son verdict se lit
+  // d'abord en base, et l'appel doit partir vers le serveur appairé, pas vers le
+  // défaut de build. Il n'attend en revanche pas d'être **connecté** — un
+  // plancher doit se dire à l'écran de connexion aussi, et c'est même là qu'il
+  // compte le plus le jour où l'ancien format de synchronisation n'est plus servi.
+  const version = useAppVersionCheck(authSettled);
 
   // Les notifications de repos (KL-31) : gestionnaire global, canaux Android, et
   // purge de ce qui resterait programmé. Ici et pas dans l'écran de séance,
@@ -83,6 +92,39 @@ export default function RootLayout() {
           title="Base locale indisponible"
           body="Les migrations n’ont pas pu s’appliquer. Rien n’a été perdu : le réalisé déjà consigné reste dans le fichier."
           detail={dbError.message}
+        />
+        <StatusBar style="dark" />
+      </SafeAreaProvider>
+    );
+  }
+
+  // Sous le plancher déclaré par le serveur (KL-43). Le seul écran qui se
+  // substitue à l'app entière sans qu'il y ait de panne : ce que cette version
+  // écrirait, le serveur ne saurait plus le relire, et laisser dérouler une
+  // séance qui ne partira jamais serait pire que l'arrêter ici. Rien n'est perdu
+  // pour autant — le réalisé déjà consigné attend dans la base et repartira sous
+  // la version suivante.
+  //
+  // Placé après le garde de base : sans base, c'est l'autre écran qui vaut.
+  if (version.status === 'blocked') {
+    // Extraite pour que TypeScript la rétrécisse : une propriété d'objet ne se
+    // narrow pas dans une fermeture.
+    const installUrl = version.installUrl;
+
+    return (
+      <SafeAreaProvider>
+        <Fault
+          title="Mise à jour nécessaire"
+          body="Cette version de l’app ne peut plus se synchroniser avec le serveur. Ce qui a déjà été consigné ici est intact et repartira une fois l’app à jour."
+          detail={installUrl}
+          action={
+            installUrl === null
+              ? undefined
+              : {
+                  label: 'Ouvrir la page d’installation',
+                  onPress: () => void Linking.openURL(installUrl),
+                }
+          }
         />
         <StatusBar style="dark" />
       </SafeAreaProvider>

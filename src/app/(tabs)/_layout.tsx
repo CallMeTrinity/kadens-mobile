@@ -31,16 +31,20 @@
 
 import { TabList, Tabs, TabSlot, TabTrigger } from 'expo-router/ui';
 import type { ComponentProps } from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Linking, Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, OfflineBanner, type IconName } from '@/components';
-import { useOfflineNotice } from '@/sync';
+import { Icon, OfflineBanner, UpdateBanner, type IconName } from '@/components';
+import { useAppVersion, useOfflineNotice } from '@/sync';
 import { colors, layout, space, text } from '@/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
   const notice = useOfflineNotice();
+  const version = useAppVersion();
+  // L'URL à ouvrir, ou rien à proposer. Une seule expression, pour que la
+  // condition d'affichage et ce que le bandeau ouvre ne puissent pas diverger.
+  const updateUrl = version.status === 'update' && !notice.offline ? version.installUrl : null;
 
   return (
     <Tabs>
@@ -58,6 +62,19 @@ export default function TabsLayout() {
       */}
       {notice.offline ? (
         <OfflineBanner disconnected={notice.disconnected} pending={notice.pending} />
+      ) : null}
+      {/*
+        Le bandeau de mise à jour (KL-43), au même endroit et **jamais en même
+        temps** que le précédent : hors réseau, la page d'installation ne
+        s'ouvrira pas, et proposer ce qui ne peut pas aboutir n'aide personne.
+        L'état hors ligne passe donc devant — il dure des heures, la mise à jour
+        peut attendre le retour du réseau.
+      */}
+      {updateUrl !== null ? (
+        <UpdateBanner
+          versionName={version.latestVersionName}
+          onPress={() => void Linking.openURL(updateUrl)}
+        />
       ) : null}
       {/*
         La zone sûre du bas est prise en **rembourrage**, pas en marge : la barre

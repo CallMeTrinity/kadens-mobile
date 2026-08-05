@@ -1,5 +1,5 @@
 /**
- * Les dix endpoints de l'API, un par fonction typée (KL-25).
+ * Les onze endpoints de l'API, un par fonction typée (KL-25).
  *
  * C'est la transcription de `docs/api-mobile.md §6` et rien de plus : pas de
  * cache, pas d'écriture en base, aucune décision métier. Ce qui relève de la
@@ -15,6 +15,7 @@
 import { request, type ApiResponse } from './client';
 import { ApiError } from './errors';
 import type {
+  AppVersionPayload,
   AuthPayload,
   BootstrapPayload,
   ExerciseHistoryPayload,
@@ -40,6 +41,22 @@ export function ping(signal?: AbortSignal): Promise<PingPayload> {
 /** Le compte **et** l'appareil courant. */
 export function me(signal?: AbortSignal): Promise<MePayload> {
   return request<MePayload>({ path: '/api/me', signal }).then((r) => r.data);
+}
+
+/**
+ * La version publiée et le plancher supporté (KL-43).
+ *
+ * `auth: false` pour la même raison que `login` et `pair`, et elle compte
+ * double ici : l'authenticator serveur se déclenche sur la seule présence d'un
+ * `Bearer`, donc un jeton périmé ferait échouer l'appel avant le contrôleur —
+ * précisément le jour où l'app a besoin de savoir qu'elle est trop vieille pour
+ * se connecter. L'endpoint est anonyme côté serveur, l'en-tête n'y apporterait
+ * rien de toute façon.
+ */
+export function appVersion(signal?: AbortSignal): Promise<AppVersionPayload> {
+  return request<AppVersionPayload>({ path: '/api/app-version', auth: false, signal }).then(
+    (r) => r.data,
+  );
 }
 
 /**

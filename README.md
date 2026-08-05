@@ -181,6 +181,21 @@ compiler. Il crée la GitHub Release et y attache `kadens-<version>-<code>.apk`.
 C'est ce que le dépôt TNTStore ira lire (KL-42) : il déclare des versions, il
 n'héberge aucun binaire.
 
+**Deuxième geste, côté serveur, et rien ne le fait à ta place** (KL-43) : reporter
+les deux numéros annoncés par le résumé du build dans `config/services.yaml` du
+dépôt web, puis déployer.
+
+```yaml
+app.mobile.version_code: 43 # github.run_number du build
+app.mobile.version_name: '1.2.0'
+```
+
+C'est ce que sert `GET /api/app-version` et ce qu'affiche `/app` : sans ce
+report, l'app installée ne verra jamais qu'une version plus récente existe. Le
+troisième paramètre, `app.mobile.minimum_version_code`, ne bouge **que** si le
+format de synchronisation change : il bloque les versions antérieures, il ne
+sert pas à pousser une mise à jour.
+
 ### Taille de l'APK
 
 Le premier build pesait **130 Mo**, pour une app qui déroule une séance et écrit

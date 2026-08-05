@@ -60,6 +60,8 @@ const INK: InkCase[] = [
   { ink: 'text', on: 'surfaceRaised', role: 'sectionTitle', where: 'titre de section' },
   { ink: 'text', on: 'surfaceRaised', role: 'inputValue', where: 'chrono de repos' },
   { ink: 'text', on: 'fill', role: 'blockRole', where: 'rôle de bloc' },
+  { ink: 'text', on: 'fill', role: 'eyebrow', where: 'bandeau de mise à jour' },
+  { ink: 'text', on: 'track', role: 'eyebrow', where: 'bandeau de mise à jour, pressé' },
   { ink: 'textStrong', on: 'surfaceRaised', role: 'body', where: 'valeur saisie dans un champ' },
   { ink: 'textStrong', on: 'surfaceRaised', role: 'inputValue', where: 'valeur du compteur' },
 
@@ -80,6 +82,7 @@ const INK: InkCase[] = [
   { ink: 'textSecondary', on: 'fill', role: 'caption', where: "libellé d'un en-tête de bloc" },
   { ink: 'textSecondary', on: 'fill', role: 'numeric', where: 'rang de bloc' },
   { ink: 'textSecondary', on: 'fill', role: 'eyebrow', where: 'bandeau hors ligne' },
+  { ink: 'textSecondary', on: 'track', role: 'caption', where: 'bandeau de mise à jour, pressé' },
   { ink: 'textSecondary', on: 'surfaceRaised', role: 'tabLabel', where: 'onglet au repos' },
   { ink: 'textSoft', on: 'surfaceRaised', role: 'eyebrow', where: "unité d'un compteur" },
   { ink: 'textSoft', on: 'surfaceRaised', role: 'body', where: "invite d'un champ" },

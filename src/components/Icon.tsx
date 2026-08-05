@@ -46,6 +46,10 @@ const ICONS = {
   'arrow-left': [{ d: 'm12 19l-7-7l7-7m7 7H5' }],
   /** Le repos automatique, actif. */
   timer: [{ d: 'M10 2h4m-2 12l3-3' }, { cx: 12, cy: 14, r: 8 }],
+  /** Sortir de l'app : la page d'installation, ouverte dans le navigateur (KL-43). */
+  'external-link': [
+    { d: 'M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' },
+  ],
   /** Le repos automatique, débranché. Barrée, comme tous les `*-off` de Lucide. */
   'timer-off': [
     {

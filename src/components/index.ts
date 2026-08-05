@@ -22,6 +22,7 @@ export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberSt
 export { Header, type HeaderProps } from './Header';
 export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';
 export { Sheet, type SheetProps } from './Sheet';
+export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
 
 /**
  * La mise en forme des unités (KL-29). Ici plutôt que dans `@/session` : décider

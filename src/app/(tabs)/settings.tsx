@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
-import { Alert, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
 import { Button, Card, Chip, Header, NumberStepper } from '@/components';
@@ -11,6 +11,7 @@ import {
   rearmExhausted,
   resyncAll,
   syncNow,
+  useAppVersion,
   useMutationQueue,
   useSyncState,
   useSyncStatus,
@@ -449,9 +450,10 @@ function RestCard() {
  * **Lue dans le manifeste embarqué** (`expo-constants`) et non par
  * `expo-application` : l'app n'embarque pas `expo-updates`, le manifeste est donc
  * figé au build et ne peut pas diverger du binaire installé — et `expo-application`
- * est un module natif de plus, donc un rebuild, pour une valeur qu'on a déjà. Le
- * jour où KL-43 ira comparer cette version à celle du dépôt F-Droid, la question
- * se reposera avec un vrai besoin derrière.
+ * est un module natif de plus, donc un rebuild, pour une valeur qu'on a déjà.
+ * KL-43 a posé le vrai besoin — comparer cette version à celle que le serveur
+ * déclare — et la réponse n'a pas changé : `installedVersionCode()` (`@/sync`)
+ * relit le même manifeste, avec la même réserve sur le développement.
  *
  * La section de développement n'existe que sous `__DEV__` : `seedDemo()` refuse
  * déjà de s'exécuter en production (elle pousserait de fausses séances au
@@ -459,12 +461,40 @@ function RestCard() {
  */
 function AppCard() {
   const config = Constants.expoConfig;
+  // Le verdict du contrôle de lancement (KL-43). Il est **lu**, jamais relancé :
+  // le magasin est celui du layout racine, se monter ici ne redemande rien au
+  // serveur.
+  const version = useAppVersion();
+  const updateUrl = version.status === 'update' ? version.installUrl : null;
 
   return (
     <Card title="Application" right={<Chip label="Kadens" rank={2} />}>
       <View style={styles.stack}>
         <Row label="Version" value={config?.version ?? 'inconnue'} mono />
         <Row label="Build" value={buildLabel()} mono />
+
+        {/* La même information que le bandeau, à l'endroit où on vient la
+            chercher volontairement. Le bouton reste secondaire : une mise à jour
+            n'est pas l'action primaire d'un écran de réglages (règle 2). */}
+        {updateUrl !== null ? (
+          <>
+            <Row
+              label="Mise à jour"
+              value={
+                version.latestVersionName === null
+                  ? 'disponible'
+                  : `${version.latestVersionName} disponible`
+              }
+              mono
+            />
+            <Button
+              label="Ouvrir la page d’installation"
+              variant="secondary"
+              block
+              onPress={() => void Linking.openURL(updateUrl)}
+            />
+          </>
+        ) : null}
 
         {__DEV__ ? (
           <>

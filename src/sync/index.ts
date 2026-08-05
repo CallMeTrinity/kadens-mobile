@@ -30,6 +30,10 @@
  *    `useSyncState()` lit ce que `sync_state` garde d'une session à l'autre. Un
  *    écran qui n'aurait lu que le premier annoncerait « jamais synchronisé » sur
  *    une base fraîche (KL-35).
+ * 6. **Le contrôle de version est ici pour la même raison que le reste** : il
+ *    croise le serveur et la base (`version.ts`, KL-43). Il ne bloque que sous le
+ *    plancher déclaré par le serveur, ne bloque jamais faute de réponse, et son
+ *    verdict est persisté — sinon il ne tiendrait pas un lancement hors réseau.
  */
 
 export { getSyncStatus, syncNow, useSyncStatus } from './engine';
@@ -42,6 +46,17 @@ export { resyncAll } from './reset';
 export type { ResetOutcome, ResetRefusal } from './reset';
 
 export { syncOnWorkoutClosed, useSyncTriggers } from './triggers';
+
+export {
+  checkAppVersion,
+  getAppVersionVerdict,
+  installedVersionCode,
+  resetAppVersionCheck,
+  useAppVersion,
+  useAppVersionCheck,
+  verdictFor,
+} from './version';
+export type { AppVersionStatus, AppVersionVerdict } from './version';
 
 export {
   dropMutation,

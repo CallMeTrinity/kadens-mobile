@@ -45,6 +45,7 @@ export { InvalidPairingQrError, parsePairingQrPayload } from './pairingQr';
 export type { PairingQrPayload } from './pairingQr';
 
 export {
+  appVersion,
   bootstrap,
   deleteSchedule,
   exerciseHistory,
@@ -77,6 +78,7 @@ export type { SessionState, SessionStatus, SignedOutReason } from './session';
 
 export type {
   ApiUser,
+  AppVersionPayload,
   AuthPayload,
   BootstrapPayload,
   BootstrapWindow,

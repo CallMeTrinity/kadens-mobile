@@ -22,6 +22,13 @@
       "when": 1785921726125,
       "tag": "0002_auto_rest",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1785940285760,
+      "tag": "0003_app_version",
+      "breakpoints": true
     }
   ]
 }

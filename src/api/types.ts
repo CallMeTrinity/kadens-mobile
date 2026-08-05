@@ -90,6 +90,26 @@ export interface PingPayload {
   user: string;
 }
 
+/**
+ * `GET /api/app-version` (KL-43) : ce que le serveur attend comme version d'app.
+ *
+ * Deux nombres qui ne disent pas la même chose. `versionCode` est la dernière
+ * version publiée — au-dessus de la sienne, on **propose** ; `minimumVersionCode`
+ * est le plancher — en dessous, on **s'arrête**. Zéro vaut « rien de publié » et
+ * « aucun plancher » : c'est l'élément neutre des deux comparaisons, donc l'état
+ * tant qu'aucune release n'existe.
+ */
+export interface AppVersionPayload {
+  versionCode: number;
+  versionName: string;
+  minimumVersionCode: number;
+  /** L'APK en direct. Nul tant qu'aucune version n'est publiée. */
+  apkUrl: string | null;
+  storeUrl: string;
+  /** La page d'installation du site, en absolu : ce que le bandeau ouvre. */
+  installUrl: string;
+}
+
 // --- La bibliothèque ---------------------------------------------------------
 
 export interface ExercisePayload {

@@ -242,6 +242,27 @@ export const syncState = sqliteTable(
     windowTo: text('window_to'),
     lastPulledAt: text('last_pulled_at'),
     lastPushedAt: text('last_pushed_at'),
+
+    // --- Ce que le serveur attend comme version d'app (KL-43) ---------------
+    //
+    // Quatre valeurs recopiées telles quelles du dernier `GET /api/app-version`
+    // réussi. Elles sont **persistées** et pas gardées en mémoire pour une seule
+    // raison, mais elle suffit : le plancher doit survivre à un lancement sans
+    // réseau. Un garde-fou qui disparaît dès qu'on ouvre l'app en mode avion ne
+    // garde rien — et c'est exactement le mode dans lequel cette app s'ouvre le
+    // plus souvent.
+    //
+    // Nulles tant qu'aucun appel n'a abouti : « on ne sait pas » n'est pas « tout
+    // va bien », et rien ne se bloque sur une réponse jamais reçue.
+
+    /** La dernière version publiée. Plus haute que la sienne : mise à jour proposée. */
+    latestVersionCode: integer('latest_version_code'),
+    /** Son numéro lisible, pour l'écrire dans le bandeau plutôt qu'un `versionCode` nu. */
+    latestVersionName: text('latest_version_name'),
+    /** Le plancher. En dessous, l'app s'arrête d'elle-même. */
+    minVersionCode: integer('min_version_code'),
+    /** La page d'installation du site, gardée pour que l'écran de blocage ait où envoyer. */
+    installUrl: text('install_url'),
   },
   (t) => [check('sync_state_singleton', sql`${t.id} = 1`)],
 );
