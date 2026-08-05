@@ -18,6 +18,7 @@
  * dépend.
  */
 
+import { InvalidPairingQrError } from './pairingQr';
 import type { Violation } from './types';
 
 /**
@@ -60,10 +61,84 @@ export class ApiError extends Error {
     this.path = init.path;
   }
 
-  /** Le texte à montrer : celui du serveur s'il y en a un, sinon le statut. */
+  /**
+   * Le texte à montrer.
+   *
+   * Le `detail` du serveur passe devant quand il y en a un : le contrat le
+   * garantit **en français et destiné à être lu** (`docs/api-mobile.md §1`), et
+   * il est souvent le seul à savoir de quoi il parle — « Code d'appairage
+   * invalide ou expiré. » vaut mieux que n'importe quelle phrase écrite ici sur
+   * la foi d'un `400`. Le lire n'est pas l'**analyser** : la décision de
+   * comportement reste au `status` (`isTransient`), c'est ce que le contrat
+   * interdit.
+   *
+   * Sans `detail`, la phrase vient de la table ci-dessous — jamais du code HTTP
+   * (KL-38) : « Le serveur a répondu 502 » ne dit rien à qui s'entraîne, et
+   * l'app sait toujours dire mieux que ça à partir du statut.
+   */
   get userMessage(): string {
-    return this.detail ?? `Le serveur a répondu ${this.status}.`;
+    // Le 422 est le seul cas où le `detail` du serveur est structurellement
+    // pauvre : il dit « Les données envoyées sont invalides. », et ce qui est
+    // invalide est dans `violations`, en français aussi.
+    if (this.status === 422 && this.violations.length > 0) {
+      return this.violations[0].message;
+    }
+
+    return this.detail ?? statusMessage(this.status, this.retryAfterSeconds);
   }
+}
+
+/**
+ * Ce qu'on dit d'un statut quand le serveur, lui, n'a rien dit.
+ *
+ * Une phrase par famille, et deux règles : aucun nombre — ni code HTTP, ni nom
+ * de classe, ni chemin — et, quand c'est vrai, l'assurance que rien n'est perdu.
+ * C'est la question qu'on se pose vraiment en lisant un échec avec une séance en
+ * cours dans les mains.
+ */
+function statusMessage(status: number, retryAfterSeconds: number | null): string {
+  if (status === 401) {
+    return 'Cet appareil n’est plus reconnu par le serveur. Reconnecte-toi.';
+  }
+
+  if (status === 403) {
+    return 'Ce compte n’a pas accès à ce contenu.';
+  }
+
+  if (status === 404) {
+    return 'Introuvable sur le serveur. Ça a pu être supprimé depuis le site.';
+  }
+
+  if (status === 409) {
+    return 'Le serveur a déjà une autre version de ces données.';
+  }
+
+  if (status === 422) {
+    return 'Le serveur a refusé les données envoyées.';
+  }
+
+  if (status === 429) {
+    return retryAfterSeconds === null
+      ? 'Trop de demandes d’affilée. Réessaie dans un instant.'
+      : `Trop de demandes d’affilée. Réessaie dans ${retryDelay(retryAfterSeconds)}.`;
+  }
+
+  if (status >= 500) {
+    return 'Le serveur a un problème de son côté. Rien n’est perdu ici, l’envoi repartira tout seul.';
+  }
+
+  return 'Le serveur a refusé la demande.';
+}
+
+/** « 45 s », « 2 min ». Arrondi à la minute supérieure au-delà d'une minute. */
+function retryDelay(seconds: number): string {
+  if (seconds < 60) {
+    return `${seconds} s`;
+  }
+
+  const minutes = Math.ceil(seconds / 60);
+
+  return `${minutes} min`;
 }
 
 /**
@@ -115,6 +190,24 @@ export class TimeoutError extends Error {
   }
 }
 
+/**
+ * L'app n'est pas en état d'appeler : aucune URL de serveur (KL-38).
+ *
+ * Typée plutôt que levée en `Error` nu, et c'est ce qui permet au repli de
+ * `describeError` d'être générique : le seul échec « prévu » qui n'était pas une
+ * classe est celui-ci, et son message — le seul utile de la famille — se perdait
+ * sinon derrière une phrase passe-partout. Ce n'est **pas** un échec transitoire :
+ * rejouer sans appairer donnera exactement la même chose.
+ */
+export class ConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    Object.setPrototypeOf(this, ConfigurationError.prototype);
+
+    this.name = 'ConfigurationError';
+  }
+}
+
 /** L'appel a été annulé par l'appelant (écran quitté, geste abandonné). */
 export class AbortError extends Error {
   constructor(method: string, path: string) {
@@ -158,6 +251,15 @@ export function isUnauthorized(error: unknown): boolean {
  * dire « une erreur est survenue » là où le serveur avait quelque chose de
  * précis à dire. Les deux cas locaux (réseau, délai) sont écrits ici : le
  * serveur, par construction, n'a pas pu en parler.
+ *
+ * **Rien de ce qui sort d'ici n'est technique (KL-38).** Le repli final ne rend
+ * plus `error.message` : ce message-là est écrit pour la console — anglais d'une
+ * bibliothèque, méthode et chemin d'un appel, exception de moteur JS — et il
+ * n'avait aucune raison d'atterrir sous les yeux de quelqu'un au milieu d'une
+ * séance. Il ne se perd pas pour autant : l'objet le porte toujours, et c'est là
+ * qu'un journal le lit. Le prix de ce choix est qu'un échec **inconnu** se dit en
+ * une phrase vague ; c'est assumé, tous ceux que l'app sait provoquer sont typés
+ * au-dessus.
  */
 export function describeError(error: unknown): string {
   if (error instanceof NetworkError) {
@@ -172,5 +274,15 @@ export function describeError(error: unknown): string {
     return error.userMessage;
   }
 
-  return error instanceof Error ? error.message : 'Échec inattendu.';
+  // Les deux erreurs locales dont le message *est* la phrase à lire : elles sont
+  // écrites en français, pour être lues, et disent quoi faire.
+  if (error instanceof ConfigurationError || error instanceof InvalidPairingQrError) {
+    return error.message;
+  }
+
+  if (error instanceof AbortError) {
+    return 'Demande interrompue.';
+  }
+
+  return 'Échec inattendu. Ce qui est consigné sur cet appareil est intact.';
 }

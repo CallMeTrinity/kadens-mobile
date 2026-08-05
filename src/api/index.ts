@@ -31,6 +31,7 @@ export type { ApiResponse, HttpMethod, RequestOptions } from './client';
 export {
   AbortError,
   ApiError,
+  ConfigurationError,
   describeError,
   isTransient,
   isUnauthorized,

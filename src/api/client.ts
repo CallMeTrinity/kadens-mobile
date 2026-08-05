@@ -42,7 +42,7 @@
  */
 
 import { buildUrl, getApiBaseUrl } from './baseUrl';
-import { AbortError, ApiError, NetworkError, TimeoutError } from './errors';
+import { AbortError, ApiError, ConfigurationError, NetworkError, TimeoutError } from './errors';
 import { closeSession, currentToken } from './session';
 import type { ProblemDetails } from './types';
 
@@ -238,8 +238,8 @@ export async function request<T>(options: RequestOptions): Promise<ApiResponse<T
   const attempts = options.attempts ?? (IDEMPOTENT.includes(method) ? 3 : 1);
 
   if (getApiBaseUrl() === null) {
-    throw new Error(
-      "Aucune URL de serveur : appaire l'app par le QR, ou pose EXPO_PUBLIC_API_URL en développement.",
+    throw new ConfigurationError(
+      'Aucun serveur appairé. Scanne le QR affiché dans les paramètres du site.',
     );
   }
 

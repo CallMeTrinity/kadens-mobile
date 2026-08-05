@@ -1335,6 +1335,8 @@ function ExercisePicker({
     setArea(null);
   };
 
+  const filtered = activity !== null || area !== null;
+
   return (
     <Sheet visible onClose={onClose} title={title}>
       <Field
@@ -1385,14 +1387,31 @@ function ExercisePicker({
       ) : null}
 
       {results.length === 0 ? (
-        <Text style={styles.body}>
-          {activity !== null || area !== null
-            ? // Distinguer les deux vides : une facette trop serrée se desserre,
-              // une bibliothèque incomplète attend une synchronisation. Sans ça,
-              // on cherche la panne du mauvais côté.
-              'Aucun exercice ne correspond à ces filtres. Élargis l’activité ou la zone.'
-            : 'Aucun exercice ne correspond. La bibliothèque du téléphone est celle du dernier bootstrap.'}
-        </Text>
+        // Distinguer les deux vides : une facette trop serrée se desserre, une
+        // bibliothèque incomplète attend une synchronisation. Sans ça, on cherche
+        // la panne du mauvais côté. Et quand ce sont les facettes, l'état vide
+        // porte le geste qui en sort — les relâcher demanderait sinon de
+        // retrouver deux puces actives dans deux rangées qui défilent (KL-38).
+        <EmptyState
+          compact
+          title="Aucun exercice"
+          hint={
+            filtered
+              ? 'Rien ne correspond à ces filtres. Élargis l’activité ou la zone.'
+              : 'Rien ne correspond à cette recherche. La bibliothèque du téléphone est celle du dernier bootstrap.'
+          }
+          action={
+            filtered
+              ? {
+                  label: 'Relâcher les filtres',
+                  onPress: () => {
+                    setActivity(null);
+                    setArea(null);
+                  },
+                }
+              : undefined
+          }
+        />
       ) : (
         results.map((option) => (
           <Pressable

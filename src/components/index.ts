@@ -13,11 +13,13 @@ export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from '.
 export { Card, type CardProps } from './Card';
 export { Chip, type ChipProps, type ChipRank, type ChipTone } from './Chip';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
+export { Fault, type FaultProps } from './Fault';
 export { Field, type FieldProps } from './Field';
 export { FilterChip, type FilterChipProps } from './FilterChip';
 export { Icon, type IconName, type IconProps } from './Icon';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
+export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';
 export { Sheet, type SheetProps } from './Sheet';
 
 /**

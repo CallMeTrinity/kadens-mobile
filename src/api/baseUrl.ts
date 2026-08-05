@@ -23,6 +23,8 @@
 
 import { API_URL } from '@/config';
 
+import { ConfigurationError } from './errors';
+
 /** Retire le `/` final : tous les chemins d'endpoint commencent par un `/`. */
 function normalize(url: string): string {
   return url.trim().replace(/\/+$/, '');
@@ -56,8 +58,8 @@ export function setApiBaseUrl(url: string | null): void {
  */
 export function buildUrl(path: string, query?: Record<string, string | number | null | undefined>) {
   if (baseUrl === null) {
-    throw new Error(
-      "Aucune URL de serveur : appaire l'app par le QR, ou pose EXPO_PUBLIC_API_URL en développement.",
+    throw new ConfigurationError(
+      'Aucun serveur appairé. Scanne le QR affiché dans les paramètres du site.',
     );
   }
 

@@ -158,8 +158,26 @@ engine publishes a status (`useSyncStatus()`) and screens read the local DB, whi
   `useSession()`) switches to the login screen — nothing to intercept in a screen for this.
 - `GET`/`PUT`/`DELETE` are retried on transient failure, `POST` is not (a replayed `login` would mint a second
   token nobody holds).
-- Failures are typed (`NetworkError`, `TimeoutError`, `ApiError`) and inspected via `isTransient()` — never by
-  parsing the error message/`detail`.
+- Failures are typed (`NetworkError`, `TimeoutError`, `ApiError`, `ConfigurationError`) and inspected via
+  `isTransient()` — never by parsing the error message/`detail`.
+
+### Degraded states: one writer for failure text, one banner, one boundary (KL-38)
+
+- **`describeError()` is the only thing that writes a failure sentence.** A screen never composes its own, and
+  never renders `error.message` — that string is written for the console (library English, method and path) and
+  must not reach someone mid-workout. Nothing it returns carries an HTTP code, a method or a path: the server's
+  `detail` comes first (the contract guarantees French, meant to be read), a status table takes over when there
+  is none, and a `422` speaks through its first `violation`. A test walks twelve statuses to keep it that way.
+- **Offline is the nominal state, not a fault.** The banner is mounted once, in `app/(tabs)/_layout.tsx`, above
+  the tab bar — never in a live workout. It reads `useOfflineNotice()` (`@/sync`), which crosses the phone's
+  network state with the engine's `offline` flag because "no network" and "server not answering" don't get fixed
+  the same way. Faint ink, no red, no target, `accessibilityLiveRegion="polite"`.
+- **A white screen is impossible.** `app/_layout.tsx` exports an `ErrorBoundary`; errors from any route climb to
+  it. Its exit doors are `retry()` and a fallback that navigates home *before* re-arming (retrying in place
+  replays the same error). It renders `Fault`, shared with the migrations guard.
+- **Every list has a drawn empty state** (`EmptyState`, `compact` inside a sheet/section/card). Two exceptions are
+  deliberate and documented in the ticket: the settings queue says its emptiness in its summary row, and a missing
+  exercise history is "first time", not an empty list.
 
 ### Tests run against a real SQLite and a real API client (KL-36)
 

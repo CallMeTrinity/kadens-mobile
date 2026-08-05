@@ -34,15 +34,31 @@ import type { ComponentProps } from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, type IconName } from '@/components';
+import { Icon, OfflineBanner, type IconName } from '@/components';
+import { useOfflineNotice } from '@/sync';
 import { colors, layout, space, text } from '@/theme';
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const notice = useOfflineNotice();
 
   return (
     <Tabs>
       <TabSlot />
+      {/*
+        Le bandeau hors ligne (KL-38), **une fois pour les trois destinations**
+        plutôt que trois fois dans trois écrans. Il est ici et pas dans la séance
+        en cours, qui est un écran de pile : hors réseau y est l'état nominal, et
+        la place sous le pouce y appartient à « valider cette série ».
+
+        Juste au-dessus de la barre, pas sous l'en-tête : en haut il aurait
+        décalé le titre de chaque écran à chaque bascule de réseau, et l'en-tête
+        porte déjà la zone sûre. Ici il pousse la barre de quelques points, ce que
+        rien ne recouvre.
+      */}
+      {notice.offline ? (
+        <OfflineBanner disconnected={notice.disconnected} pending={notice.pending} />
+      ) : null}
       {/*
         La zone sûre du bas est prise en **rembourrage**, pas en marge : la barre
         peint donc sous la barre gestuelle Android au lieu de laisser un liseré

@@ -14,8 +14,9 @@
  * (`pendingMutationsQuery`).
  */
 
-import { asc, eq } from 'drizzle-orm';
+import { asc, count, eq } from 'drizzle-orm';
 import { useLiveQuery } from 'drizzle-orm/expo-sqlite';
+import * as Network from 'expo-network';
 import { useMemo } from 'react';
 
 import {
@@ -28,6 +29,7 @@ import {
   type SyncStateRow,
 } from '@/db';
 
+import { useSyncStatus } from './engine';
 import { isExhausted } from './queue';
 
 /**
@@ -44,6 +46,51 @@ export function useSyncState(): SyncStateRow | null {
   );
 
   return data[0] ?? null;
+}
+
+/**
+ * Ce qu'un bandeau hors ligne a besoin de savoir (KL-38).
+ *
+ * **Deux sources, parce qu'elles ne disent pas la même chose.** L'état réseau du
+ * téléphone (`expo-network`) répond tout de suite et sans avoir rien tenté :
+ * c'est le sous-sol de la salle, et c'est le cas nominal du chantier. L'état du
+ * moteur (`useSyncStatus().offline`) couvre l'autre moitié — réseau présent mais
+ * serveur muet : portail captif d'hôtel, VPN, mutualisé en carafe. Un bandeau qui
+ * n'aurait lu que le second ne s'afficherait qu'après un cycle raté ; un bandeau
+ * qui n'aurait lu que le premier annoncerait tout va bien devant un serveur
+ * injoignable.
+ *
+ * `isConnected` seul, jamais `isInternetReachable` — même raison qu'en
+ * `triggers.ts` : le second demande une sonde sortante et reste indéfini un
+ * moment après chaque bascule. Et la comparaison se fait **à `false`**, pas par
+ * négation : le hook rend `{}` avant sa première lecture, et « pas encore lu » ne
+ * doit pas s'afficher comme « hors réseau ».
+ *
+ * `pending` compte ce qui attend de partir. Il n'y a pas de `useMutationQueue()`
+ * ici : le bandeau est monté en permanence, il lui faut un compteur, pas la file
+ * entière avec ses titres.
+ */
+export interface OfflineNotice {
+  /** À afficher ou non. Vrai dès que l'une des deux sources est dans le rouge. */
+  offline: boolean;
+  /** Le téléphone n'a aucun réseau. Distinct de « le serveur ne répond pas ». */
+  disconnected: boolean;
+  /** Séances écrites ici et pas encore envoyées. */
+  pending: number;
+}
+
+export function useOfflineNotice(): OfflineNotice {
+  const network = Network.useNetworkState();
+  const status = useSyncStatus();
+  const { data } = useLiveQuery(db.select({ total: count() }).from(mutationQueue));
+
+  const disconnected = network.isConnected === false;
+
+  return {
+    offline: disconnected || status.offline,
+    disconnected,
+    pending: data[0]?.total ?? 0,
+  };
 }
 
 /** Une entrée de la file, telle que l'écran de réglages la montre. */

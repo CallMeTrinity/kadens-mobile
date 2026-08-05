@@ -347,11 +347,17 @@ function Deviations({
       </Text>
 
       {outcomes.length === 0 ? (
-        <Text style={styles.body}>
-          {counts.held > 0
-            ? `Rien à signaler : ${counts.held} exercice${counts.held > 1 ? 's' : ''} tenu${counts.held > 1 ? 's' : ''}.`
-            : 'Rien à comparer : cette séance n’avait pas de programme.'}
-        </Text>
+        // Deux vides qui ne veulent pas dire la même chose : tout a été tenu, ou
+        // il n'y avait rien à tenir. Le second n'est pas une réussite.
+        <EmptyState
+          compact
+          title={counts.held > 0 ? 'Rien à signaler' : 'Rien à comparer'}
+          hint={
+            counts.held > 0
+              ? `${counts.held} exercice${counts.held > 1 ? 's' : ''} tenu${counts.held > 1 ? 's' : ''}, tel${counts.held > 1 ? 's' : ''} que prévu${counts.held > 1 ? 's' : ''}.`
+              : 'Cette séance n’avait pas de programme.'
+          }
+        />
       ) : (
         <>
           {counts.held > 0 ? (

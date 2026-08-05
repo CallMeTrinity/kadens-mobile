@@ -35,8 +35,8 @@
 export { getSyncStatus, syncNow, useSyncStatus } from './engine';
 export type { SyncOutcome, SyncPhase, SyncStatus, SyncTrigger } from './engine';
 
-export { useMutationQueue, useSyncState } from './hooks';
-export type { QueuedMutation } from './hooks';
+export { useMutationQueue, useOfflineNotice, useSyncState } from './hooks';
+export type { OfflineNotice, QueuedMutation } from './hooks';
 
 export { resyncAll } from './reset';
 export type { ResetOutcome, ResetRefusal } from './reset';

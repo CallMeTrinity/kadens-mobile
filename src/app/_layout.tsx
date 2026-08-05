@@ -1,15 +1,15 @@
-import { Stack } from 'expo-router';
+import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { restoreSession, setApiBaseUrl, useSession } from '@/api';
+import { Fault } from '@/components';
 import { getSyncState, useDatabaseMigrations } from '@/db';
 import { initRestNotifications } from '@/session';
 import { useSyncTriggers } from '@/sync';
-import { colors, space, text, useKadensFonts } from '@/theme';
+import { colors, useKadensFonts } from '@/theme';
 
 // L'écran de démarrage reste affiché tant que les polices ne sont pas prêtes.
 // Sans ça le premier rendu sort en police système puis bascule : la mise en
@@ -76,14 +76,14 @@ export default function RootLayout() {
   if (dbError) {
     return (
       <SafeAreaProvider>
-        <View style={styles.fault}>
-          <Text style={styles.faultTitle}>Base locale indisponible</Text>
-          <Text style={styles.faultBody}>
-            Les migrations n’ont pas pu s’appliquer. Rien n’a été perdu : le réalisé déjà consigné
-            reste dans le fichier.
-          </Text>
-          <Text style={styles.faultDetail}>{dbError.message}</Text>
-        </View>
+        {/* Sans porte de sortie, et c'est le seul écran de panne qui n'en a
+            pas : rien de ce que l'app sait faire ne s'ouvre sans base, et un
+            bouton qui ne mènerait nulle part serait pire que pas de bouton. */}
+        <Fault
+          title="Base locale indisponible"
+          body="Les migrations n’ont pas pu s’appliquer. Rien n’a été perdu : le réalisé déjà consigné reste dans le fichier."
+          detail={dbError.message}
+        />
         <StatusBar style="dark" />
       </SafeAreaProvider>
     );
@@ -142,6 +142,56 @@ export default function RootLayout() {
 }
 
 /**
+ * Le garde-fou global (KL-38) : ce qui s'affiche quand un rendu lève.
+ *
+ * `expo-router` enveloppe une route d'une frontière d'erreur React dès qu'elle
+ * exporte un `ErrorBoundary`, et une erreur non rattrapée remonte à la frontière
+ * **parente la plus proche**. Posé sur la disposition racine, celui-ci couvre
+ * donc l'app entière — connexion, onglets, séance en cours — et c'est ce qui rend
+ * l'écran blanc impossible : sans lui, React démonte tout l'arbre et laisse le
+ * fond de la fenêtre.
+ *
+ * **La porte de sortie est `retry()`**, que le routeur fournit : elle re-rend la
+ * route sans relancer l'app, ce qui suffit dès que l'erreur venait d'un état
+ * transitoire. Le repli, lui, ramène à l'écran du jour — parce qu'un rendu qui
+ * lève à chaque fois (une séance dont le document est illisible) rejouerait
+ * indéfiniment le même échec, et qu'il faut pouvoir en sortir sans désinstaller.
+ *
+ * Ce qu'il ne couvre pas, et qu'aucune frontière React ne couvre : ce qui lève
+ * **hors rendu** — un gestionnaire d'événement, une promesse rejetée. Ceux-là
+ * sont déjà pris là où ils naissent (le moteur de synchronisation ne lève jamais,
+ * les écritures de séance sont transactionnelles).
+ */
+export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
+  return (
+    <SafeAreaProvider>
+      <Fault
+        title="L’app s’est arrêtée là"
+        body="Rien n’est perdu : tout ce qui a été coché est écrit sur cet appareil, et repartira au serveur à la prochaine synchronisation."
+        detail={error.message}
+        action={{ label: 'Réessayer', onPress: () => void retry() }}
+        secondary={{ label: 'Revenir à l’accueil', onPress: () => leaveToToday(retry) }}
+      />
+      <StatusBar style="dark" />
+    </SafeAreaProvider>
+  );
+}
+
+/**
+ * Sortir d'un écran en panne.
+ *
+ * L'ordre compte : on **navigue d'abord**, on re-rend ensuite. `retry()` remonte
+ * la route qui vient de lever ; l'appeler sans avoir bougé rejouerait exactement
+ * la même erreur. Le `retry` reste indispensable après le `replace` — la
+ * frontière ne se réarme pas toute seule, elle rendrait ce même écran de panne
+ * au-dessus de la route d'accueil.
+ */
+function leaveToToday(retry: () => Promise<void>): void {
+  router.replace('/');
+  void retry();
+}
+
+/**
  * Restaure la session et l'URL du serveur, une fois, au démarrage.
  *
  * L'ordre compte : l'URL vient de `sync_state` (posée par le QR, KL-48), donc de
@@ -186,17 +236,3 @@ function useRestoredSession(dbSettled: boolean, dbReady: boolean): boolean {
 
   return settled;
 }
-
-const styles = StyleSheet.create({
-  // Le rouge ne sort que sur un échec — ici c'en est un (§5 règle 2).
-  fault: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    justifyContent: 'center',
-    padding: space[8],
-    gap: space[4],
-  },
-  faultTitle: { ...text.sectionTitle, color: colors.statusMissed },
-  faultBody: { ...text.body, color: colors.textSecondary },
-  faultDetail: { ...text.caption, color: colors.textFaint },
-});
