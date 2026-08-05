@@ -5,7 +5,7 @@
   "private": true,
   "expo": {
     "autolinking": {
-      "_comment": "KL-41 — deux modules natifs liés par transitivité et jamais exécutés. @expo/ui vient d'expo-router, pour son toolbar flottant : il tirait tout Jetpack Compose + Material3, soit 35 % du dex, alors que la barre d'onglets est dessinée à la main (expo-router/ui headless) et que rien n'importe le toolbar. @expo/dom-webview sert aux composants 'use dom', que l'app n'utilise pas. Les exclure retire le module natif, pas le paquet npm : si un jour un écran importe l'un des deux, il faut le retirer d'ici avant de reconstruire.",
+      "_comment": "KL-41 — deux modules natifs liés par transitivité et jamais rendus. @expo/ui vient d'expo-router, pour son toolbar flottant : il tirait tout Jetpack Compose + Material3, soit 35 % du dex, alors que la barre d'onglets est dessinée à la main (expo-router/ui headless) et que rien ne rend le toolbar. @expo/dom-webview sert aux composants 'use dom', que l'app n'utilise pas. Exclure retire le module natif, PAS le paquet npm ni son JS — et c'est la nuance qui compte : expo-router require @expo/ui statiquement depuis layouts/Stack.js, donc importer Stack suffisait à atteindre requireNativeModule('ExpoUI') et à faire tomber le bundle au démarrage. @expo/ui a donc besoin d'un second verrou côté JS, l'alias Metro vers stubs/expo-ui.js ; @expo/dom-webview, que rien ne require, n'en a pas besoin. Si un jour un écran rend l'un des deux, retirer l'entrée ici ET l'alias avant de reconstruire.",
       "exclude": [
         "@expo/ui",
         "@expo/dom-webview"

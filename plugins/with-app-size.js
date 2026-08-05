@@ -33,7 +33,10 @@
  *
  * - **`@expo/ui` exclu de l'autolinking** (`package.json`, `expo.autolinking.exclude`) :
  *   il tirait tout Jetpack Compose + Material3, soit 35 % du dex, pour un
- *   *toolbar* d'`expo-router` que l'app n'utilise pas. **−6,5 Mo.**
+ *   *toolbar* d'`expo-router` que l'app n'utilise pas. **−6,5 Mo.** Il va par
+ *   paire avec l'alias Metro vers `stubs/expo-ui.js` : retirer le natif sans
+ *   retirer le JS laisse `requireNativeModule('ExpoUI')` dans le bundle, et
+ *   l'app ne démarre plus.
  * - **`reactNativeArchitectures=arm64-v8a`**, passé par le workflow de build et
  *   **non posé ici** : la propriété est globale, elle vaudrait aussi pour le
  *   développement, et un émulateur sur une machine Intel est en x86_64. La

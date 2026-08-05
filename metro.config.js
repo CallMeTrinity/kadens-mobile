@@ -19,4 +19,25 @@ config.resolver.sourceExts.push('sql');
 // ne fournit pas (cf. `src/db/client.ts`).
 config.resolver.assetExts.push('wasm');
 
+// KL-41 — `@expo/ui` est exclu de l'autolinking, donc son module natif n'est pas
+// dans l'APK. Son JS, lui, reste résolvable et `expo-router` l'importe
+// statiquement depuis `Stack` : sans cet alias, le bundle tombe au démarrage sur
+// `Cannot find native module 'ExpoUI'`. Le raisonnement complet et la marche à
+// suivre pour revenir en arrière sont dans `stubs/expo-ui.js`.
+//
+// L'alias couvre tous les sous-chemins (`/jetpack-compose`, `/swift-ui`,
+// `/jetpack-compose/modifiers`…) : les fichiers `.android` et `.ios` d'expo-router
+// n'importent pas les mêmes, et Metro résout les deux quand il bundle pour le web.
+const expoUiStub = require.resolve('./stubs/expo-ui.js');
+
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName === '@expo/ui' || moduleName.startsWith('@expo/ui/')) {
+    return { type: 'sourceFile', filePath: expoUiStub };
+  }
+
+  // `context.resolveRequest` reste le résolveur par défaut de Metro à
+  // l'intérieur du nôtre — l'appeler ici n'est pas une récursion.
+  return context.resolveRequest(context, moduleName, platform);
+};
+
 module.exports = config;
