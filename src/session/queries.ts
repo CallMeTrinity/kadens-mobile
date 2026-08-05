@@ -339,11 +339,49 @@ export function preferencesQuery() {
   return db.select().from(preference).where(eq(preference.id, PREFERENCE_ID)).limit(1);
 }
 
+/**
+ * Ce qu'il faut d'une séance datée pour dire où elle en est. Un `Pick` et non la
+ * ligne entière : `beginWorkout` (`start.ts`) tranche la même question sur une
+ * lecture à trois colonnes, dans sa transaction — et deux définitions de « close »
+ * finiraient par diverger.
+ */
+type WorkoutBounds = Pick<ScheduledWorkoutRow, 'startedAt' | 'endedAt' | 'status'>;
+
+/**
+ * La séance court-elle **ici** ? Commencée sur ce téléphone, pas terminée.
+ *
+ * Prime sur le statut du serveur, comme la marque de lecture : le téléphone fait
+ * autorité sur ses propres bornes (`docs/api-mobile.md §4.1`). Une séance ouverte
+ * ici et cochée « faite » sur le web pendant ce temps se reprend, elle ne se
+ * ferme pas sous les doigts.
+ */
+export function isRunning(row: WorkoutBounds): boolean {
+  return row.startedAt !== null && row.endedAt === null;
+}
+
+/**
+ * La séance est-elle fermée — plus rien à y écrire ?
+ *
+ * **Deux façons de l'être, et la seconde manquait.** `ended_at` dit « clôturée
+ * ici » (§2.3 point 5, pas de reprise après clôture). Mais une séance cochée
+ * « faite » **depuis le web** n'a pas d'`ended_at` — seul le téléphone en écrit
+ * un — et elle se présentait donc comme une séance à démarrer, jusqu'à rafler
+ * l'unique action primaire du jour. Or rien ne **déclôture** côté serveur
+ * (`docs/api-mobile.md §4.1`) : un `status = done` est aussi terminal qu'une
+ * clôture d'ici, et on ne consigne pas rétroactivement une séance déjà déclarée
+ * faite.
+ *
+ * `started_at` non nul l'emporte : voir `isRunning`.
+ */
+export function isClosed(row: WorkoutBounds): boolean {
+  return row.endedAt !== null || (row.status === 'done' && row.startedAt === null);
+}
+
 /** Une séance datée telle que l'écran la peint, ses dérivés compris. */
 export interface DayWorkout extends ScheduledWorkoutRow {
   /** Commencée et pas terminée. L'état qui rend le bouton « Reprendre ». */
   running: boolean;
-  /** Terminée : plus rien à y faire (§2.3 point 5, pas de reprise après clôture). */
+  /** Fermée : plus rien à y écrire. Clôturée ici, ou déclarée faite sur le web. */
   closed: boolean;
   /** Séries consignées, échauffement compris, exercices sautés exclus. */
   loggedSets: number;
@@ -359,8 +397,8 @@ export function toDayWorkout(
 ): DayWorkout {
   return {
     ...row,
-    running: row.startedAt !== null && row.endedAt === null,
-    closed: row.endedAt !== null,
+    running: isRunning(row),
+    closed: isClosed(row),
     loggedSets,
     pendingSync,
   };

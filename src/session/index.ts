@@ -173,6 +173,8 @@ export {
   dayCountsQuery,
   exerciseHistoryQuery,
   exerciseLibraryQuery,
+  isClosed,
+  isRunning,
   loggedExercisesQuery,
   loggedSetCountsAllQuery,
   loggedSetCountsQuery,

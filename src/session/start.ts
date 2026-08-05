@@ -34,6 +34,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { db, localDate, nowIso, scheduledWorkout, uuidv7 } from '@/db';
 
 import { shortDate } from './days';
+import { isClosed } from './queries';
 
 /**
  * Ouvre une séance datée, ou reprend celle qui l'était déjà.
@@ -42,6 +43,12 @@ import { shortDate } from './days';
  * terminée (§2.3 point 5, « pas de reprise après clôture »). Refaire la même
  * séance dans la journée crée une séance libre, ce n'est pas une reprise.
  *
+ * « Close » se lit ici comme partout ailleurs (`isClosed`, `queries.ts`) : une
+ * séance cochée « faite » depuis le web n'a pas d'`ended_at` et n'en aura jamais,
+ * mais rien ne la déclôture non plus — l'ouvrir ne consignerait qu'un réalisé
+ * rétroactif que personne ne veut saisir. La lecture prend donc `status` en plus,
+ * et la garde de l'`UPDATE` reste la même.
+ *
  * Idempotent : reprendre ne réécrit pas `started_at`, sinon la durée de la séance
  * repartirait de zéro à chaque retour sur l'écran — et la durée est ce que KL-33
  * affichera au résumé.
@@ -49,12 +56,16 @@ import { shortDate } from './days';
 export function beginWorkout(uuid: string): boolean {
   return db.transaction((tx) => {
     const row = tx
-      .select({ startedAt: scheduledWorkout.startedAt, endedAt: scheduledWorkout.endedAt })
+      .select({
+        startedAt: scheduledWorkout.startedAt,
+        endedAt: scheduledWorkout.endedAt,
+        status: scheduledWorkout.status,
+      })
       .from(scheduledWorkout)
       .where(eq(scheduledWorkout.uuid, uuid))
       .get();
 
-    if (!row || row.endedAt !== null) {
+    if (!row || isClosed(row)) {
       return false;
     }
 

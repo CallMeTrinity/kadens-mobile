@@ -16,6 +16,8 @@ import {
 import {
   buildSessionSummary,
   closeWorkout,
+  isClosed,
+  isRunning,
   longDate,
   useElapsedSeconds,
   useSessionProgram,
@@ -81,8 +83,13 @@ export default function SessionCloseScreen() {
   // cet effet réécrirait le champ sous les doigts au prochain pull.
   const [draft, setDraft] = useState<string | null>(null);
 
+  // `ended_at` et non `isClosed()` : cet écran-ci parle de la clôture **faite
+  // ici**, la seule qui produise une durée, un résumé et une note. Une séance
+  // cochée « faite » sur le web est fermée elle aussi, mais elle n'a rien de tout
+  // ça — elle tombe dans le garde-fou « rien à clôturer » plus bas.
   const closed = workout ? workout.endedAt !== null : false;
-  const open = workout ? workout.startedAt !== null && workout.endedAt === null : false;
+  const open = workout ? isRunning(workout) : false;
+  const closedElsewhere = workout ? isClosed(workout) && workout.endedAt === null : false;
   const notes = draft ?? workout?.completionNotes ?? '';
 
   // Le résumé se recalcule quand le déroulé bouge, pas à chaque seconde : la
@@ -120,14 +127,19 @@ export default function SessionCloseScreen() {
 
   // Ni ouverte ni close : elle n'a jamais été commencée. Il n'y a rien à
   // clôturer, et poser `ended_at` sur une séance sans début décrirait une séance
-  // qu'on n'a pas faite.
+  // qu'on n'a pas faite. Une séance déjà déclarée faite ailleurs tombe ici aussi,
+  // pour la même raison et avec ses mots à elle.
   if (!open && !closed) {
     return (
       <View style={styles.screen}>
         <Header title="Clôture" onBack={() => router.back()} />
         <EmptyState
-          title="Séance pas commencée"
-          hint="Il n’y a rien à clôturer tant qu’elle n’a pas été démarrée."
+          title={closedElsewhere ? 'Séance déjà déclarée faite' : 'Séance pas commencée'}
+          hint={
+            closedElsewhere
+              ? 'Elle a été marquée faite ailleurs. Rien ne la déclôture, et rien ne s’y consigne.'
+              : 'Il n’y a rien à clôturer tant qu’elle n’a pas été démarrée.'
+          }
           action={{ label: 'Retour', onPress: () => router.back() }}
         />
       </View>

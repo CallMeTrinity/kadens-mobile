@@ -31,6 +31,8 @@ import {
   exerciseIdOf,
   findExercise,
   findSetLine,
+  isClosed,
+  isRunning,
   longDate,
   nextTarget,
   removeExercise,
@@ -209,7 +211,7 @@ export default function SessionScreen() {
   const [dockHeight, setDockHeight] = useState(0);
   const insets = useSafeAreaInsets();
 
-  const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
+  const running = workout ? isRunning(workout) : false;
   const rest = useRestTimer();
   // Lues en vif : la bascule de la barre basse et celle des réglages écrivent la
   // même ligne, et l'écran doit suivre l'une comme l'autre.
@@ -341,7 +343,11 @@ export default function SessionScreen() {
     );
   }
 
-  const closed = workout.endedAt !== null;
+  const closed = isClosed(workout);
+  // Fermée sans jamais avoir tourné ici : elle a été cochée « faite » sur le web.
+  // Il n'y a donc ni durée, ni série, ni écart à résumer — l'écran se lit, il ne
+  // se clôture pas.
+  const closedElsewhere = closed && workout.endedAt === null;
   const sheetSet = openSet === null ? null : findSetLine(program, openSet);
   const sheetExercise = openExercise === null ? null : findExercise(program, openExercise);
 
@@ -408,6 +414,16 @@ export default function SessionScreen() {
                 Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
               </Text>
               <Button label="Démarrer" onPress={() => beginWorkout(uuid)} block />
+            </View>
+          ) : null}
+
+          {/* Sans ce mot, l'absence de bouton se lirait comme une panne : le
+              programme est là, la séance est datée, et rien ne se coche. */}
+          {closedElsewhere ? (
+            <View style={styles.notice}>
+              <Text style={styles.body}>
+                Séance déjà déclarée faite. Elle se relit, elle ne se consigne plus.
+              </Text>
             </View>
           ) : null}
 
@@ -491,7 +507,7 @@ export default function SessionScreen() {
             En **secondaire** tant que la séance court : l'action primaire de
             l'écran est celle de la barre basse, et il n'y en a qu'une (KL-39).
             Ce bouton-ci reste le chemin de celui qui arrête plus tôt. */}
-          {running || closed ? (
+          {running || (closed && !closedElsewhere) ? (
             <Button
               label={closed ? 'Voir le résumé' : 'Terminer la séance'}
               variant="secondary"
