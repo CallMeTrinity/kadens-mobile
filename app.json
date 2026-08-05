@@ -48,7 +48,9 @@
           "color": "#d8261e",
           "defaultChannel": "rest"
         }
-      ]
+      ],
+      "./plugins/with-release-signing.js",
+      "./plugins/with-app-size.js"
     ],
     "experiments": {
       "typedRoutes": true,

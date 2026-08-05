@@ -9,6 +9,9 @@ dist/
 web-build/
 expo-env.d.ts
 
+# APK renommé par le workflow de build (KL-41), reproduit à chaque compilation.
+dist-apk/
+
 # Native
 .kotlin/
 *.orig.*

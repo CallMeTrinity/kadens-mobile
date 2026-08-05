@@ -1,10 +1,14 @@
 name: CI
 
-# Sur chaque poussée, quelle que soit la branche : le dépôt n'a pas de branche
-# protégée ni de flux de PR, et un test qui ne tournerait que sur `main`
-# arriverait après le travail plutôt que pendant (KL-36).
+# Ces contrôles tournent sur chaque poussée, quelle que soit la branche : le
+# dépôt n'a pas de branche protégée ni de flux de PR, et un test qui ne
+# tournerait que sur `main` arriverait après le travail plutôt que pendant
+# (KL-36). Le déclencheur `push` n'est pourtant pas ici mais dans `build.yml`,
+# qui appelle ce fichier avant de compiler (KL-41) : le garder aux deux endroits
+# ferait tourner la suite deux fois par poussée. C'est aussi ce qui interdit une
+# release verte sur des tests rouges — l'APK est en `needs` de ce job.
 on:
-  push:
+  workflow_call:
   pull_request:
   workflow_dispatch:
 

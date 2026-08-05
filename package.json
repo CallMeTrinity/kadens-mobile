@@ -3,6 +3,15 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "private": true,
+  "expo": {
+    "autolinking": {
+      "_comment": "KL-41 — deux modules natifs liés par transitivité et jamais exécutés. @expo/ui vient d'expo-router, pour son toolbar flottant : il tirait tout Jetpack Compose + Material3, soit 35 % du dex, alors que la barre d'onglets est dessinée à la main (expo-router/ui headless) et que rien n'importe le toolbar. @expo/dom-webview sert aux composants 'use dom', que l'app n'utilise pas. Les exclure retire le module natif, pas le paquet npm : si un jour un écran importe l'un des deux, il faut le retirer d'ici avant de reconstruire.",
+      "exclude": [
+        "@expo/ui",
+        "@expo/dom-webview"
+      ]
+    }
+  },
   "scripts": {
     "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000 || echo 'adb reverse impossible, téléphone débranché ? Metro et le backend ne seront pas joignables depuis le mobile.'",
     "start": "npm run --silent adb:reverse && expo start --localhost",

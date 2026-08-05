@@ -21,7 +21,8 @@ contrat de l'API dans `kadens/docs/api-mobile.md`.
 - **Expo Go** sur le téléphone Android pour le développement courant, ou un
   build natif (`npx expo run:android`) dès qu'un module natif non inclus dans
   Expo Go entre en jeu.
-- Pour un build natif : JDK 17 et le SDK Android (Android Studio).
+- Pour un build natif : **JDK 21** (cf. `.java-version`, et ce que pose le
+  workflow de build) et le SDK Android (Android Studio).
 
 ## Lancement
 
@@ -138,6 +139,134 @@ export` : l'import a levé, la route ne vaut plus rien. Rien à corriger dans le
 code, il faut relancer `npm run android`. Après un `npx expo install <module>`,
 donc, on reconstruit — un `npm start` seul ne suffit pas.
 
+## Build et publication (KL-41)
+
+Le workflow `.github/workflows/build.yml` tourne **à chaque poussée** : il
+enchaîne les contrôles de `ci.yml` (qu'il appelle plutôt que de les recopier),
+`expo prebuild`, puis `./gradlew assembleRelease`. Un build natif est le seul
+endroit où se voient un fichier renommé dans `app.json`, un plugin de
+configuration cassé ou un module natif ajouté sans le sien — ni le typage ni les
+tests ne compilent quoi que ce soit.
+
+**APK, jamais AAB.** Un AAB se finalise chez Google et ne s'installe pas ; le
+dépôt auto-hébergé sert des fichiers qu'un téléphone ouvre directement.
+
+### Les deux numéros de version
+
+Ils ne sont pas dans le dépôt, ils viennent du build (`app.config.ts`) :
+
+| Variable              | Source                      | Devient       |
+| --------------------- | --------------------------- | ------------- |
+| `KADENS_VERSION_CODE` | `github.run_number`         | `versionCode` |
+| `KADENS_VERSION_NAME` | le tag `v1.2.0`, `v` retiré | `versionName` |
+
+`versionCode` est le numéro qu'Android regarde pour décider si un APK est une
+mise à jour. `run_number` est monotone et propre au **fichier** de workflow :
+renommer `build.yml` le remettrait à zéro, et c'est la seule manière de produire
+un APK que rien ne pourra installer par-dessus le précédent. Une valeur mal
+formée échoue le build plutôt que de retomber sur `1` en silence.
+
+Hors tag, les valeurs d'`app.json` s'appliquent : un build de branche n'est pas
+une version publiée. Il est quand même déposé en artefact du run (14 jours), ce
+qui permet de l'installer sans publier.
+
+### Publier une version
+
+```bash
+git tag v1.2.0 && git push origin v1.2.0
+```
+
+Le tag doit valoir exactement `vX.Y.Z` — le workflow refuse le reste avant de
+compiler. Il crée la GitHub Release et y attache `kadens-<version>-<code>.apk`.
+C'est ce que le dépôt TNTStore ira lire (KL-42) : il déclare des versions, il
+n'héberge aucun binaire.
+
+### Taille de l'APK
+
+Le premier build pesait **130 Mo**, pour une app qui déroule une séance et écrit
+des séries. La mesure sur l'APK réel a montré que l'essentiel n'était pas du code
+de Kadens : 80 % de bibliothèques natives, dont deux tranches x86 qui ne servent
+qu'aux émulateurs, et un dex dont 35 % était du Jetpack Compose jamais exécuté.
+
+Cinq réglages, tous mesurés sur des builds réels et non estimés :
+
+| Levier                               | Où                           | Gain     |
+| ------------------------------------ | ---------------------------- | -------- |
+| `reactNativeArchitectures=arm64-v8a` | `build.yml` (drapeau Gradle) | −74,7 Mo |
+| `useLegacyPackaging=true`            | `plugins/with-app-size.js`   | −17,2 Mo |
+| R8 + `shrinkResources`               | `plugins/with-app-size.js`   | −7,2 Mo  |
+| `@expo/ui` hors autolinking          | `package.json`               | −6,5 Mo  |
+| GIF et WebP désactivés               | `plugins/with-app-size.js`   | −0,8 Mo  |
+
+Trois d'entre eux méritent qu'on sache pourquoi :
+
+- **`@expo/ui`** est tiré par `expo-router` pour son _toolbar_ flottant, et
+  embarque tout Jetpack Compose + Material3 — 22 144 références de types dans le
+  dex. Kadens dessine sa barre d'onglets à la main (`expo-router/ui` headless) et
+  n'importe jamais le toolbar. L'exclusion retire le **module natif**, pas le
+  paquet npm : si un écran finit par importer `@expo/ui`, il faut le sortir de
+  `expo.autolinking.exclude` avant de reconstruire, sinon l'app tombera sur un
+  `Cannot find native module`.
+- **`useLegacyPackaging`** compresse les `.so` au lieu de les stocker tels quels.
+  C'est un **compromis, pas un gain net** : −17,2 Mo au téléchargement, mais
+  Android les extrait à l'installation, donc +9,2 Mo sur le téléphone. Retenu
+  parce que le dépôt auto-hébergé n'a pas de mise à jour différentielle — chaque
+  version se retélécharge en entier.
+- **R8** est le seul levier qui porte un risque d'exécution. Une règle ProGuard
+  manquante ne casse pas le build : elle casse le lancement, ou fait disparaître
+  un module natif. À vérifier sur l'appareil après toute montée de version d'un
+  module natif, pas seulement une fois.
+
+**Le plancher est autour de 32 Mo** avant compression : 26 Mo de natif
+irréductible (React Native 6,7, ML Kit du scanner de QR 4,7, Hermes 2,4,
+SQLite 1,8, Reanimated 1,4…), 4,7 Mo de dex minifié, 2,8 Mo de bundle JS.
+`react-native-reanimated` n'est importé nulle part dans `src/` mais reste une
+dépendance dure d'`expo-router` : le retirer casse la navigation.
+
+### Comment la clé arrive dans le build
+
+`android/` n'est pas versionné, donc la `signingConfig` de release ne peut pas
+être écrite à la main : elle est injectée par
+[`plugins/with-release-signing.js`](./plugins/with-release-signing.js), déclaré
+dans `app.json`. Il lit quatre valeurs, dans l'**environnement** d'abord, dans
+une propriété Gradle ensuite :
+
+```
+KADENS_RELEASE_STORE_FILE      chemin absolu du .jks
+KADENS_RELEASE_STORE_PASSWORD
+KADENS_RELEASE_KEY_ALIAS
+KADENS_RELEASE_KEY_PASSWORD
+```
+
+L'environnement passe en premier parce que c'est ce qu'un workflow sait faire
+sans rien écrire sur disque : les mêmes valeurs posées dans
+`~/.gradle/gradle.properties` finiraient dans le cache Gradle du runner.
+
+**Sans ces valeurs, la release retombe sur la clé de debug** au lieu d'échouer —
+il faut bien qu'un `npx expo run:android --variant release` marche sur le poste.
+Le revers, c'est qu'un APK mal signé ne se voit pas à la sortie de Gradle : il se
+verrait au moment de l'installer par-dessus une version existante, refusée sans
+message utile. Le workflow le rattrape donc à la source, en recoupant l'empreinte
+du certificat de l'APK produit avec celle du certificat de release (plus bas). Ce
+contrôle est ce qui interdit une release signée en debug, pas le plugin.
+
+Pour compiler une release signée sur le poste :
+
+```bash
+D=~/.keystores/kadens
+KADENS_RELEASE_STORE_FILE="$D/kadens-release.jks" \
+KADENS_RELEASE_STORE_PASSWORD='<mot de passe du keystore>' \
+KADENS_RELEASE_KEY_ALIAS=kadens-release \
+KADENS_RELEASE_KEY_PASSWORD='<mot de passe de la clé>' \
+  npx expo run:android --variant release
+```
+
+Et pour vérifier quelle clé a signé un APK, sans dépendre du build :
+
+```bash
+"$ANDROID_HOME"/build-tools/*/apksigner verify --print-certs app-release.apk
+```
+
 ## Signature et restauration du keystore
 
 **Un secret GitHub ne se relit pas.** L'API n'expose que l'écriture : une fois
@@ -252,10 +381,12 @@ src/
   db/           base locale SQLite, schéma et migrations générées
   theme/        tokens générés, échelle typographique, polices
   config.ts     configuration issue de l'environnement
+plugins/        plugins de configuration Expo (le natif qu'app.json ne dit pas)
 tools/          scripts de synchronisation avec le serveur
 assets/
   fonts/        Barlow, Barlow Condensed, IBM Plex Mono (récupérées, versionnées)
   images/       icône, écran de démarrage
+app.config.ts   app.json + les numéros de version du build
 ```
 
 L'alias `@/` pointe `src/`.

@@ -1,0 +1,242 @@
+name: Build
+
+# Sur chaque poussée, comme les tests : `android/` n'étant pas versionné, la
+# seule façon de savoir qu'un build natif passe encore est de le refaire. Un
+# fichier renommé dans `app.json`, un plugin de configuration cassé, un module
+# natif ajouté sans son plugin ne se voient qu'ici — jamais au typage ni aux
+# tests, qui ne compilent rien.
+#
+# Sur un tag `v*`, le même APK part en GitHub Release. C'est ce que le dépôt
+# TNTStore ira lire (KL-42) : il déclare des versions, il n'héberge aucun
+# binaire.
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  workflow_dispatch:
+
+# Une poussée de plus sur la même branche annule le build en cours — dix minutes
+# de Gradle pour un état déjà dépassé n'intéressent personne. Un tag, lui, ne
+# s'annule pas : c'est une publication.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref_type != 'tag' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # Typage, lint, format, tests. Réutilise `ci.yml` au lieu de le recopier :
+  # deux définitions des mêmes contrôles divergeraient, et c'est celle du build
+  # qui se ferait oublier.
+  verify:
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: APK de release
+    needs: verify
+    runs-on: ubuntu-latest
+
+    permissions:
+      # Uniquement pour `gh release create`, sur un tag.
+      contents: write
+
+    env:
+      # Défaut inscrit dans le bundle, lisible dans l'APK — rien de secret ici
+      # (cf. le commentaire de `src/config.ts`). En usage réel c'est le QR
+      # d'appairage qui pose l'URL (KL-48) ; ce défaut sert à la toute première
+      # ouverture, avant appairage.
+      EXPO_PUBLIC_API_URL: https://kadens.antoninpamart.fr
+
+      # Empreinte du certificat de release (KL-40). Publique par nature : elle
+      # sert justement à reconnaître un APK légitime. Elle est ici pour l'usage
+      # inverse — vérifier que celui qu'on vient de produire est bien signé par
+      # la bonne clé, et pas par celle de debug.
+      RELEASE_CERT_SHA256: '50:D9:67:98:97:80:48:3B:13:82:3E:72:DE:0E:EA:DB:72:2F:EE:98:5D:76:7D:37:53:52:1B:A8:A9:67:BF:50'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      # JDK 21, comme le `.java-version` du dépôt. La version majeure suffit :
+      # épingler le correctif exposerait le build au jour où Temurin ne publie
+      # plus ce build précis.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # Le SDK Android est préinstallé sur `ubuntu-latest`. S'il ne l'est plus,
+      # mieux vaut le savoir ici que trois étapes plus loin, dans une trace
+      # Gradle.
+      - name: Vérifier le SDK Android
+        run: |
+          SDK="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
+          if [ -z "$SDK" ] || [ ! -d "$SDK" ]; then
+            echo "::error::Aucun SDK Android sur le runner (ANDROID_HOME et ANDROID_SDK_ROOT vides)."
+            exit 1
+          fi
+          echo "ANDROID_SDK=$SDK" >> "$GITHUB_ENV"
+
+      # Clé sur `package-lock.json` : les projets natifs sont **générés** depuis
+      # les dépendances npm (`expo prebuild`), donc le verrou décrit exactement
+      # ce que Gradle aura à résoudre. `~/.gradle/gradle.properties` n'est jamais
+      # écrit — aucun mot de passe ne peut donc partir dans ce cache.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Installer les dépendances
+        run: npm ci
+
+      - name: Numéros de version
+        id: version
+        run: |
+          set -euo pipefail
+
+          # `run_number` est propre à ce fichier de workflow et ne redescend
+          # jamais — c'est la seule propriété qui compte pour Android. Le
+          # renommer ou le recréer le remet à zéro : ce serait la seule façon de
+          # produire un versionCode inférieur au précédent, donc ininstallable.
+          code="${{ github.run_number }}"
+
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            if ! printf '%s' "$GITHUB_REF_NAME" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "::error::Tag « $GITHUB_REF_NAME » hors format attendu vX.Y.Z."
+              exit 1
+            fi
+            name="${GITHUB_REF_NAME#v}"
+          else
+            # Hors tag, la version d'`app.json` : un build de branche n'est pas
+            # une version publiée et ne doit pas prétendre l'être.
+            name="$(node -p "require('./app.json').expo.version")"
+          fi
+
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "apk=kadens-$name-$code.apk" >> "$GITHUB_OUTPUT"
+          echo "Version $name (versionCode $code)" >> "$GITHUB_STEP_SUMMARY"
+
+      # `--no-install` : `npm ci` a déjà posé les dépendances, et laisser
+      # prebuild relancer une installation réintroduirait une résolution non
+      # verrouillée. `--clean` : le projet natif est reconstruit de zéro, jamais
+      # rapiécé.
+      - name: Générer le projet natif
+        run: npx expo prebuild --platform android --no-install --clean
+        env:
+          KADENS_VERSION_CODE: ${{ steps.version.outputs.code }}
+          KADENS_VERSION_NAME: ${{ steps.version.outputs.name }}
+
+      # Hors de l'arborescence du dépôt : `.gitignore` couvre `*.jks`, mais un
+      # keystore déposé sous un autre nom passerait — autant ne pas l'y mettre.
+      - name: Restaurer le keystore
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/kadens-release.jks"
+          chmod 600 "$RUNNER_TEMP/kadens-release.jks"
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+
+      # APK, pas AAB : `assembleRelease`, jamais `bundleRelease`. Un AAB se
+      # finalise chez Google, il ne s'installe pas — le dépôt auto-hébergé sert
+      # des fichiers qu'un téléphone ouvre directement.
+      #
+      # `reactNativeArchitectures` : **arm64-v8a seul**, et c'est le premier
+      # poste d'économie de tout le dossier (−74,7 Mo sur les quatre). Tout
+      # téléphone Android vendu depuis 2016 est arm64 ; les tranches x86 ne
+      # servaient qu'aux émulateurs, qui tournent en debug et n'installent jamais
+      # cet APK. Le drapeau est ici plutôt que dans `with-app-size.js` parce que
+      # la propriété est **globale** : posée dans `gradle.properties`, elle
+      # vaudrait aussi pour le développement, où un émulateur sur machine Intel
+      # est en x86_64.
+      #
+      # Les quatre secrets passent par l'environnement du processus Gradle, lu
+      # par le plugin `with-release-signing` : rien n'est écrit sur disque, rien
+      # n'apparaît dans la ligne de commande affichée par Actions.
+      - name: Compiler l'APK signé
+        working-directory: android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
+        env:
+          KADENS_RELEASE_STORE_FILE: ${{ runner.temp }}/kadens-release.jks
+          KADENS_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KADENS_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KADENS_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      # Le garde-fou du plugin : sans clé, il laisse la release retomber sur la
+      # signature de debug plutôt que d'échouer, pour qu'un build local marche
+      # sans secret. Un APK signé en debug se refuse à l'installation par-dessus
+      # une version existante, et ne le dit qu'au moment de l'installer. On
+      # recoupe donc l'empreinte ici, une fois, plutôt que de la découvrir sur le
+      # téléphone.
+      - name: Vérifier la signature
+        run: |
+          set -euo pipefail
+
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          apksigner="$(find "$ANDROID_SDK/build-tools" -maxdepth 2 -name apksigner | sort -V | tail -n 1)"
+
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner introuvable dans $ANDROID_SDK/build-tools."
+            exit 1
+          fi
+
+          # `awk` sans `exit` : couper la sortie d'apksigner en cours d'écriture
+          # lui vaudrait un SIGPIPE, que `pipefail` compterait comme un échec de
+          # l'étape. On lit tout, on garde la première empreinte.
+          expected="$(printf '%s' "$RELEASE_CERT_SHA256" | tr -d ':' | tr 'A-Z' 'a-z')"
+          certs="$("$apksigner" verify --print-certs "$apk")"
+          actual="$(printf '%s\n' "$certs" \
+            | awk '/certificate SHA-256 digest/ && !seen { print $NF; seen = 1 }')"
+
+          if [ "$actual" != "$expected" ]; then
+            echo "::error::APK signé par un certificat inattendu ($actual). Clé de debug, ou secrets manquants."
+            exit 1
+          fi
+
+          echo "Signé par le certificat de release ($actual)." >> "$GITHUB_STEP_SUMMARY"
+
+      # Le `mapping.txt` de R8 est la **seule** façon de relire une trace de
+      # crash : la minification renomme les classes, et il n'y a pas de Play
+      # Console pour en garder une copie. Il ne sert à rien sur le téléphone,
+      # donc il voyage à côté de l'APK, jamais dedans — compressé, il passe de
+      # 38 à 4 Mo.
+      - name: Nommer l'APK et garder le mapping R8
+        run: |
+          set -euo pipefail
+          mkdir -p dist-apk
+          mv android/app/build/outputs/apk/release/app-release.apk "dist-apk/${{ steps.version.outputs.apk }}"
+          gzip -9 -c android/app/build/outputs/mapping/release/mapping.txt \
+            > "dist-apk/mapping-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}.txt.gz"
+
+      # Même hors tag : c'est ce qui permet d'installer un build de branche sur
+      # le téléphone sans publier une version.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kadens-${{ steps.version.outputs.name }}-${{ steps.version.outputs.code }}
+          path: dist-apk/
+          if-no-files-found: error
+          retention-days: 14
+
+      # L'APK et son mapping partent ensemble : un mapping publié plus tard, ou
+      # pas du tout, ne sert à rien — c'est au moment où une trace de crash
+      # arrive qu'on le cherche, et il doit correspondre exactement à ce
+      # `versionCode`.
+      - name: Publier la release
+        if: github.ref_type == 'tag'
+        run: |
+          set -euo pipefail
+          gh release create "$GITHUB_REF_NAME" \
+            --title "Kadens ${{ steps.version.outputs.name }}" \
+            --notes "versionName ${{ steps.version.outputs.name }}, versionCode ${{ steps.version.outputs.code }}. APK arm64-v8a, minifié par R8 — le mapping ci-joint est nécessaire pour relire une trace de crash." \
+            dist-apk/*
+        env:
+          GH_TOKEN: ${{ github.token }}
