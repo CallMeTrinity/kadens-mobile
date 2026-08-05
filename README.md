@@ -138,6 +138,110 @@ export` : l'import a levé, la route ne vaut plus rien. Rien à corriger dans le
 code, il faut relancer `npm run android`. Après un `npx expo install <module>`,
 donc, on reconstruit — un `npm start` seul ne suffit pas.
 
+## Signature et restauration du keystore
+
+**Un secret GitHub ne se relit pas.** L'API n'expose que l'écriture : une fois
+`ANDROID_KEYSTORE_BASE64` posé, plus personne — ni l'interface, ni `gh`, ni un
+workflow — ne peut en ressortir le fichier. Ce n'est donc **pas** une sauvegarde,
+c'est une copie de travail à sens unique. La sauvegarde, c'est le gestionnaire de
+mots de passe.
+
+**Et perdre la clé de release ne se rattrape pas.** Android identifie une app par
+le couple `applicationId` + certificat de signature : un APK signé par une autre
+clé n'est pas une mise à jour de Kadens, c'est une autre app, refusée à
+l'installation par-dessus. La seule sortie serait de désinstaller — donc de
+perdre la base SQLite locale, dont le réalisé pas encore synchronisé.
+
+### Les deux clés
+
+| Fichier              | Alias            | Signe                             | Secrets GitHub                                                                                      |
+| -------------------- | ---------------- | --------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `kadens-release.jks` | `kadens-release` | l'APK (KL-41)                     | `ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` |
+| `tntstore-index.jks` | `tntstore-index` | l'index du dépôt TNTStore (KL-42) | `TNTSTORE_KEYSTORE_BASE64`, `TNTSTORE_KEYSTORE_PASSWORD`, `TNTSTORE_KEY_ALIAS`                      |
+
+**Elles sont distinctes, et c'est le point.** L'index ne fait que déclarer quelles
+versions existent et où les prendre ; il ne contient aucun binaire. Séparer les
+deux clés borne les dégâts dans les deux sens : compromettre celle de l'index
+laisse republier un catalogue, pas une fausse app ; compromettre celle de release
+ne donne pas le catalogue. Les mélanger ferait de la clé de l'index — celle qui
+tourne le plus souvent — une clé de signature d'application.
+
+Les deux vivent dans `~/.keystores/kadens/` (hors de tout dépôt git, `chmod 700`),
+avec un `CREDENTIALS.txt` en `chmod 600` qui porte les mots de passe et les
+empreintes. Ce fichier est un intermédiaire : sa place définitive est le
+gestionnaire de mots de passe.
+
+Empreinte SHA-256 du certificat de release, à recouper avec un APK douteux :
+
+```
+50:D9:67:98:97:80:48:3B:13:82:3E:72:DE:0E:EA:DB:72:2F:EE:98:5D:76:7D:37:53:52:1B:A8:A9:67:BF:50
+```
+
+**Format JKS, pas PKCS12**, contre la recommandation affichée par `keytool`. La
+raison est vérifiable en une commande : en PKCS12, Java **ignore** `-keypass` et
+aligne le mot de passe de la clé sur celui du keystore, ce qui réduit les trois
+secrets à deux et fait échouer `jarsigner` en `key associated with <alias> not a
+private key`. Si un JDK finit par refuser JKS en lecture, la conversion reste
+possible tant qu'on a le fichier : `keytool -importkeystore -srckeystore
+kadens-release.jks -destkeystore kadens-release.p12 -deststoretype pkcs12`.
+
+### Restaurer sur une nouvelle machine
+
+Depuis le gestionnaire de mots de passe, qui porte le `.jks` et ses mots de
+passe :
+
+```bash
+mkdir -p ~/.keystores/kadens && chmod 700 ~/.keystores/kadens
+# y déposer kadens-release.jks et tntstore-index.jks
+chmod 600 ~/.keystores/kadens/*.jks
+```
+
+Contrôler que la clé restaurée est **la bonne**, avant de s'en servir — l'empreinte
+doit tomber sur celle ci-dessus :
+
+```bash
+keytool -exportcert -rfc -keystore ~/.keystores/kadens/kadens-release.jks \
+  -alias kadens-release -storepass '<mot de passe du keystore>' \
+  | openssl x509 -noout -fingerprint -sha256
+```
+
+Puis reposer les secrets du dépôt (`base64 -i` sur macOS, `base64 -w0` sous
+Linux) :
+
+```bash
+D=~/.keystores/kadens
+gh secret set ANDROID_KEYSTORE_BASE64    --body "$(base64 -i "$D/kadens-release.jks")"
+gh secret set ANDROID_KEYSTORE_PASSWORD  --body '<mot de passe du keystore>'
+gh secret set ANDROID_KEY_ALIAS          --body 'kadens-release'
+gh secret set ANDROID_KEY_PASSWORD       --body '<mot de passe de la clé>'
+gh secret set TNTSTORE_KEYSTORE_BASE64   --body "$(base64 -i "$D/tntstore-index.jks")"
+gh secret set TNTSTORE_KEYSTORE_PASSWORD --body '<mot de passe de l index>'
+gh secret set TNTSTORE_KEY_ALIAS         --body 'tntstore-index'
+```
+
+Le workflow de build fait le chemin inverse, `base64 -d` vers un fichier hors de
+l'arborescence source. Il ne doit **jamais** l'écrire dans le dépôt : `android/`
+est régénéré par `expo prebuild`, mais `.gitignore` ne protège que `*.jks` — un
+keystore déposé sous un autre nom passerait.
+
+### Régénérer, si la clé est vraiment perdue
+
+Il n'y a pas de récupération, seulement une reprise à zéro. Générer une nouvelle
+clé avec la commande ci-dessous, puis **changer `android.package` dans
+`app.json`** : sans ça, les installations existantes ne verront jamais la mise à
+jour et n'afficheront aucune erreur explicite.
+
+```bash
+keytool -genkeypair -keystore ~/.keystores/kadens/kadens-release.jks \
+  -storetype JKS -alias kadens-release \
+  -keyalg RSA -keysize 4096 -validity 14600 \
+  -dname "CN=Antonin Pamart, OU=Kadens, O=antoninpamart.fr, L=Grenoble, ST=Auvergne-Rhone-Alpes, C=FR"
+```
+
+Le certificat courant expire le **26/07/2066**. Une expiration n'invalide pas les
+installations en place, mais elle bloque la signature d'un nouvel APK : c'est une
+échéance de build, pas une échéance d'app.
+
 ## Structure
 
 ```
