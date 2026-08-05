@@ -100,12 +100,16 @@ function Tab({
   label: string;
   isFocused?: boolean;
 }) {
-  const tint = isFocused ? colors.text : colors.textFaint;
+  const tint = isFocused ? colors.text : colors.textSecondary;
 
   return (
     <Pressable
       {...rest}
       accessibilityRole="tab"
+      // Explicite plutôt que composé à partir des enfants : l'apostrophe
+      // typographique d'« Aujourd'hui » se lit, l'icône est déjà masquée, et une
+      // entrée de navigation ne doit pas dépendre de ce qu'elle contient.
+      accessibilityLabel={label}
       accessibilityState={{ selected: isFocused }}
       style={({ pressed }) => [
         styles.tab,

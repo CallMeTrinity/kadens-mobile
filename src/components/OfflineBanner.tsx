@@ -80,5 +80,5 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
   },
   label: { ...text.eyebrow, color: colors.textSecondary },
-  detail: { ...text.caption, color: colors.textFaint, flexShrink: 1 },
+  detail: { ...text.caption, color: colors.textSecondary, flexShrink: 1 },
 });

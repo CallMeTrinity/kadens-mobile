@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -32,6 +32,7 @@ import {
   findExercise,
   findSetLine,
   longDate,
+  nextTarget,
   removeExercise,
   replaceExercise,
   REST_STEP,
@@ -61,8 +62,9 @@ import {
   type SessionExercise,
   type SessionGroup,
   type SessionSetLine,
+  type SessionTarget,
 } from '@/session';
-import { colors, layout, space, text } from '@/theme';
+import { colors, layout, space, text, useReducedMotion } from '@/theme';
 import type {
   ActivityType,
   ExerciseHistoryRow,
@@ -92,6 +94,29 @@ import type {
  *    que l'uuid, le document se relisant au push : trente séries cochées ne font
  *    qu'un envoi.
  *
+ * ## La barre d'action basse, et la série courante (KL-39)
+ *
+ * L'écran se tient **d'une main, debout**. La cible principale ne peut donc pas
+ * être une ligne quelque part dans un déroulé de douze exercices : elle est
+ * ancrée en bas, au pouce, et elle ne bouge pas. C'est le rôle de `SessionDock`,
+ * qui empile ce qui vit en bas de cet écran — le repos quand il court, puis la
+ * validation, toujours en dernier, donc toujours à la même distance du bord.
+ *
+ * Ce qu'elle propose est la **cible courante** (`nextTarget`, `@/session`) : la
+ * première série cochable en descendant l'écran, l'alternance des membres d'un
+ * superset en plus. Quand il n'y a plus rien à cocher, elle devient la porte de
+ * la clôture. Deux conséquences :
+ *
+ * - la série courante ne se perd **jamais** — même déroulé jusqu'en bas, elle
+ *   est écrite dans la barre, et le déroulé la rejoint tout seul quand elle
+ *   change d'exercice (`useRevealTarget`) ;
+ * - le bouton de clôture resté dans le fil du déroulé passe en **secondaire** :
+ *   l'action primaire de l'écran est dans la barre, et il n'y en a qu'une.
+ *
+ * Les lignes restent cochables une par une, et c'est délibéré : la barre est le
+ * chemin court du cas nominal, elle ne remplace pas la lecture d'un tableau —
+ * un superset qu'on mène dans un autre ordre, une série qu'on rattrape.
+ *
  * ## Les deux gestes, et pourquoi ils sont distincts (KL-30)
  *
  * Une ligne **non cochée** se coche d'un appui n'importe où : c'est le geste
@@ -99,6 +124,12 @@ import type {
  * devient un objet qu'on corrige : sa zone de valeurs ouvre la feuille
  * d'ajustement, sa case reste le décochage. Deux cibles dans une ligne plutôt
  * qu'un appui long, qui n'est visible nulle part et se découvre par accident.
+ *
+ * **Ajouter une série n'ouvre rien** (KL-39). Elle naît pré-remplie par la
+ * précédente, ce qui est juste dans le cas courant ; ouvrir la feuille d'office
+ * imposait un clavier et deux appuis de plus à chaque série supplémentaire,
+ * pour corriger une valeur qui n'avait presque jamais besoin de l'être. La
+ * ligne créée s'ajuste comme les autres, en la touchant.
  *
  * Corollaire du modèle, pas de l'écran : **on ne dévie que sur ce qui a été
  * fait**. Le prescrit ne bouge jamais (§0.3) et n'a aucun endroit où accueillir
@@ -164,11 +195,18 @@ export default function SessionScreen() {
   const [openExercise, setOpenExercise] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // Mesurée, pas devinée : c'est ce qui dégage le bas de la page (voir plus bas).
-  const [restHeight, setRestHeight] = useState(0);
+  const [dockHeight, setDockHeight] = useState(0);
   const insets = useSafeAreaInsets();
 
   const running = workout ? workout.startedAt !== null && workout.endedAt === null : false;
   const rest = useRestTimer();
+  // Ce que la séance attend maintenant. C'est ce que la barre basse propose, et
+  // ce que le déroulé garde en vue.
+  const target = running ? nextTarget(program) : null;
+  const { scrollRef, frameRef, targetRef, onScroll } = useRevealTarget(
+    target?.exercise.key ?? null,
+    { bottomInset: dockHeight },
+  );
 
   // L'écran ne s'éteint pas pendant une séance en cours (KL-31). Conditionné, et
   // non `useKeepAwake()` : cet écran se monte aussi pour relire une séance close.
@@ -200,17 +238,32 @@ export default function SessionScreen() {
     [uuid],
   );
 
-  // Ajouter une série et en saisir les valeurs sont **un seul geste** : la série
-  // naît pré-remplie par la précédente, sa feuille s'ouvre dans la foulée. Le
-  // repos part quand même : une série ajoutée est une série faite, et corriger
-  // ses valeurs par-dessus n'est pas une raison de repartir sans décompte.
+  // Ajouter une série est **un seul geste**, et il s'arrête là (KL-39) : la
+  // série naît pré-remplie par la précédente — ce qui est juste presque à chaque
+  // fois — et le repos part, parce qu'une série ajoutée est une série faite. La
+  // feuille ne s'ouvre plus d'office : elle imposait un clavier et deux appuis
+  // de plus pour corriger une valeur qui n'en avait pas besoin. La ligne créée
+  // s'ajuste comme les autres, en la touchant.
   const onAddSet = useCallback(
     (exercise: SessionExercise) => {
-      const created = addSet(uuid, exercise);
-
-      if (created) {
-        setOpenSet(created);
+      if (addSet(uuid, exercise)) {
         startRestAfterSet(exercise);
+      }
+    },
+    [uuid],
+  );
+
+  // La cible de la barre basse : le même geste que cocher la ligne, au pouce.
+  const onValidate = useCallback(
+    (pending: SessionTarget) => {
+      if (pending.line === null) {
+        setCardioDone(uuid, pending.exercise, true);
+
+        return;
+      }
+
+      if (checkSet(uuid, pending.exercise, pending.line)) {
+        startRestAfterSet(pending.exercise);
       }
     },
     [uuid],
@@ -288,51 +341,58 @@ export default function SessionScreen() {
       </View>
 
       {/*
-        Le dégagement sous la page est la hauteur **mesurée** de la barre de
-        repos, pas une valeur devinée : elle change avec la longueur du nom
-        d'exercice et avec la taille de police du système, et un nombre écrit à la
-        main finirait par masquer la dernière série cochée — c'est-à-dire
-        exactement celle qu'on vient de faire.
+        Le dégagement sous la page est la hauteur **mesurée** de la barre basse,
+        pas une valeur devinée : elle change avec le repos qui s'y ajoute, avec
+        la longueur d'un nom d'exercice et avec la taille de police du système,
+        et un nombre écrit à la main finirait par masquer la dernière série
+        cochée — c'est-à-dire exactement celle qu'on vient de faire.
 
-        Hors repos, c'est la barre gestuelle Android qu'il faut dégager (KL-37) :
+        Sans barre, c'est la barre gestuelle Android qu'il faut dégager (KL-37) :
         cet écran est empilé par-dessus la barre d'onglets, rien ne le protège du
-        bord. Pendant le repos, en revanche, la mesure **contient déjà** la zone
-        sûre, que la barre prend en rembourrage — l'ajouter ici la compterait deux
-        fois.
+        bord. Avec elle, la mesure **contient déjà** la zone sûre, que la barre
+        prend en rembourrage — l'ajouter ici la compterait deux fois.
       */}
-      <ScrollView
-        contentContainerStyle={[
-          styles.page,
-          rest !== null
-            ? { paddingBottom: restHeight + space[13] }
-            : { paddingBottom: space[13] + insets.bottom },
-        ]}
-      >
-        {!running && !closed ? (
-          <View style={styles.notice}>
-            <Text style={styles.body}>
-              Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
-            </Text>
-            <Button label="Démarrer" onPress={() => beginWorkout(uuid)} block />
-          </View>
-        ) : null}
+      {/* La fenêtre de lecture : c'est elle que `useRevealTarget` mesure pour
+          savoir si la série courante est encore dedans. */}
+      <View ref={frameRef} style={styles.frame}>
+        <ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={[
+            styles.page,
+            dockHeight > 0
+              ? { paddingBottom: dockHeight + space[13] }
+              : { paddingBottom: space[13] + insets.bottom },
+          ]}
+        >
+          {!running && !closed ? (
+            <View style={styles.notice}>
+              <Text style={styles.body}>
+                Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
+              </Text>
+              <Button label="Démarrer" onPress={() => beginWorkout(uuid)} block />
+            </View>
+          ) : null}
 
-        {program.blocks.map((block) => (
-          <BlockSection
-            key={block.key}
-            block={block}
-            editable={running}
-            history={history}
-            today={today}
-            onCheck={onCheck}
-            onCardio={onCardio}
-            onAdjustSet={setOpenSet}
-            onAddSet={onAddSet}
-            onOpenExercise={setOpenExercise}
-          />
-        ))}
+          {program.blocks.map((block) => (
+            <BlockSection
+              key={block.key}
+              block={block}
+              editable={running}
+              history={history}
+              today={today}
+              targetKey={target?.exercise.key ?? null}
+              targetRef={targetRef}
+              onCheck={onCheck}
+              onCardio={onCardio}
+              onAdjustSet={setOpenSet}
+              onAddSet={onAddSet}
+              onOpenExercise={setOpenExercise}
+            />
+          ))}
 
-        {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
+          {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
             ajoute, et ce que le pull peut en descendre. Du réalisé invisible
             serait la pire trahison de « rien n'est jamais perdu ».
 
@@ -340,69 +400,85 @@ export default function SessionScreen() {
             aucun programme dont on puisse être « hors ». L'en-tête dit donc
             simplement ce que c'est, sinon la séance entière se lirait comme une
             longue déviation. */}
-        {program.extras.length > 0 ? (
-          <View style={styles.block}>
-            <View style={styles.blockHead}>
-              <Text accessibilityRole="header" style={styles.blockRole}>
-                {workout.freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme'}
-              </Text>
+          {program.extras.length > 0 ? (
+            <View style={styles.block}>
+              <View style={styles.blockHead}>
+                <Text accessibilityRole="header" style={styles.blockRole}>
+                  {workout.freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme'}
+                </Text>
+              </View>
+              {program.extras.map((exercise) => (
+                <ExerciseSection
+                  key={exercise.key}
+                  exercise={exercise}
+                  editable={running}
+                  history={history}
+                  today={today}
+                  targetKey={target?.exercise.key ?? null}
+                  targetRef={targetRef}
+                  onCheck={onCheck}
+                  onCardio={onCardio}
+                  onAdjustSet={setOpenSet}
+                  onAddSet={onAddSet}
+                  onOpenExercise={setOpenExercise}
+                />
+              ))}
             </View>
-            {program.extras.map((exercise) => (
-              <ExerciseSection
-                key={exercise.key}
-                exercise={exercise}
-                editable={running}
-                history={history}
-                today={today}
-                onCheck={onCheck}
-                onCardio={onCardio}
-                onAdjustSet={setOpenSet}
-                onAddSet={onAddSet}
-                onOpenExercise={setOpenExercise}
-              />
-            ))}
-          </View>
-        ) : null}
+          ) : null}
 
-        {program.blocks.length === 0 && program.extras.length === 0 ? (
-          <EmptyState
-            title={workout.freeform ? 'Séance libre, sans programme' : 'Aucun programme'}
-            hint={
-              workout.freeform
-                ? 'Ajoute les exercices au fur et à mesure, ils partiront avec la séance.'
-                : 'Le programme de cette séance n’est pas descendu. Une synchronisation le rapportera.'
-            }
-          />
-        ) : null}
+          {program.blocks.length === 0 && program.extras.length === 0 ? (
+            <EmptyState
+              title={workout.freeform ? 'Séance libre, sans programme' : 'Aucun programme'}
+              hint={
+                workout.freeform
+                  ? 'Ajoute les exercices au fur et à mesure, ils partiront avec la séance.'
+                  : 'Le programme de cette séance n’est pas descendu. Une synchronisation le rapportera.'
+              }
+            />
+          ) : null}
 
-        {running ? (
-          <Button
-            label="Ajouter un exercice"
-            variant="secondary"
-            block
-            onPress={() => setPicker({ mode: 'add' })}
-          />
-        ) : null}
+          {running ? (
+            <Button
+              label="Ajouter un exercice"
+              variant="secondary"
+              block
+              onPress={() => setPicker({ mode: 'add' })}
+            />
+          ) : null}
 
-        {/* La porte de la clôture (KL-33), en fin de déroulé : c'est là qu'on
+          {/* La porte de la clôture (KL-33), en fin de déroulé : c'est là qu'on
             arrive une fois la dernière série cochée. Le geste lui-même, son
-            résumé et sa note vivent sur l'écran suivant. */}
-        {running || closed ? (
-          <Button
-            label={closed ? 'Voir le résumé' : 'Terminer la séance'}
-            variant={closed ? 'secondary' : 'primary'}
-            block
-            accessibilityHint={
-              closed
-                ? 'Relire ce qui a été fait'
-                : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
-            }
-            onPress={() => router.push(`/session/${uuid}/close`)}
-          />
-        ) : null}
-      </ScrollView>
+            résumé et sa note vivent sur l'écran suivant.
 
-      {rest ? <RestBar rest={rest} onHeight={setRestHeight} /> : null}
+            En **secondaire** tant que la séance court : l'action primaire de
+            l'écran est celle de la barre basse, et il n'y en a qu'une (KL-39).
+            Ce bouton-ci reste le chemin de celui qui arrête plus tôt. */}
+          {running || closed ? (
+            <Button
+              label={closed ? 'Voir le résumé' : 'Terminer la séance'}
+              variant="secondary"
+              block
+              accessibilityHint={
+                closed
+                  ? 'Relire ce qui a été fait'
+                  : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
+              }
+              onPress={() => router.push(`/session/${uuid}/close`)}
+            />
+          ) : null}
+        </ScrollView>
+      </View>
+
+      {running || rest ? (
+        <SessionDock
+          rest={rest}
+          target={target}
+          finishable={running}
+          onHeight={setDockHeight}
+          onValidate={onValidate}
+          onFinish={() => router.push(`/session/${uuid}/close`)}
+        />
+      ) : null}
 
       {sheetSet ? (
         <SetSheet
@@ -469,35 +545,109 @@ function Progress({ done, total }: { done: number; total: number }) {
 }
 
 /**
- * La barre de repos (KL-31).
+ * La barre basse : le repos (KL-31) et la validation (KL-39).
  *
- * **En bas de l'écran, et c'est le point** : c'est là que le pouce arrive quand
- * on tient le téléphone d'une main, et le ticket suivant (KL-39) en fait une
- * règle. Elle ne défile pas, elle recouvre — d'où le rembourrage supplémentaire
- * de la page tant qu'elle est là, sinon elle masquerait la dernière ligne de la
- * séance, c'est-à-dire précisément la série qu'on vient de cocher.
+ * **Tout ce qui se tape sans regarder vit ici**, et l'ordre n'est pas décoratif :
+ * la validation est le dernier étage, donc toujours à la même distance du bord,
+ * qu'un repos coure ou non. C'est ce qui la rend atteignable sans viser — la
+ * mémoire du pouce ne se rééduque pas entre deux séries.
+ *
+ * Elle ne défile pas, elle recouvre : d'où le rembourrage de la page à sa
+ * hauteur **mesurée**, sinon elle masquerait la dernière ligne cochée, c'est-à-
+ * dire précisément celle qu'on vient de faire.
+ */
+function SessionDock({
+  rest,
+  target,
+  finishable,
+  onHeight,
+  onValidate,
+  onFinish,
+}: {
+  rest: RestState | null;
+  target: SessionTarget | null;
+  /** La séance court : elle peut être close, et la barre porte cette porte-là. */
+  finishable: boolean;
+  onHeight: (height: number) => void;
+  onValidate: (target: SessionTarget) => void;
+  onFinish: () => void;
+}) {
+  // La zone sûre du bas en **rembourrage** (KL-37) : la barre peint sous la
+  // barre gestuelle Android au lieu de s'arrêter au-dessus, et ses cibles
+  // remontent d'autant.
+  const insets = useSafeAreaInsets();
+
+  // La barre disparue, le dégagement de la page doit disparaître avec elle :
+  // sinon une séance qu'on vient de clore garde un vide de 200 points en bas.
+  useEffect(() => () => onHeight(0), [onHeight]);
+
+  return (
+    <View
+      onLayout={(event) => onHeight(event.nativeEvent.layout.height)}
+      // Elle est posée sur la barre entière et non sur son dernier étage : quel
+      // que soit ce qui s'y trouve, rien ne tombe sous le trait gestuel — et la
+      // mesure la contient, donc le dégagement de la page suit tout seul.
+      style={[styles.dock, { paddingBottom: insets.bottom }]}
+    >
+      {rest ? <RestStrip rest={rest} /> : null}
+
+      {target === null && !finishable ? null : (
+        <View style={styles.dockAction}>
+          {target ? (
+            <>
+              <View style={styles.dockLabels}>
+                <Text style={styles.dockEyebrow} numberOfLines={1}>
+                  {target.line === null ? 'À faire' : `Série ${target.line.index}`}
+                </Text>
+                <Text style={styles.dockName} numberOfLines={1}>
+                  {target.exercise.name}
+                </Text>
+                <Text style={styles.dockValues} numberOfLines={1}>
+                  {targetValues(target)}
+                </Text>
+              </View>
+              <Button
+                label={target.line === null ? 'Fait' : 'Valider'}
+                size="lg"
+                accessibilityLabel={`Valider : ${targetLabel(target)}`}
+                accessibilityHint="Elle est consignée aux valeurs affichées, et le repos démarre"
+                onPress={() => onValidate(target)}
+              />
+            </>
+          ) : (
+            <Button
+              label="Terminer la séance"
+              size="lg"
+              block
+              accessibilityHint="Tout est coché. Voir le résumé avant de la déclarer terminée"
+              onPress={onFinish}
+            />
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
+/**
+ * L'étage du repos (KL-31).
  *
  * Trois choses à portée : ajouter du repos, en retirer, passer. « Passer » ferme
- * la barre sans rien consigner — le repos n'est pas du réalisé, l'écourter ne se
- * raconte nulle part.
+ * l'étage sans rien consigner — le repos n'est pas du réalisé, l'écourter ne se
+ * raconte nulle part. Il n'a pas à être passé pour valider la série suivante :
+ * la validation est en dessous, elle reste sous le pouce pendant le décompte.
  *
  * **Le décompte n'est pas une zone vive pour TalkBack.** Un nombre qui change
  * chaque seconde et s'annonce à chaque fois rendrait l'écran inutilisable au
- * lecteur d'écran ; la barre s'annonce une fois, à son apparition, et se relit à
+ * lecteur d'écran ; l'étage s'annonce une fois, à son apparition, et se relit à
  * la demande.
  */
-function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: number) => void }) {
+function RestStrip({ rest }: { rest: RestState }) {
   const over = rest.remaining === 0;
   const ratio = rest.totalSeconds > 0 ? rest.remaining / rest.totalSeconds : 0;
-  // La zone sûre du bas en **rembourrage** (KL-37) : la barre peint sous la barre
-  // gestuelle Android au lieu de s'arrêter au-dessus, et ses trois boutons
-  // remontent d'autant. Sans ça, « Passer » tombait sous le trait du système —
-  // limite relevée en livrant KL-31. La hauteur mesurée par `onLayout` inclut ce
-  // rembourrage, donc le dégagement de la page suit tout seul.
-  const insets = useSafeAreaInsets();
 
   return (
-    <View onLayout={(event) => onHeight(event.nativeEvent.layout.height)} style={styles.rest}>
+    <View style={styles.rest}>
       {/* La jauge se vide : ce qui reste de la barre est ce qui reste du repos. */}
       <View style={styles.restTrack}>
         <View style={[styles.restFill, { width: `${Math.round(ratio * 100)}%` }]} />
@@ -523,16 +673,18 @@ function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: numbe
         </Text>
       </View>
 
-      <View style={[styles.restActions, { paddingBottom: space[6] + insets.bottom }]}>
+      <View style={styles.restActions}>
         <Button
           label={`− ${REST_STEP} s`}
           variant="secondary"
+          size="sm"
           accessibilityLabel={`Retirer ${REST_STEP} secondes de repos`}
           onPress={() => adjustRest(-REST_STEP)}
         />
         <Button
           label={`+ ${REST_STEP} s`}
           variant="secondary"
+          size="sm"
           accessibilityLabel={`Ajouter ${REST_STEP} secondes de repos`}
           onPress={() => adjustRest(REST_STEP)}
         />
@@ -540,12 +692,96 @@ function RestBar({ rest, onHeight }: { rest: RestState; onHeight: (height: numbe
         <Button
           label={over ? 'Fermer' : 'Passer'}
           variant="ghost"
+          size="sm"
           accessibilityHint="Le repos ne se consigne pas, l’écourter ne change rien à la séance"
           onPress={stopRest}
         />
       </View>
     </View>
   );
+}
+
+/** Les valeurs à faire, telles que la barre basse les annonce. */
+function targetValues(target: SessionTarget): string {
+  if (target.line === null) {
+    return target.exercise.prescribed?.summary ?? 'À marquer fait';
+  }
+
+  const planned = target.line.planned;
+  const effort = setEffort(planned?.reps ?? null, planned?.durationSeconds ?? null) ?? 'série';
+
+  return planned?.weightKg != null ? `${effort} × ${weight(planned.weightKg)}` : effort;
+}
+
+/** Ce que TalkBack annonce du bouton de validation : quoi, sur quoi, à combien. */
+function targetLabel(target: SessionTarget): string {
+  const head =
+    target.line === null
+      ? target.exercise.name
+      : `série ${target.line.index}, ${target.exercise.name}`;
+
+  return `${head}, ${targetValues(target)}`;
+}
+
+/**
+ * Garder la cible courante en vue (KL-39).
+ *
+ * Le déroulé rejoint l'exercice courant **quand il change**, jamais à chaque
+ * série : un écran qui se recale sous le doigt entre deux lignes du même
+ * exercice serait pire que le mal. Et il ne bouge que si la cible est
+ * effectivement sortie de la zone lisible — dont le bas est la barre d'action,
+ * qui recouvre la page.
+ *
+ * La mesure passe par `measureInWindow` des deux vues plutôt que par un cumul
+ * d'`onLayout` : entre la page, le bloc, le groupe et l'exercice, quatre `y`
+ * relatifs s'additionneraient, et le rail d'un superset en ajouterait un
+ * cinquième. Deux positions écran et le décalage courant suffisent, et restent
+ * justes quelle que soit la profondeur.
+ */
+function useRevealTarget(targetKey: string | null, { bottomInset }: { bottomInset: number }) {
+  const scrollRef = useRef<ScrollView>(null);
+  // La **fenêtre** de lecture, et non la `ScrollView` elle-même : c'est ce qui
+  // se mesure. Son type n'expose pas `measureInWindow`, une vue simple si.
+  const frameRef = useRef<View>(null);
+  const targetRef = useRef<View>(null);
+  const offset = useRef(0);
+  const reducedMotion = useReducedMotion();
+
+  const onScroll = useCallback((event: { nativeEvent: { contentOffset: { y: number } } }) => {
+    offset.current = event.nativeEvent.contentOffset.y;
+  }, []);
+
+  useEffect(() => {
+    const node = targetRef.current;
+    const frame = frameRef.current;
+
+    if (targetKey === null || node === null || frame === null) {
+      return;
+    }
+
+    node.measureInWindow((_x, y, _width, height) => {
+      frame.measureInWindow((_sx, sy, _sw, sheight) => {
+        // Positions ramenées au haut de la zone défilante.
+        const top = y - sy;
+        const margin = space[8];
+        const floor = sheight - bottomInset - margin;
+
+        if (top >= margin && top + height <= floor) {
+          return;
+        }
+
+        scrollRef.current?.scrollTo({
+          y: Math.max(0, offset.current + top - margin),
+          animated: !reducedMotion,
+        });
+      });
+    });
+    // La hauteur de la barre est une dépendance et pas une valeur figée : quand
+    // le repos s'ouvre, la barre grandit et peut recouvrir la série courante.
+    // Le même effet la redécouvre alors, au lieu de la laisser sous la barre.
+  }, [targetKey, bottomInset, reducedMotion]);
+
+  return { scrollRef, frameRef, targetRef, onScroll };
 }
 
 /** Ce que chaque section d'exercice reçoit, et ce qu'elle sait faire remonter. */
@@ -559,6 +795,10 @@ type SectionHandlers = {
   history: Map<number, ExerciseHistoryRow>;
   /** Le jour réel, repère des dates d'historique. */
   today: string;
+  /** L'exercice que la barre basse propose. Il se marque, et il se garde en vue. */
+  targetKey: string | null;
+  /** Posée sur l'exercice courant : c'est ce que le déroulé mesure pour le rejoindre. */
+  targetRef: Ref<View>;
   onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
   onCardio: (exercise: SessionExercise) => void;
   onAdjustSet: (setUuid: string) => void;
@@ -624,6 +864,8 @@ function ExerciseSection({
   editable,
   history,
   today,
+  targetKey,
+  targetRef,
   onCheck,
   onCardio,
   onAdjustSet,
@@ -631,6 +873,7 @@ function ExerciseSection({
   onOpenExercise,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const { prescribed, lines } = exercise;
+  const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
   // « Ajouter une série » n'a de sens qu'une fois le prescrit épuisé : tant qu'une
@@ -643,7 +886,10 @@ function ExerciseSection({
     lines.every((line) => line.planned === null || line.type === 'warmup' || line.logged !== null);
 
   return (
-    <View style={styles.exercise}>
+    // La marque de l'exercice courant est un **rail d'encre**, pas un fond : le
+    // fond appuyé dit déjà « série faite » deux lignes plus bas, et l'identité
+    // n'a qu'une couleur, prise par l'action primaire (règle 2).
+    <View ref={current ? targetRef : null} style={[styles.exercise, current && styles.exerciseNow]}>
       <View style={styles.exerciseHead}>
         {prescribed?.groupLabel ? <Text style={styles.rank}>{prescribed.groupLabel}</Text> : null}
         <Text style={styles.name}>{exercise.name}</Text>
@@ -721,21 +967,30 @@ function ExerciseSection({
 }
 
 /**
- * La dernière performance et le record d'un exercice (KL-32).
+ * La dernière performance et le record d'un exercice (KL-32, remis en tableau en
+ * KL-39).
  *
- * **Deux lignes au plus, et souvent une seule.** Un exercice jamais fait n'a pas
- * d'entrée du tout et ce composant n'est pas monté ; un exercice fait au poids du
- * corps a une dernière fois mais pas de record (il n'y a pas de record sans
- * kilos, `docs/api-mobile.md §6.6`), et la ligne manquante ne laisse pas de trou :
- * elle n'est pas rendue. C'est la troisième case du ticket — pas de case vide.
+ * **Un tableau, parce qu'une ligne mentait.** La version d'origine condensait la
+ * séance entière en une phrase, tronquée à la largeur de l'écran : « 2 × 8 reps,
+ * 1 × 6 reps · 80 kg » tenait, « 3 × 10 reps, 2 × 8 reps, 1 × 6 reps » finissait
+ * en points de suspension — donc sur la série la plus lourde, celle qu'on est
+ * venu lire. Trois colonnes (séries, effort, charge) ne tronquent rien, se
+ * comparent verticalement, et disent l'échauffement absent sans avoir à
+ * l'écrire.
  *
- * **Ça ne ressemble pas à une série**, volontairement : ni filet, ni fond, ni
- * case. Une ligne d'historique posée sous les séries prescrites avec la même peau
+ * Un exercice jamais fait n'a pas d'entrée du tout et ce composant n'est pas
+ * monté ; un exercice fait au poids du corps a une dernière fois mais pas de
+ * record (il n'y a pas de record sans kilos, `docs/api-mobile.md §6.6`), et la
+ * section manquante n'est pas rendue — pas de case vide.
+ *
+ * **Ça ne ressemble toujours pas à une série** : pas de case, pas de fond, pas de
+ * cadre, et un rail à gauche qui dit « ceci est du passé cité » comme la note de
+ * salle plus bas. Une ligne d'historique qui aurait la peau d'une série
  * s'appuierait du pouce par erreur, à bout de bras, entre deux séries.
  *
- * Le **type** de la série record (à l'échec, drop set) n'est pas affiché : ce sont
- * deux lignes qu'on lit en levant les yeux, et la charge est ce qui s'y compare.
- * La nuance vit sur la fiche d'exercice, quand KL-50 la posera.
+ * Le **type** de la série record (à l'échec, drop set) n'est pas affiché : c'est
+ * un repère qu'on lit en levant les yeux, et la charge est ce qui s'y compare. La
+ * nuance vit sur la fiche d'exercice, quand KL-50 la posera.
  */
 function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: string }) {
   const { last, best } = entry;
@@ -750,54 +1005,122 @@ function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: s
   return (
     <View style={styles.history}>
       {last ? (
-        <HistoryRow
+        <HistoryTable
           label="Dernière fois"
-          value={performanceSummary(last)}
           date={performanceDate(last.date, today)}
+          rows={performanceRows(last)}
+          summary={performanceSummary(last)}
         />
       ) : null}
       {best ? (
-        <HistoryRow
+        <HistoryTable
           label="Record"
-          value={bestSummary(best)}
           date={performanceDate(best.date, today)}
+          rows={[bestRow(best)]}
+          summary={bestSummary(best)}
         />
       ) : null}
     </View>
   );
 }
 
+/** Une ligne du tableau : combien de fois, quel effort, sous quelle charge. */
+type HistoryLine = { count: string; effort: string; load: string };
+
 /**
- * Une ligne d'historique : ce que c'est, ce que c'était, quand.
+ * Une section du tableau : son intitulé, sa date, ses lignes.
  *
- * Le groupe s'annonce **d'un bloc** à TalkBack (`accessible`) : trois arrêts pour
- * lire « Record », puis « 8 reps, 85 kg », puis « 12 juillet » feraient trois fois
- * plus de gestes pour la même phrase.
+ * La section s'annonce **d'un bloc** à TalkBack (`accessible`), et sur la phrase
+ * condensée plutôt que colonne par colonne : un tableau se parcourt de l'œil,
+ * pas à la voix — six arrêts pour lire « Record », « », « 8 reps », « 85 kg »
+ * diraient la même chose en six fois plus de gestes.
  */
-function HistoryRow({ label, value, date }: { label: string; value: string; date: string }) {
+function HistoryTable({
+  label,
+  date,
+  rows,
+  summary,
+}: {
+  label: string;
+  date: string;
+  rows: HistoryLine[];
+  summary: string;
+}) {
   return (
-    <View accessible accessibilityLabel={`${label}, ${date}, ${value}`} style={styles.historyRow}>
-      <Text style={styles.historyLabel}>{label}</Text>
-      <Text style={styles.historyValue} numberOfLines={1}>
-        {value}
-      </Text>
-      <View style={styles.spacer} />
-      <Text style={styles.historyDate}>{date}</Text>
+    <View
+      accessible
+      accessibilityLabel={`${label}, ${date}, ${summary}`}
+      style={styles.historyPart}
+    >
+      <View style={styles.historyHead}>
+        <Text style={styles.historyLabel}>{label}</Text>
+        <View style={styles.spacer} />
+        <Text style={styles.historyDate}>{date}</Text>
+      </View>
+
+      {rows.map((row, index) => (
+        // Les lignes n'ont ni identité ni ordre propre : elles sont dérivées de
+        // la performance et se rendent toutes ensemble ou pas du tout.
+        <View key={index} style={styles.historyRow}>
+          <Text style={styles.historyCount}>{row.count}</Text>
+          {/* Aucun `numberOfLines` : c'est tout l'objet du tableau — une valeur
+              longue passe à la ligne, elle ne se coupe pas. */}
+          <Text style={styles.historyEffort}>{row.effort}</Text>
+          <Text style={styles.historyLoad}>{row.load}</Text>
+        </View>
+      ))}
     </View>
   );
 }
 
 /**
- * Ce qui a été fait la dernière fois, en **une ligne**.
+ * Les lignes de la dernière séance.
  *
- * Les séries arrivent déjà condensées par le serveur (les consécutives identiques
- * fusionnent, `count`), donc trois séries de 8 à 80 kg tiennent en un segment. La
- * charge se factorise quand elle est la même partout — le cas courant — et rejoint
- * la fin de la ligne : « 2 × 8 reps, 1 × 6 reps · 80 kg » plutôt que la répéter
- * deux fois. Quand elle varie, chaque segment porte la sienne.
+ * Les séries arrivent déjà condensées par le serveur (les consécutives
+ * identiques fusionnent, `count`) : trois séries de 8 à 80 kg tiennent en une
+ * ligne. L'échauffement n'y est pas — le serveur ne compte que les séries de
+ * travail (`PerformanceHistory`), ici comme dans le tonnage et les records.
+ */
+function performanceRows(session: PerformanceSession): HistoryLine[] {
+  if (session.sets.length === 0) {
+    // Ne devrait pas arriver — une performance sans série n'en est pas une — mais
+    // le nombre de séries de travail est toujours là et se lit tout seul.
+    return [
+      {
+        count: '',
+        effort: `${session.workingSets} série${session.workingSets > 1 ? 's' : ''}`,
+        load: '',
+      },
+    ];
+  }
+
+  return session.sets.map((group) => ({
+    // Le « × » ne se met qu'à partir de deux : « 1 × 8 reps » se dit « 8 reps ».
+    count: group.count > 1 ? `${group.count} ×` : '',
+    effort: setEffort(group.reps, group.durationSeconds) ?? 'série',
+    load: group.weightKg === null ? '' : weight(group.weightKg),
+  }));
+}
+
+/** Le record : la série la plus lourde. Une ligne, et elle a toujours des kilos. */
+function bestRow(best: PerformanceBest): HistoryLine {
+  return {
+    count: '',
+    effort: setEffort(best.reps, best.durationSeconds) ?? 'série',
+    load: weight(best.weightKg),
+  };
+}
+
+/**
+ * Ce qui a été fait la dernière fois, en **une phrase** — celle que TalkBack lit.
  *
- * L'échauffement n'y est pas : le serveur ne compte que les séries de travail
- * (`PerformanceHistory`), ici comme dans le tonnage et les records.
+ * Ce n'est plus ce qui s'affiche depuis KL-39 (le tableau l'a remplacée à
+ * l'écran, justement parce qu'une phrase se tronque), mais c'est exactement ce
+ * qu'il faut dire à la voix : condensé, dans l'ordre, sans colonne à annoncer.
+ *
+ * La charge se factorise quand elle est la même partout — le cas courant — et
+ * rejoint la fin : « 2 × 8 reps, 1 × 6 reps · 80 kg » plutôt que la répéter deux
+ * fois. Quand elle varie, chaque segment porte la sienne.
  */
 function performanceSummary(session: PerformanceSession): string {
   if (session.sets.length === 0) {
@@ -1505,12 +1828,13 @@ function setRowLabel(line: SessionSetLine, effort: string | null, load: number |
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
+  frame: { flex: 1 },
   page: { padding: space[8], gap: space[8], paddingBottom: space[13] },
   spacer: { flex: 1 },
 
   name: { ...text.name, color: colors.text, flexShrink: 1 },
   body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textFaint },
+  caption: { ...text.caption, color: colors.textSecondary },
   notes: { ...text.caption, color: colors.textSecondary, marginBottom: space[3] },
   // La note de la salle se distingue de la consigne par un filet, pas par une
   // couleur : il n'y a qu'une couleur dans cette identité, et elle est prise.
@@ -1562,9 +1886,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: layout.hairline,
     borderBottomColor: colors.border,
   },
-  blockNumber: { ...text.numeric, color: colors.textFaint },
+  blockNumber: { ...text.numeric, color: colors.textSecondary },
   blockRole: { ...text.sectionTitle, color: colors.text },
-  blockLabel: { ...text.caption, color: colors.textFaint, flexShrink: 1 },
+  blockLabel: { ...text.caption, color: colors.textSecondary, flexShrink: 1 },
   blockCount: { ...text.numeric, color: colors.textSecondary },
 
   // Le groupe se marque au rail, pas au conteneur : il n'en a pas dans le modèle.
@@ -1575,26 +1899,45 @@ const styles = StyleSheet.create({
     marginVertical: space[4],
     paddingLeft: space[5],
   },
-  groupHead: { ...text.eyebrow, color: colors.textFaint, paddingVertical: space[3] },
+  groupHead: { ...text.eyebrow, color: colors.textSecondary, paddingVertical: space[3] },
 
   exercise: { paddingHorizontal: space[7], paddingVertical: space[6] },
+  // L'exercice courant (KL-39). Le rail compense sa propre épaisseur en
+  // rembourrage, sinon le contenu sauterait de 3 points en devenant courant.
+  exerciseNow: {
+    borderLeftWidth: 3,
+    borderLeftColor: colors.text,
+    paddingLeft: space[7] - 3,
+    backgroundColor: colors.surfaceSubtle,
+  },
   exerciseHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   exerciseCount: { ...text.numeric, color: colors.textSecondary },
   // Le rang dans le superset, en mono : il se compare, il ne se lit pas.
   rank: { ...text.eyebrow, color: colors.text },
   marks: { flexDirection: 'row', flexWrap: 'wrap', gap: space[4], marginTop: space[2] },
 
-  // L'historique (KL-32) : deux lignes de texte, sans peau propre. Un fond ou un
-  // filet en ferait une ligne de série de plus, à un endroit où on appuie.
-  history: { gap: space[1], marginTop: space[4] },
-  // `center` et non `baseline`, comme partout ailleurs dans cet écran : la ligne
-  // porte un séparateur souple, et une vue sans contenu n'a pas de ligne de base.
-  historyRow: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  historyLabel: { ...text.eyebrow, color: colors.textFaint },
+  // L'historique (KL-32, en tableau depuis KL-39). Pas de case, pas de fond : un
+  // rail, comme la note de salle — c'est du passé cité, pas une ligne où appuyer.
+  history: {
+    gap: space[5],
+    marginTop: space[5],
+    borderLeftWidth: 2,
+    borderLeftColor: colors.border,
+    paddingLeft: space[5],
+  },
+  historyPart: { gap: space[1] },
+  historyHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  historyLabel: { ...text.eyebrow, color: colors.textSecondary },
+  historyDate: { ...text.caption, color: colors.textSecondary },
+  // `flex-start` et non `center` : une valeur qui passe à la ligne doit aligner
+  // sa **première** ligne sur les autres colonnes, pas se centrer sur deux.
+  historyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space[4] },
   // En mono comme les charges de la séance : c'est la même grandeur, lue au même
   // moment, et elle doit se comparer d'un coup d'œil à la ligne d'en dessous.
-  historyValue: { ...text.numeric, color: colors.textSecondary, flexShrink: 1 },
-  historyDate: { ...text.caption, color: colors.textFaint },
+  // Trois colonnes de largeur tenue, sinon un tableau n'en est pas un.
+  historyCount: { ...text.numeric, color: colors.textSecondary, width: 34, textAlign: 'right' },
+  historyEffort: { ...text.numeric, color: colors.textSecondary, flex: 1 },
+  historyLoad: { ...text.numeric, color: colors.textSecondary, minWidth: 68, textAlign: 'right' },
 
   setRow: {
     flexDirection: 'row',
@@ -1621,14 +1964,14 @@ const styles = StyleSheet.create({
     paddingLeft: space[4],
     paddingRight: space[3],
   },
-  setRank: { ...text.numeric, color: colors.textFaint, width: 24 },
+  setRank: { ...text.numeric, color: colors.textSecondary, width: 24 },
   setRankChecked: { color: colors.textSecondary },
   setEffort: { ...text.numeric, color: colors.text },
   setLoad: { ...text.numeric, color: colors.text },
-  setFaint: { color: colors.textFaint },
+  setFaint: { color: colors.textSecondary },
   // Le prévu, à côté du saisi. Atténué et plus petit : il est le repère, pas la
   // valeur — celle qui compte est ce qui a été fait.
-  setPlanned: { ...text.caption, color: colors.textFaint },
+  setPlanned: { ...text.caption, color: colors.textSecondary },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
@@ -1643,26 +1986,47 @@ const styles = StyleSheet.create({
     minWidth: layout.touchTarget,
     minHeight: layout.touchTarget,
   },
+  // La case est la cible qu'on vise **sans regarder** : son contour porte donc
+  // l'encre secondaire et non un gris de filet, qui plafonnait à 1,7:1 sur le
+  // blanc (KL-39, `§1.4.11` demande 3:1 à ce qui identifie un contrôle).
   box: {
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: colors.borderStrong,
+    borderColor: colors.textSecondary,
     backgroundColor: 'transparent',
   },
   boxChecked: { borderColor: colors.text, backgroundColor: colors.text },
   boxIdle: { borderColor: colors.borderMuted },
 
-  // La barre de repos : posée sur le bas de l'écran, filet en tête, fond appuyé.
+  // La barre basse : posée sur le bas de l'écran, filet en tête, fond appuyé.
   // Elle ne flotte pas (aucune ombre dans cette identité), elle s'ancre.
-  rest: {
+  dock: {
     position: 'absolute',
     left: 0,
     right: 0,
     bottom: 0,
     backgroundColor: colors.surfaceRaised,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.borderStrong,
+    borderTopColor: colors.text,
+  },
+  // L'étage de validation : le dernier, donc toujours à la même distance du bord.
+  dockAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space[5],
+    paddingHorizontal: space[8],
+    paddingVertical: space[6],
+  },
+  dockLabels: { flex: 1, gap: space[1] },
+  dockEyebrow: { ...text.eyebrow, color: colors.textSecondary },
+  dockName: { ...text.name, color: colors.text },
+  dockValues: { ...text.numeric, color: colors.text },
+
+  // L'étage du repos, empilé au-dessus de la validation.
+  rest: {
+    borderBottomWidth: layout.hairline,
+    borderBottomColor: colors.border,
   },
   restTrack: { height: 4, backgroundColor: colors.track },
   restFill: { height: 4, backgroundColor: colors.text },
@@ -1680,12 +2044,12 @@ const styles = StyleSheet.create({
   // Le rouge à l'échéance seulement, et c'est bien son emploi : ce n'est pas une
   // catégorie qu'on colore, c'est l'appel à reprendre la série (§5 règle 2).
   restClockOver: { color: colors.primary },
-  // `paddingBottom` posé au point d'usage : il compte la zone sûre du bas.
   restActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: space[4],
     paddingHorizontal: space[8],
+    paddingBottom: space[5],
   },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
@@ -1693,7 +2057,7 @@ const styles = StyleSheet.create({
   // Les facettes du sélecteur (KL-34). Le `gap` de la feuille sépare déjà les
   // deux rangées : ici seulement l'intitulé et ses pilules.
   facets: { gap: space[2] },
-  facetLabel: { ...text.eyebrow, color: colors.textFaint },
+  facetLabel: { ...text.eyebrow, color: colors.textSecondary },
   // Sur le `contentContainerStyle` et non sur le `ScrollView` : un `gap` posé
   // sur le conteneur défilant lui-même ne s'applique pas à son contenu.
   facetRow: { flexDirection: 'row', gap: space[3], paddingRight: space[8] },

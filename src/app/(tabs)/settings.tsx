@@ -549,16 +549,16 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   rowValue: { flexShrink: 1, textAlign: 'right' },
-  label: { ...text.eyebrow, color: colors.textFaint },
+  label: { ...text.eyebrow, color: colors.textSecondary },
   value: { ...text.numeric, color: colors.text },
   name: { ...text.name, color: colors.text, flexShrink: 1 },
   body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textFaint },
+  caption: { ...text.caption, color: colors.textSecondary },
   // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
   // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
   // deux ne veulent pas dire la même chose — l'un est l'accent d'une action,
   // l'autre l'échec. Ils partagent leur valeur aujourd'hui, pas leur sens.
-  fault: { ...text.body, color: colors.statusMissed },
+  fault: { ...text.body, color: colors.primaryOnTint },
 
   queue: { gap: space[5] },
   // Un filet gauche, comme les écarts de la clôture : la ligne se détache sans

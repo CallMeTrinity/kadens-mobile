@@ -8,7 +8,7 @@
  *
  * Le web exprime l'état actif au survol ; il n'y a pas de survol au doigt, donc
  * chaque variante transpose son `:hover` en état **pressé**. Le sens est
- * conservé : l'aplat rouge s'éclaircit (le foncer refermerait le bouton), le
+ * conservé : l'aplat rouge fonce (`--color-primary-hover`, comme le web), le
  * contour encre s'inverse, le fantôme se pose sur un fond.
  */
 
@@ -18,7 +18,7 @@ import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } fro
 import { colors, layout, space, text } from '@/theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
-export type ButtonSize = 'md' | 'sm';
+export type ButtonSize = 'lg' | 'md' | 'sm';
 
 export type ButtonProps = {
   /** Libellé de l'action. Écrit par l'app, donc condensé capitales (règle 4). */
@@ -30,6 +30,11 @@ export type ButtonProps = {
    * de 44 points ne se négocie pas, et le web réduisait aussi la taille du
    * texte — l'échelle native n'a pas ce cran, et en inventer un pour un bouton
    * secondaire ne vaut pas le rôle supplémentaire.
+   *
+   * `lg` existe pour **une** cible : celle qu'on vise debout, d'une main, entre
+   * deux séries (KL-39). 56 points, soit un cran bien au-dessus du plancher —
+   * viser 44 points suppose de regarder, et c'est précisément ce qu'on ne fait
+   * pas ici. À réserver à l'action primaire d'une barre basse.
    */
   size?: ButtonSize;
   /** Occupe toute la largeur disponible (pendant de `.kd-btn--block`). */
@@ -56,7 +61,11 @@ type Skin = { bg: string; border: string; label: string };
 const SKINS: Record<ButtonVariant, { idle: Skin; pressed: Skin }> = {
   primary: {
     idle: { bg: colors.primary, border: colors.primary, label: colors.onPrimary },
-    pressed: { bg: colors.primaryBright, border: colors.primaryBright, label: colors.onPrimary },
+    // Le rouge pressé **fonce** (KL-39). Il s'éclaircissait, ce qui ramenait le
+    // blanc du libellé à 4,1:1 — sous AA, et sur le seul bouton qu'on tape sans
+    // regarder. C'est aussi ce que dit le design system : `--color-primary-hover`
+    // est plus sombre que l'accent, l'inversion était une invention native.
+    pressed: { bg: colors.primaryHover, border: colors.primaryHover, label: colors.onPrimary },
   },
   secondary: {
     idle: { bg: colors.surfaceRaised, border: colors.text, label: colors.text },
@@ -94,7 +103,7 @@ export function Button({
       testID={testID}
       style={({ pressed }) => [
         styles.base,
-        size === 'sm' ? styles.sm : styles.md,
+        styles[size],
         block && styles.block,
         {
           backgroundColor: (pressed ? skin.pressed : skin.idle).bg,
@@ -134,6 +143,7 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     alignSelf: 'flex-start',
   },
+  lg: { minHeight: 56, paddingVertical: space[6], paddingHorizontal: space[10] },
   md: { paddingVertical: space[4], paddingHorizontal: space[8] },
   sm: { paddingVertical: space[3], paddingHorizontal: space[5] },
   block: { alignSelf: 'stretch' },

@@ -3,7 +3,16 @@ import { useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Chip, duration, EmptyState, Field, Header, weight } from '@/components';
+import {
+  Button,
+  Chip,
+  duration,
+  EmptyState,
+  Field,
+  Header,
+  useKeyboardOverlap,
+  weight,
+} from '@/components';
 import {
   buildSessionSummary,
   closeWorkout,
@@ -61,6 +70,10 @@ export default function SessionCloseScreen() {
   const program = useSessionProgram(uuid);
   const pendingSync = useWorkoutPendingSync(uuid);
   const insets = useSafeAreaInsets();
+  // La note est en bas de page, la barre d'action en dessous : c'est exactement
+  // ce que le clavier recouvre (KL-39). L'écran entier remonte de ce qu'il
+  // mange, donc le champ et le bouton restent visibles pendant la frappe.
+  const keyboard = useKeyboardOverlap();
 
   // La saisie prime dès qu'on a tapé, et pas avant : `null` veut dire « rien de
   // saisi », ce que la note déjà enregistrée vient alors combler. Sans cette
@@ -137,7 +150,7 @@ export default function SessionCloseScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View onLayout={keyboard.onLayout} style={[styles.screen, { paddingBottom: keyboard.overlap }]}>
       <Header
         eyebrow={longDate(workout.date)}
         title={closed ? 'Séance terminée' : 'Clôture'}
@@ -177,7 +190,14 @@ export default function SessionCloseScreen() {
         )}
       </ScrollView>
 
-      <View style={[styles.actions, { paddingBottom: space[6] + insets.bottom }]}>
+      {/* Le clavier recouvre déjà la barre gestuelle : ne compter que l'un des
+          deux, sinon la barre d'action flotte au-dessus du clavier. */}
+      <View
+        style={[
+          styles.actions,
+          { paddingBottom: space[6] + (keyboard.overlap > 0 ? 0 : insets.bottom) },
+        ]}
+      >
         {closed ? (
           <Button
             label="Terminer"
@@ -440,7 +460,7 @@ const styles = StyleSheet.create({
   head: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[4] },
   name: { ...text.name, color: colors.text, flexShrink: 1 },
   body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textFaint },
+  caption: { ...text.caption, color: colors.textSecondary },
 
   // Deux colonnes : quatre chiffres en ligne seraient illisibles à cette taille,
   // et la grille tient sans média-requête — l'app n'a qu'une largeur.
@@ -455,7 +475,7 @@ const styles = StyleSheet.create({
     borderWidth: layout.hairline,
     borderColor: colors.border,
   },
-  metricLabel: { ...text.eyebrow, color: colors.textFaint },
+  metricLabel: { ...text.eyebrow, color: colors.textSecondary },
   // Le grand chiffre du design system. `adjustsFontSizeToFit` le protège du seul
   // cas qui déborde : un tonnage à cinq chiffres sur une petite largeur.
   metricValue: { ...text.kpi, color: colors.text },

@@ -59,6 +59,6 @@ const styles = StyleSheet.create({
   },
   compact: { paddingVertical: space[6], paddingHorizontal: 0 },
   title: { ...text.sectionTitle, color: colors.textSoft, textAlign: 'center' },
-  hint: { ...text.caption, color: colors.textFaint, textAlign: 'center' },
+  hint: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
   action: { marginTop: space[3] },
 });

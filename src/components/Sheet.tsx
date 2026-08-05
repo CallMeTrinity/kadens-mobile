@@ -16,13 +16,29 @@
  *   pousse l'en-tête hors de l'écran au lieu de défiler sous lui.
  * - **Le dégagement bas suit la barre gestuelle** (`insets.bottom`), sinon le
  *   dernier élément de la liste se retrouve sous elle.
+ *
+ * ## Le clavier ne recouvre jamais la feuille (KL-39)
+ *
+ * Une feuille est ancrée en bas, un clavier s'ouvre en bas : sans rien, on
+ * remplit un champ qu'on ne voit pas. La feuille entière remonte donc du
+ * recouvrement mesuré (`useKeyboardOverlap`), et la zone sûre du bas cesse de
+ * s'ajouter tant qu'il est là — le clavier couvre déjà la barre gestuelle,
+ * compter les deux creuserait un vide sous le bouton de validation.
+ *
+ * Deux réglages du corps défilant vont avec, et ils valent surtout pour le
+ * sélecteur d'exercice, dont le champ prend le focus à l'ouverture :
+ * `keyboardShouldPersistTaps` (sans lui, le premier appui sur un résultat ne
+ * fait que fermer le clavier — deux appuis pour un choix, en salle) et
+ * `keyboardDismissMode` (faire défiler la liste range le clavier).
  */
 
 import type { ReactNode } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, layout, space, text } from '@/theme';
+import { colors, layout, space, text, useReducedMotion } from '@/theme';
+
+import { useKeyboardOverlap } from './keyboard';
 
 export type SheetProps = {
   visible: boolean;
@@ -37,19 +53,26 @@ export type SheetProps = {
 
 export function Sheet({ visible, onClose, title, children, footer, testID }: SheetProps) {
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardOverlap();
+  const reducedMotion = useReducedMotion();
+  // Le clavier recouvre déjà la barre gestuelle : ne compter que l'un des deux.
+  const safeBottom = keyboard.overlap > 0 ? 0 : insets.bottom;
 
   return (
     <Modal
       visible={visible}
       transparent
-      animationType="slide"
+      // Le réglage système « supprimer les animations » vaut ici comme
+      // `prefers-reduced-motion` sur le web : la feuille apparaît au lieu de
+      // monter (KL-39).
+      animationType={reducedMotion ? 'none' : 'slide'}
       // Le bouton retour d'Android ferme la feuille : c'est le geste attendu, et
       // sans lui il quitterait l'écran qui l'a ouverte.
       onRequestClose={onClose}
       statusBarTranslucent
       testID={testID}
     >
-      <View style={styles.host}>
+      <View onLayout={keyboard.onLayout} style={[styles.host, { paddingBottom: keyboard.overlap }]}>
         {/* Le voile est une cible de fermeture, pas un décor : taper à côté
             referme, comme le clic extérieur du web. */}
         <Pressable
@@ -81,19 +104,21 @@ export function Sheet({ visible, onClose, title, children, footer, testID }: She
             style={styles.body}
             contentContainerStyle={[
               styles.bodyContent,
-              { paddingBottom: space[8] + (footer ? 0 : insets.bottom) },
+              { paddingBottom: space[8] + (footer ? 0 : safeBottom) },
             ]}
             // Arrivé en bout de liste, le geste ne repart pas sur l'écran
             // derrière (pendant de l'`overscroll-behavior: contain` du web).
             overScrollMode="never"
+            // Un appui sur un résultat le choisit du premier coup, clavier
+            // ouvert : sans ça, le premier appui ne fait que le refermer.
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
           >
             {children}
           </ScrollView>
 
           {footer ? (
-            <View style={[styles.footer, { paddingBottom: space[8] + insets.bottom }]}>
-              {footer}
-            </View>
+            <View style={[styles.footer, { paddingBottom: space[8] + safeBottom }]}>{footer}</View>
           ) : null}
         </View>
       </View>

@@ -47,7 +47,10 @@ export function Field({ label, hint, error, ref, style, onFocus, onBlur, ...rest
         // d'accessibilité natif : sans ça, TalkBack ne lirait que la valeur.
         accessibilityLabel={label}
         accessibilityHint={help}
-        placeholderTextColor={colors.textPlaceholder}
+        // `textSoft` et non `textPlaceholder` : ce dernier plafonne à 4,3:1 sur
+        // le fond d'un champ, sous les 4,5:1 d'AA (KL-39). Un texte d'invite est
+        // du texte.
+        placeholderTextColor={colors.textSoft}
         onFocus={(event) => {
           setFocused(true);
           onFocus?.(event);
@@ -88,6 +91,11 @@ const styles = StyleSheet.create({
   area: { minHeight: 96, textAlignVertical: 'top' },
   inputFocused: { borderColor: colors.text },
   inputError: { borderColor: colors.statusMissed },
-  help: { ...text.caption, color: colors.textSoft },
-  helpError: { color: colors.statusMissed },
+  // Encre secondaire : l'aide se pose souvent sur le papier de la page, où
+  // l'encre douce ne tient pas les 4,5:1 d'AA (KL-39).
+  help: { ...text.caption, color: colors.textSecondary },
+  // Le rouge **écrit** se dit `primaryOnTint` : l'accent plein tombe à 3,6:1 sur
+  // le papier, sous AA (KL-39). Le filet du champ, lui, le garde — un objet
+  // graphique se contente de 3:1.
+  helpError: { color: colors.primaryOnTint },
 });

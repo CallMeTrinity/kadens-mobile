@@ -4,7 +4,7 @@ import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError, getApiBaseUrl, signInWithPassword } from '@/api';
-import { Button, Card, Field, Header } from '@/components';
+import { Button, Card, Field, Header, useKeyboardOverlap } from '@/components';
 import { colors, space, text } from '@/theme';
 
 /**
@@ -21,6 +21,7 @@ export default function LoginPasswordScreen() {
   const [password, setPassword] = useState('');
   const [pending, setPending] = useState(false);
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardOverlap();
   const [error, setError] = useState<string | null>(null);
 
   const baseUrl = getApiBaseUrl();
@@ -43,13 +44,18 @@ export default function LoginPasswordScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View onLayout={keyboard.onLayout} style={styles.screen}>
       <Header eyebrow="Kadens Live" title="Email et mot de passe" onBack={() => router.back()} />
 
       {/* La zone sûre du bas (KL-37) : sans elle, la fin de page s'arrête au
-          bord de l'écran et passe sous la barre gestuelle Android. */}
+          bord de l'écran et passe sous la barre gestuelle Android. Et ce que le
+          clavier recouvre (KL-39), pour que le bouton reste atteignable en
+          faisant défiler — le clavier prenant alors la place de la zone sûre. */}
       <ScrollView
-        contentContainerStyle={[styles.page, { paddingBottom: space[8] + insets.bottom }]}
+        contentContainerStyle={[
+          styles.page,
+          { paddingBottom: space[8] + (keyboard.overlap || insets.bottom) },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         <Card>
@@ -105,5 +111,5 @@ const styles = StyleSheet.create({
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
   value: { ...text.numeric, color: colors.text },
-  hint: { ...text.caption, color: colors.textFaint, marginTop: space[3] },
+  hint: { ...text.caption, color: colors.textSecondary, marginTop: space[3] },
 });

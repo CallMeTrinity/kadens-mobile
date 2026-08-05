@@ -15,7 +15,7 @@
  */
 
 import type { LoggedExerciseRow, LoggedSetRow } from '@/db';
-import { buildProgram, setDeviates } from '@/session';
+import { buildProgram, nextTarget, setDeviates } from '@/session';
 import { prescribedBlock, prescribedExercise } from '@/test/fixtures';
 
 let nextSetId = 0;
@@ -174,6 +174,88 @@ describe('les supersets', () => {
       ['B', 2],
       [null, 1],
     ]);
+  });
+});
+
+/**
+ * La cible de la barre d'action basse (KL-39).
+ *
+ * C'est ce qui tombe sous le pouce en salle : si elle se trompe, on coche la
+ * mauvaise série sans regarder. Elle se vérifie donc ici, sans écran — la barre
+ * n'ajoute qu'un bouton par-dessus.
+ */
+describe('la cible courante', () => {
+  it('est la première série cochable en descendant le déroulé', () => {
+    const program = buildProgram(
+      [
+        prescribedBlock(1, [
+          prescribedExercise(1, {
+            sets: [
+              { index: 1, type: 'warmup', reps: 10, weightKg: 20, durationSeconds: null },
+              { index: 2, type: 'normal', reps: 8, weightKg: 80, durationSeconds: null },
+            ],
+          }),
+          prescribedExercise(2),
+        ]),
+      ],
+      [],
+      [],
+    );
+    const target = nextTarget(program);
+
+    // L'échauffement passe devant : il est cochable, et il est au-dessus.
+    expect(target?.exercise.prescribed?.prescribedId).toBe(1);
+    expect(target?.line?.index).toBe(1);
+  });
+
+  it('alterne les membres d’un superset au lieu de vider le premier', () => {
+    const blocks = [
+      prescribedBlock(1, [
+        prescribedExercise(1, { groupLabel: 'A1' }),
+        prescribedExercise(2, { groupLabel: 'A2' }),
+      ]),
+    ];
+
+    expect(nextTarget(buildProgram(blocks, [], []))?.exercise.prescribed?.prescribedId).toBe(1);
+
+    // Une série faite sur A1 : c'est A2 qui vient, pas la deuxième de A1.
+    const started = buildProgram(blocks, [loggedRow({ sourcePrescribedId: 1 })], [setRow()]);
+
+    expect(nextTarget(started)?.exercise.prescribed?.prescribedId).toBe(2);
+  });
+
+  it('saute un exercice sauté, et rend le cardio sans ligne', () => {
+    const program = buildProgram(
+      [
+        prescribedBlock(1, [
+          prescribedExercise(1),
+          prescribedExercise(2, { type: 'distance_pace', sets: null }),
+        ]),
+      ],
+      [loggedRow({ sourcePrescribedId: 1, skipped: true })],
+      [],
+    );
+    const target = nextTarget(program);
+
+    expect(target?.exercise.prescribed?.prescribedId).toBe(2);
+    // Un cardio n'a pas de série : il se coche entier, et la barre le dit.
+    expect(target?.line).toBeNull();
+  });
+
+  it('ne rend plus rien quand tout est coché — c’est ce qui ouvre la clôture', () => {
+    const program = buildProgram(
+      [
+        prescribedBlock(1, [
+          prescribedExercise(1, {
+            sets: [{ index: 1, type: 'normal', reps: 8, weightKg: 80, durationSeconds: null }],
+          }),
+        ]),
+      ],
+      [loggedRow()],
+      [setRow()],
+    );
+
+    expect(nextTarget(program)).toBeNull();
   });
 });
 

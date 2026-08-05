@@ -5,7 +5,7 @@ import { Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError, signInWithPairingCode, signInWithPairingQr } from '@/api';
-import { Button, Card, Field, Header } from '@/components';
+import { Button, Card, Field, Header, useKeyboardOverlap } from '@/components';
 import { patchSyncState } from '@/db';
 import { colors, layout, space, text } from '@/theme';
 
@@ -27,6 +27,7 @@ export default function PairingScreen() {
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
   const insets = useSafeAreaInsets();
+  const keyboard = useKeyboardOverlap();
   const [error, setError] = useState<string | null>(null);
   // Empêche de traiter deux fois le même cadre pendant qu'un scan est en cours
   // de vérification côté serveur ; remis à `false` après échec pour permettre
@@ -77,13 +78,19 @@ export default function PairingScreen() {
   }
 
   return (
-    <View style={styles.screen}>
+    <View onLayout={keyboard.onLayout} style={styles.screen}>
       <Header eyebrow="Kadens Live" title="Appairage" onBack={() => router.back()} />
 
       {/* La zone sûre du bas (KL-37) : sans elle, la fin de page s'arrête au
-          bord de l'écran et passe sous la barre gestuelle Android. */}
+          bord de l'écran et passe sous la barre gestuelle Android. Et ce que le
+          clavier recouvre (KL-39), pour que le champ de code et son bouton
+          restent atteignables — le clavier prend alors la place de la zone
+          sûre, il la recouvre déjà. */}
       <ScrollView
-        contentContainerStyle={[styles.page, { paddingBottom: space[8] + insets.bottom }]}
+        contentContainerStyle={[
+          styles.page,
+          { paddingBottom: space[8] + (keyboard.overlap || insets.bottom) },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
         {/* Un seul emplacement pour l'erreur : elle peut venir du scan comme de
@@ -183,7 +190,7 @@ const styles = StyleSheet.create({
   stack: { gap: space[6] },
   hint: { ...text.body, color: colors.textSecondary },
   // Le rouge dit l'échec — un de ses trois emplois (règle 2 du design system).
-  error: { ...text.body, color: colors.statusMissed },
+  error: { ...text.body, color: colors.primaryOnTint },
   cameraFrame: {
     aspectRatio: 1,
     width: '100%',

@@ -67,6 +67,41 @@ describe('NumberStepper', () => {
     expect(onChange).toHaveBeenCalledWith(82.5);
   });
 
+  it('repart d’un champ vide à la prise de focus, sans perdre le premier chiffre', async () => {
+    const onChange = jest.fn();
+
+    await render(<NumberStepper testID="charge" value={20} onChange={onChange} />);
+
+    await fireEvent(screen.getByTestId('charge-input'), 'focus');
+
+    // Le champ se vide en JavaScript. La version d'avant s'en remettait à
+    // `selectTextOnFocus`, dont Android pose la sélection **après** la première
+    // frappe : le chiffre suivant l'écrasait, et « 80 » saisi donnait « 0 »
+    // (KL-39). La valeur en place reste lisible derrière, en invite.
+    expect(screen.getByTestId('charge-input').props.value).toBe('');
+    expect(screen.getByTestId('charge-input').props.placeholder).toBe('20');
+
+    await fireEvent.changeText(screen.getByTestId('charge-input'), '8');
+    await fireEvent.changeText(screen.getByTestId('charge-input'), '80');
+    await fireEvent(screen.getByTestId('charge-input'), 'blur');
+
+    expect(onChange).toHaveBeenCalledWith(80);
+  });
+
+  it('repart de ce qui est tapé quand un pas arrive avant le relâchement', async () => {
+    const onChange = jest.fn();
+
+    await render(<NumberStepper testID="charge" value={20} step={2.5} onChange={onChange} />);
+
+    await fireEvent(screen.getByTestId('charge-input'), 'focus');
+    await fireEvent.changeText(screen.getByTestId('charge-input'), '80');
+    await fireEvent.press(screen.getByTestId('charge-plus'));
+
+    // Sur Android, appuyer sur un bouton ne relâche pas forcément le champ : le
+    // brouillon serait resté en suspens et le pas serait parti de 20.
+    expect(onChange).toHaveBeenLastCalledWith(82.5);
+  });
+
   it('revient à la valeur en place quand la saisie est illisible', async () => {
     const onChange = jest.fn();
 

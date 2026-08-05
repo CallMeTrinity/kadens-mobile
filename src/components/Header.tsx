@@ -111,7 +111,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[4],
   },
-  eyebrow: { ...text.eyebrow, color: colors.textFaint },
+  eyebrow: { ...text.eyebrow, color: colors.textSecondary },
   title: { ...text.pageTitle, color: colors.text, flexShrink: 1 },
   right: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
 });

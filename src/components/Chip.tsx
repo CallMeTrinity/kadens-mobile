@@ -34,12 +34,48 @@ export type ChipProps = {
   testID?: string;
 };
 
-const TONES: Record<ChipTone, { label: string; bg: string; border: string }> = {
-  neutral: { label: colors.textSecondary, bg: 'transparent', border: colors.borderPill },
-  done: { label: colors.statusDone, bg: 'transparent', border: colors.borderPill },
-  planned: { label: colors.statusPlanned, bg: 'transparent', border: colors.borderPill },
-  missed: { label: colors.statusMissed, bg: 'transparent', border: colors.borderPill },
-  accent: { label: colors.onPrimary, bg: colors.primary, border: colors.primary },
+/**
+ * Une teinte de statut, et la couleur de son libellé — qui n'est pas toujours la
+ * même (KL-39).
+ *
+ * `planned` est le cas qui a forcé la distinction : son gris de statut
+ * (`--color-status-planned`) plafonne à 3,5:1 sur le papier, en dessous des
+ * 4,5:1 que WCAG AA demande à un texte de 11 points. La pastille, elle, est un
+ * objet graphique et se contente de 3:1 — elle garde donc la couleur du statut,
+ * que le libellé abandonne pour l'encre secondaire. Le sens ne bouge pas : c'est
+ * la pastille qui porte le statut, le mot le nomme.
+ */
+const TONES: Record<ChipTone, { label: string; dot: string; bg: string; border: string }> = {
+  neutral: {
+    label: colors.textSecondary,
+    dot: colors.textSecondary,
+    bg: 'transparent',
+    border: colors.borderPill,
+  },
+  done: {
+    label: colors.statusDone,
+    dot: colors.statusDone,
+    bg: 'transparent',
+    border: colors.borderPill,
+  },
+  planned: {
+    label: colors.textSecondary,
+    dot: colors.statusPlanned,
+    bg: 'transparent',
+    border: colors.borderPill,
+  },
+  missed: {
+    label: colors.primaryOnTint,
+    dot: colors.statusMissed,
+    bg: 'transparent',
+    border: colors.borderPill,
+  },
+  accent: {
+    label: colors.onPrimary,
+    dot: colors.onPrimary,
+    bg: colors.primary,
+    border: colors.primary,
+  },
 };
 
 const RANKS: Record<ChipRank, string> = {
@@ -62,7 +98,7 @@ export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID
         style,
       ]}
     >
-      {dot ? <View style={[styles.dot, { backgroundColor: skin.label }]} /> : null}
+      {dot ? <View style={[styles.dot, { backgroundColor: skin.dot }]} /> : null}
       <Text numberOfLines={1} style={[styles.label, { color: skin.label }]}>
         {label}
       </Text>

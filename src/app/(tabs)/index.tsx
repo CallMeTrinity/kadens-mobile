@@ -366,7 +366,7 @@ const styles = StyleSheet.create({
   stack: { gap: space[6] },
   marks: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[3] },
   name: { ...text.name, color: colors.text },
-  caption: { ...text.caption, color: colors.textFaint },
+  caption: { ...text.caption, color: colors.textSecondary },
   body: { ...text.body, color: colors.textSecondary },
 
   strip: {
@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
   // sélection se lit d'un coup d'œil sans introduire de teinte (règle 2).
   dayActive: { backgroundColor: colors.surfaceInk },
   dayPressed: { backgroundColor: colors.fill },
-  dayWeekday: { ...text.eyebrow, color: colors.textFaint },
+  dayWeekday: { ...text.eyebrow, color: colors.textSecondary },
   dayNumber: { ...text.numeric, color: colors.text },
   dayLabelActive: { color: colors.onInk },
   dayDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },

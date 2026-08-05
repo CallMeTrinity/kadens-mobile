@@ -118,6 +118,6 @@ const styles = StyleSheet.create({
   stack: { gap: space[6] },
   marks: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[3] },
   name: { ...text.name, color: colors.text },
-  caption: { ...text.caption, color: colors.textFaint },
-  reach: { ...text.caption, color: colors.textFaint, textAlign: 'center' },
+  caption: { ...text.caption, color: colors.textSecondary },
+  reach: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
 });

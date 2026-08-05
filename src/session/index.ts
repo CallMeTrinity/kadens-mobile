@@ -129,6 +129,7 @@ export {
   exerciseIdsOf,
   findExercise,
   findSetLine,
+  nextTarget,
   setDeviates,
 } from './program';
 export type {
@@ -137,6 +138,7 @@ export type {
   SessionGroup,
   SessionProgram,
   SessionSetLine,
+  SessionTarget,
   SetValues,
 } from './program';
 

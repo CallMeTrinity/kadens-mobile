@@ -80,7 +80,7 @@ export function Fault({ title, body, detail, action, secondary, testID }: FaultP
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg },
   page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: space[8], gap: space[6] },
-  title: { ...text.sectionTitle, color: colors.statusMissed },
+  title: { ...text.sectionTitle, color: colors.primaryOnTint },
   body: { ...text.body, color: colors.textSecondary },
-  detail: { ...text.caption, color: colors.textFaint },
+  detail: { ...text.caption, color: colors.textSecondary },
 });

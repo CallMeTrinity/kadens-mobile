@@ -14,6 +14,17 @@
  *    chaque frappe rendrait « 82, » impossible à taper (la virgule seule ne
  *    fait pas un nombre, la valeur serait réécrite sous les doigts). Le parent
  *    n'est informé qu'au relâchement du champ ou à la validation.
+ *
+ *    **Le champ se vide à la prise de focus**, et la valeur en place passe en
+ *    `placeholder`. C'est la correction de KL-39 : la version précédente
+ *    s'appuyait sur `selectTextOnFocus`, dont la sélection est posée par
+ *    Android **après** le premier rendu du champ focalisé. Le premier chiffre
+ *    tapé arrivait avant elle, la sélection tombait ensuite sur ce chiffre-là,
+ *    et le second l'effaçait : « 80 » saisi donnait « 0 ». Un brouillon vidé en
+ *    JavaScript ne dépend d'aucun calendrier natif, et dit la même chose à
+ *    l'œil — le champ est prêt à recevoir une valeur, pas à être corrigé
+ *    caractère par caractère. Repartir sans rien taper ne change rien : une
+ *    saisie vide retombe sur la valeur en place.
  * 2. **Le pas se répète à l'appui long**, sinon monter de 60 à 100 kg demande
  *    seize appuis.
  * 3. **La virgule est acceptée à l'entrée et rendue à l'affichage** : c'est ce
@@ -102,6 +113,11 @@ export function NumberStepper({
   }
 
   function bump(direction: 1 | -1) {
+    // Un pas donné pendant que le champ est ouvert repart de ce qui y est tapé,
+    // pas de la valeur d'avant : sur Android, appuyer sur un bouton ne relâche
+    // pas forcément le champ, et le brouillon resterait sinon en suspens.
+    commitDraft();
+
     const next = clamp(round(currentRef.current + direction * step));
     currentRef.current = next;
     onChange(next);
@@ -189,13 +205,18 @@ export function NumberStepper({
         <View style={[styles.valueBox, disabled && styles.blocked]}>
           <TextInput
             accessibilityLabel={label}
+            // Sans lui, TalkBack annoncerait un champ vide dès la prise de
+            // focus — le brouillon vidé ne doit pas effacer la valeur dite.
+            accessibilityValue={{ text: `${formatNumber(value)}${unit ? ` ${unit}` : ''}` }}
             editable={!disabled}
             keyboardType="decimal-pad"
             returnKeyType="done"
-            // Le champ s'ouvre sur une sélection complète : la saisie directe
-            // sert à remplacer une valeur, pas à la corriger caractère par
-            // caractère.
-            selectTextOnFocus
+            // Le champ s'ouvre **vide**, la valeur en place derrière : la saisie
+            // directe sert à remplacer une valeur, pas à la corriger caractère
+            // par caractère (§1 — et c'est ce qui répare le premier chiffre).
+            onFocus={() => setDraft('')}
+            placeholder={formatNumber(value)}
+            placeholderTextColor={colors.textSoft}
             value={draft ?? formatNumber(value)}
             onChangeText={setDraft}
             onBlur={commitDraft}

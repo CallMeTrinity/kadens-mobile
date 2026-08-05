@@ -404,6 +404,80 @@ function buildLines(
   return lines;
 }
 
+/**
+ * Ce que la séance attend **maintenant** : une série à cocher, ou un cardio à
+ * marquer fait.
+ *
+ * `line` vaut `null` pour un cardio — il n'a pas de série, il se coche entier.
+ */
+export interface SessionTarget {
+  exercise: SessionExercise;
+  line: SessionSetLine | null;
+}
+
+/**
+ * La cible courante du déroulé (KL-39).
+ *
+ * C'est ce que la barre d'action basse propose, et c'est **la** raison d'être de
+ * cette fonction : en salle, la cible principale doit tomber sous le pouce, pas
+ * quelque part dans un déroulé de douze exercices. Rendre `null` veut dire qu'il
+ * n'y a plus rien à cocher — la barre bascule alors sur la clôture.
+ *
+ * ## L'ordre de lecture, sauf dans un superset
+ *
+ * La règle de base est la plus simple possible : la **première** ligne cochable
+ * en descendant l'écran. Elle suit l'appariement par rang (`buildLines`), donc un
+ * échauffement passe avant les séries de travail du même exercice.
+ *
+ * Un groupe lié fait exception, et c'est le sens même du superset : ses membres
+ * s'**alternent**. À l'intérieur d'un groupe, la cible est donc le membre qui a
+ * le moins de séries faites — A1, puis A2, puis A1 de nouveau — et les égalités
+ * repartent du premier membre. Sans ça, la barre proposerait la deuxième série
+ * de A1 pendant qu'on est sur A2, c'est-à-dire l'inverse de ce qui se passe.
+ *
+ * Un exercice **sauté** n'est jamais une cible : il est réglé, pas en attente.
+ * Un exercice hors programme est son propre groupe — il ne s'alterne avec rien.
+ */
+export function nextTarget(program: SessionProgram): SessionTarget | null {
+  const pools: SessionExercise[][] = [
+    ...program.blocks.flatMap((block) => block.groups.map((group) => group.exercises)),
+    ...program.extras.map((exercise) => [exercise]),
+  ];
+
+  for (const pool of pools) {
+    const candidates = pool
+      .map(pendingOf)
+      .filter((candidate): candidate is SessionTarget => candidate !== null);
+
+    if (candidates.length === 0) {
+      continue;
+    }
+
+    // Comparaison stricte : à nombre de séries égal, le premier membre du groupe
+    // garde la main, ce qui donne A1 avant A2 au premier tour.
+    return candidates.reduce((best, candidate) =>
+      candidate.exercise.done < best.exercise.done ? candidate : best,
+    );
+  }
+
+  return null;
+}
+
+/** Ce que cet exercice-ci attend, ou `null` s'il n'attend plus rien. */
+function pendingOf(exercise: SessionExercise): SessionTarget | null {
+  if (exercise.skipped) {
+    return null;
+  }
+
+  if (exercise.lines === null) {
+    return exercise.logged === null ? { exercise, line: null } : null;
+  }
+
+  const line = exercise.lines.find((candidate) => candidate.actionable) ?? null;
+
+  return line === null ? null : { exercise, line };
+}
+
 /** Tous les exercices d'un déroulé, blocs puis hors programme, dans l'ordre affiché. */
 export function allExercises(program: SessionProgram): SessionExercise[] {
   return [

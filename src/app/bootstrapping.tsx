@@ -106,10 +106,10 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center' },
   center: { alignItems: 'center', gap: space[4], paddingHorizontal: space[8] },
   title: { ...text.sectionTitle, color: colors.text, textAlign: 'center' },
-  hint: { ...text.caption, color: colors.textFaint, textAlign: 'center' },
+  hint: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
   // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
   // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
   // deux ne veulent pas dire la même chose — l'un est l'accent, l'autre l'échec.
-  error: { ...text.body, color: colors.statusMissed, textAlign: 'center' },
+  error: { ...text.body, color: colors.primaryOnTint, textAlign: 'center' },
   actions: { marginTop: space[4], gap: space[3], alignSelf: 'stretch' },
 });

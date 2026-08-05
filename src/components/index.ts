@@ -17,6 +17,7 @@ export { Fault, type FaultProps } from './Fault';
 export { Field, type FieldProps } from './Field';
 export { FilterChip, type FilterChipProps } from './FilterChip';
 export { Icon, type IconName, type IconProps } from './Icon';
+export { useKeyboardOverlap, type KeyboardOverlap } from './keyboard';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
 export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';

@@ -171,13 +171,40 @@ engine publishes a status (`useSyncStatus()`) and screens read the local DB, whi
 - **Offline is the nominal state, not a fault.** The banner is mounted once, in `app/(tabs)/_layout.tsx`, above
   the tab bar — never in a live workout. It reads `useOfflineNotice()` (`@/sync`), which crosses the phone's
   network state with the engine's `offline` flag because "no network" and "server not answering" don't get fixed
-  the same way. Faint ink, no red, no target, `accessibilityLiveRegion="polite"`.
+  the same way. Secondary ink, no red, no target, `accessibilityLiveRegion="polite"`.
 - **A white screen is impossible.** `app/_layout.tsx` exports an `ErrorBoundary`; errors from any route climb to
-  it. Its exit doors are `retry()` and a fallback that navigates home *before* re-arming (retrying in place
+  it. Its exit doors are `retry()` and a fallback that navigates home _before_ re-arming (retrying in place
   replays the same error). It renders `Fault`, shared with the migrations guard.
 - **Every list has a drawn empty state** (`EmptyState`, `compact` inside a sheet/section/card). Two exceptions are
   deliberate and documented in the ticket: the settings queue says its emptiness in its summary row, and a missing
   exercise history is "first time", not an empty list.
+
+### Gym ergonomics: one primary target, at the bottom, always (KL-39)
+
+The use context is standing, one-handed, greasy screen, sometimes in the dark. Four rules fall out of it, and
+none of them is cosmetic.
+
+- **The live workout's only primary action lives in `SessionDock`**, pinned to the bottom of the screen. It
+  stacks the rest strip (when one runs) and then the **validate row, always last** — so the main target sits at
+  a constant distance from the edge whether resting or not. It offers `nextTarget()` (`@/session`, pure and
+  tested): the first checkable set in reading order, except inside a superset, where members **alternate** by
+  fewest logged sets. No target left means the row becomes the close button, which is why the in-flow "Terminer
+  la séance" button is `secondary` — one primary per screen. Set rows stay individually tappable; the dock is
+  the short path, not a replacement for reading the table.
+- **The current set is never lost**: it's written in the dock, and the scroll view catches up to it via
+  `useRevealTarget` when the current _exercise_ changes (never between two sets of the same one — a screen that
+  re-centres under your thumb is worse than the problem). Measurement is `measureInWindow` on the target and on
+  the scroll frame, not a sum of nested `onLayout` offsets.
+- **Colour carries an AA floor, and two rules enforce it.** Faint ink (`textFaint`) carries **no text anywhere**
+  — it fails on paper (3.4:1) and on `fill` (4.2:1), and a token whose validity depends on the surface it lands
+  on is a trap. Red that is **written** is `primaryOnTint`; full `primary`/`statusMissed` stay for fills, dots
+  and rules, where 3:1 is the bar. `src/theme/__tests__/contrast.test.ts` holds the declared ink/surface pairs
+  and derives each threshold from the **typographic role** — a new pair is added by hand when introduced.
+- **Motion and keyboard are measured, not assumed.** `useReducedMotion()` (`@/theme`) gates the only two
+  movements in the app (a sheet rising, the reveal scroll). `useKeyboardOverlap()` (`@/components`) returns
+  `host height − keyboard top`, not the keyboard height: an Android window may resize under the keyboard or
+  not, and the same formula is right either way. Where it applies, the bottom safe-area inset **stops being
+  added** — the keyboard already covers the gesture bar.
 
 ### Tests run against a real SQLite and a real API client (KL-36)
 
