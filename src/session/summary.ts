@@ -18,15 +18,30 @@
  * d'axes, même vocabulaire d'états. Un mobile qui dirait « allégé » là où le web
  * dit « tenu » vaudrait moins que pas de résumé du tout.
  *
- * ## Les deux règles héritées du serveur, à ne pas casser
+ * ## Les trois règles héritées du serveur, à ne pas casser
  *
  * 1. **L'échauffement n'est pas du volume** (`SetType::countsAsWorking`), et un
  *    exercice **sauté** n'apporte rien — même s'il porte des séries abandonnées.
  *    Il est compté à part, comme `LogMetrics` le fait.
- * 2. **Un axe muet d'un côté ne tranche jamais** (KL-05, décision 4). Comparer
+ * 2. **Une série non chiffrée n'est pas du volume non plus** (`isMeasured()`,
+ *    pendant de `LoggedSet::countsAsWorking()` côté Symfony) : cochée sans
+ *    répétition ni durée, elle a eu lieu mais ne mesure rien. Elle est comptée à
+ *    part, comme l'échauffement, et jamais mêlée aux séries de travail — sinon
+ *    l'écran de clôture annoncerait un compte que `/schedule/{id}` démentirait
+ *    dès la synchro.
+ * 3. **Un axe muet d'un côté ne tranche jamais** (KL-05, décision 4). Comparer
  *    une charge à une absence de charge dirait « allégé » d'une série au poids du
  *    corps. D'où des totaux à `null` — « personne n'a rien dit de cet axe » — et
  *    non à zéro.
+ *
+ * ## La frontière de la règle 2 : `exerciseOutcome()` ne l'applique PAS
+ *
+ * Le verdict d'un exercice compare ce qui a été **fait** à ce qui était prévu,
+ * exactement comme `LogComparator` côté serveur — et une série cochée a été
+ * faite. L'écarter du total `sets` ferait lire « allégé » une séance tenue. La
+ * règle du volume vaut donc pour les compteurs du résumé, pas pour la cascade
+ * d'écarts : les deux services divergent là-dessus des deux côtés, et
+ * ensemble.
  *
  * ## Ce qui diverge volontairement du serveur : la durée
  *
@@ -90,6 +105,12 @@ export interface SessionSummary {
   workingSets: number;
   /** Séries d'échauffement consignées, comptées à part et jamais mêlées au volume. */
   warmupSets: number;
+  /**
+   * Séries de travail cochées sans aucune valeur (ni répétition ni durée).
+   * Comptées à part pour que l'écran puisse le dire : sans ça, une série cochée
+   * disparaîtrait du décompte sans explication.
+   */
+  unmeasuredSets: number;
   /** Séries de travail que le programme réclamait, exercices sautés exclus. */
   plannedWorkingSets: number;
   /** Exercices portant du réalisé, sautés exclus — comme `LogMetrics`. */
@@ -133,6 +154,7 @@ export function buildSessionSummary(
   let tonnageKg = 0;
   let workingSets = 0;
   let warmupSets = 0;
+  let unmeasuredSets = 0;
   let plannedWorkingSets = 0;
   let exerciseCount = 0;
   let skipped = 0;
@@ -172,6 +194,15 @@ export function buildSessionSummary(
         continue;
       }
 
+      if (!isMeasured(logged)) {
+        // Cochée, mais rien à mesurer : elle se dit à part (règle 2). La charge
+        // seule ne la sauve pas — 140 kg × 0 rep, c'est une barre qu'on n'a pas
+        // soulevée, et le serveur la laissera dehors lui aussi.
+        unmeasuredSets += 1;
+
+        continue;
+      }
+
       workingSets += 1;
 
       if (logged.reps !== null && logged.weightKg !== null) {
@@ -185,12 +216,30 @@ export function buildSessionSummary(
     tonnageKg,
     workingSets,
     warmupSets,
+    unmeasuredSets,
     plannedWorkingSets,
     exerciseCount,
     skipped,
     outcomes,
     counts,
   };
+}
+
+/**
+ * La série mesure-t-elle quelque chose ?
+ *
+ * Au moins une répétition, ou au moins une seconde. C'est le pendant exact de
+ * `LoggedSet::countsAsWorking()` côté Symfony (moins le test de type, fait par
+ * l'appelant qui a déjà mis l'échauffement de côté), et les deux doivent bouger
+ * ensemble : un compte de séries qui diverge entre l'écran de clôture et
+ * `/schedule/{id}` se verrait dès la première synchro.
+ *
+ * La charge n'entre pas dans le test, volontairement : une barre chargée et zéro
+ * répétition n'est pas du travail, c'est une intention. Une série en durée, elle,
+ * n'a pas de répétitions et reste du volume — d'où le `||` et non un `&&`.
+ */
+export function isMeasured(set: Pick<SetLike, 'reps' | 'durationSeconds'>): boolean {
+  return (set.reps ?? 0) > 0 || (set.durationSeconds ?? 0) > 0;
 }
 
 /**
@@ -296,7 +345,9 @@ type SetLike = { reps: number | null; weightKg: number | null; durationSeconds: 
  * trois mêmes valeurs brutes, seule leur origine diffère.
  *
  * `sets` est le seul total qui n'est jamais muet : zéro série faite est une
- * information, pas une absence.
+ * information, pas une absence. Il compte aussi les séries **non chiffrées**, à
+ * l'inverse des compteurs du résumé — c'est la frontière décrite en tête de
+ * fichier : ici on mesure ce qui a été fait, pas ce qui a été soulevé.
  */
 function totals(sets: (SetLike | null)[]): Totals {
   return {

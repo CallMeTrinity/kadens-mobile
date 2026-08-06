@@ -260,6 +260,10 @@ function leaveToToday(): void {
  * ceux du **travail** : l'échauffement est exclu ici comme partout ailleurs dans
  * le projet, et il se dit en légende plutôt que de gonfler un chiffre qui se
  * compare d'une séance à l'autre.
+ *
+ * Une série cochée sans aucune valeur suit exactement le même traitement que
+ * l'échauffement : hors du chiffre, dite en légende. Sans cette mention elle
+ * disparaîtrait du décompte sans explication, alors qu'on vient de la cocher.
  */
 function Metrics({
   summary,
@@ -271,8 +275,10 @@ function Metrics({
   endedAt: string | null;
 }) {
   const planned = summary.plannedWorkingSets;
+  const blank = summary.unmeasuredSets;
   const legend = [
     summary.warmupSets > 0 ? `+ ${summary.warmupSets} d’échauffement` : null,
+    blank > 0 ? `+ ${blank} sans valeur` : null,
     planned > 0 ? `sur ${planned} prévue${planned > 1 ? 's' : ''}` : null,
   ]
     .filter((part) => part !== null)

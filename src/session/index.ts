@@ -158,7 +158,7 @@ export {
 } from './rest';
 export type { RestState } from './rest';
 
-export { buildSessionSummary, elapsedSeconds, exerciseOutcome } from './summary';
+export { buildSessionSummary, elapsedSeconds, exerciseOutcome, isMeasured } from './summary';
 export type {
   DeviationAxis,
   DeviationState,
