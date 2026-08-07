@@ -3,6 +3,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import type { BootstrapPayload, ScheduledWorkoutPayload } from '@/api';
 import {
   db,
+  DEFAULT_LANGUAGE,
   exercise,
   exerciseHistory,
   loggedExercise,
@@ -90,6 +91,18 @@ export function applyBootstrap(payload: BootstrapPayload): PullReport {
     // qui promet des données jamais arrivées.
     patchSyncStateIn(tx, {
       serverTime: payload.serverTime,
+      // La langue du compte s'écrit **avec** la bibliothèque qu'elle gouverne :
+      // les `name_en` qui viennent d'arriver et la préférence qui dit lequel des
+      // deux libellés afficher forment un seul fait. Écrire l'une sans l'autre
+      // ouvrirait une fenêtre où l'écran lit une langue que la table ne porte
+      // pas encore.
+      //
+      // Le repli couvre un cas de déploiement réel et pas une paranoïa de type :
+      // une app à jour qui parle à un serveur qui ne l'est pas encore reçoit une
+      // réponse **sans** ce champ. `undefined` remonterait alors jusqu'au
+      // `ON CONFLICT DO UPDATE`, où il ne veut rien dire ; le français est le
+      // même défaut que la colonne serveur.
+      exerciseLanguage: payload.exerciseLanguage ?? DEFAULT_LANGUAGE,
       windowFrom: payload.window.from,
       windowTo: payload.window.to,
       lastPulledAt: nowIso(),
@@ -143,6 +156,7 @@ function upsertExercises(tx: Transaction, payload: BootstrapPayload): number {
         payload.exercises.slice(i, i + BATCH).map((row) => ({
           id: row.id,
           name: row.name,
+          nameEn: row.nameEn,
           description: row.description,
           activity: row.activity,
           targetAreas: row.targetAreas,
@@ -155,6 +169,7 @@ function upsertExercises(tx: Transaction, payload: BootstrapPayload): number {
         target: exercise.id,
         set: {
           name: sql`excluded.name`,
+          nameEn: sql`excluded.name_en`,
           description: sql`excluded.description`,
           activity: sql`excluded.activity`,
           targetAreas: sql`excluded.target_areas`,

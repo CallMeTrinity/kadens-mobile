@@ -68,6 +68,8 @@ import type {
   SetType,
 } from '@/db';
 
+import { EMPTY_NAME_BOOK, referenceLabel, type ExerciseNameBook } from './naming';
+
 /** Les valeurs d'une série, prescrites ou réalisées. Brutes : kg, secondes. */
 export interface SetValues {
   reps: number | null;
@@ -182,11 +184,18 @@ export interface SessionProgram {
  * `loggedSets` arrive **trié par position** (`loggedSetsOfWorkoutQuery`) : c'est
  * l'ordre dans lequel les séries ont été faites, et c'est celui qui alimente les
  * deux files d'appariement.
+ *
+ * `names` est l'annuaire des libellés de la bibliothèque locale, dans la langue
+ * du compte (`naming.ts`). Son défaut — l'annuaire **vide** — n'est pas un mode
+ * dégradé qu'on subit : c'est exactement l'état d'une séance dont les exercices
+ * ont quitté la bibliothèque, et il retombe alors sur les noms transportés, ce
+ * que faisait tout le fichier avant qu'il y ait deux langues.
  */
 export function buildProgram(
   blocks: PrescribedBlock[],
   loggedExercises: LoggedExerciseRow[],
   loggedSets: LoggedSetRow[],
+  names: ExerciseNameBook = EMPTY_NAME_BOOK,
 ): SessionProgram {
   const setsByExercise = new Map<number, LoggedSetRow[]>();
 
@@ -223,6 +232,7 @@ export function buildProgram(
         position,
         logged,
         logged ? (setsByExercise.get(logged.id) ?? []) : [],
+        names,
       );
 
       position += 1;
@@ -253,7 +263,7 @@ export function buildProgram(
   const extras: SessionExercise[] = loggedExercises
     .filter((logged) => !matched.has(logged.id))
     .map((logged) =>
-      buildExercise(null, logged.position, logged, setsByExercise.get(logged.id) ?? []),
+      buildExercise(null, logged.position, logged, setsByExercise.get(logged.id) ?? [], names),
     );
 
   return { blocks: sessionBlocks, extras, prescribedCount: position, done, total };
@@ -264,6 +274,7 @@ function buildExercise(
   position: number,
   logged: LoggedExerciseRow | null,
   sets: LoggedSetRow[],
+  names: ExerciseNameBook,
 ): SessionExercise {
   const skipped = logged?.skipped ?? false;
   // Le réalisé porte-t-il un autre exercice que le prescrit ? On compare les
@@ -284,7 +295,7 @@ function buildExercise(
     prescribed,
     position,
     logged,
-    name: exerciseName(prescribed, logged, substituted),
+    name: exerciseName(prescribed, logged, substituted, names),
     substituted,
     lines,
     skipped,
@@ -323,21 +334,30 @@ function buildExercise(
 /**
  * Le nom affiché.
  *
- * Le prescrit prime tant qu'il n'a pas été remplacé : c'est un nom **vivant**, que
- * le pull rafraîchit, là où `exerciseName` est un snapshot pris au moment du log.
- * Dès qu'il y a remplacement — ou qu'il n'y a pas de prescrit — c'est le réalisé
- * qui dit ce qui a été fait.
+ * Deux questions, dans cet ordre. **Laquelle des deux moitiés parle** : le
+ * prescrit prime tant qu'il n'a pas été remplacé ; dès qu'il y a remplacement —
+ * ou qu'il n'y a pas de prescrit — c'est le réalisé qui dit ce qui a été fait.
+ * Puis **sous quel libellé** : la bibliothèque locale d'abord, dans la langue du
+ * compte (`naming.ts`), et le nom transporté seulement si l'exercice n'y est
+ * plus. Les deux noms qui voyagent — `prescribed.name` et `logged.exerciseName`
+ * — sont français par construction : le premier est le nom vivant à l'heure du
+ * pull, le second un snapshot pris à la séance.
  */
 function exerciseName(
   prescribed: PrescribedExerciseLine | null,
   logged: LoggedExerciseRow | null,
   substituted: boolean,
+  names: ExerciseNameBook,
 ): string {
   if (substituted || prescribed === null) {
-    return logged?.exerciseName ?? 'Exercice';
+    return referenceLabel(names, logged?.exerciseId, logged?.exerciseName ?? null) ?? 'Exercice';
   }
 
-  return prescribed.name ?? logged?.exerciseName ?? 'Exercice retiré de la bibliothèque';
+  return (
+    referenceLabel(names, prescribed.exerciseId, prescribed.name) ??
+    logged?.exerciseName ??
+    'Exercice retiré de la bibliothèque'
+  );
 }
 
 /**
@@ -629,6 +649,40 @@ export function exerciseIdsOf(program: SessionProgram): number[] {
 
     if (id !== null) {
       ids.add(id);
+    }
+  }
+
+  return [...ids].sort((a, b) => a - b);
+}
+
+/**
+ * Les exercices de bibliothèque que la séance référence, **avant** que le
+ * déroulé soit construit.
+ *
+ * Elle existe parce que le déroulé a besoin des libellés pour se construire, et
+ * qu'`exerciseIdsOf` les lit sur un déroulé déjà bâti : le construire une
+ * première fois sans les noms pour connaître ses identifiants serait tourner en
+ * rond. Elle lit donc les deux sources brutes — le programme descendu et le
+ * réalisé écrit — et rend la même chose, triée et dédupliquée pour la même
+ * raison (c'est une clé de dépendance).
+ */
+export function referencedExerciseIds(
+  blocks: PrescribedBlock[],
+  loggedExercises: LoggedExerciseRow[],
+): number[] {
+  const ids = new Set<number>();
+
+  for (const block of blocks) {
+    for (const prescribed of block.exercises) {
+      if (prescribed.exerciseId !== null) {
+        ids.add(prescribed.exerciseId);
+      }
+    }
+  }
+
+  for (const logged of loggedExercises) {
+    if (logged.exerciseId !== null) {
+      ids.add(logged.exerciseId);
     }
   }
 

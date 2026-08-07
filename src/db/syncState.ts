@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 
 import { db, type Writer } from './client';
 import { SYNC_STATE_ID, syncState, type SyncStateRow } from './schema';
+import type { ExerciseLanguage } from './types';
 
 /**
  * L'accès à la ligne unique de `sync_state`.
@@ -17,6 +18,15 @@ import { SYNC_STATE_ID, syncState, type SyncStateRow } from './schema';
  * la fenêtre et des deux dates ; l'appairage (KL-48) est le seul écrivain
  * d'`apiUrl`.
  */
+
+/**
+ * La langue d'affichage tant qu'aucun bootstrap n'a abouti.
+ *
+ * Elle est ici, avec la colonne qui la porte, et non dans le domaine qui la lit :
+ * c'est le défaut d'une valeur **descendue**, et le pull en a besoin sans pouvoir
+ * importer `@/session` (qui importe déjà `@/sync`).
+ */
+export const DEFAULT_LANGUAGE: ExerciseLanguage = 'fr';
 
 /** La ligne d'état, ou `null` tant qu'aucune synchronisation n'a eu lieu. */
 export async function getSyncState(): Promise<SyncStateRow | null> {

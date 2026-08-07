@@ -124,6 +124,27 @@ There's no "modified locally" flag on `scheduledWorkout` — that fact is alread
 pending workout has a row there). This is why push-before-pull is non-negotiable (see below): two sources for the
 same fact would eventually disagree.
 
+### Exercise names: two labels stored, one place that picks (`src/session/naming.ts`)
+
+An exercise carries a French name and an optional English one (`nameEn`, null when the French name _is_ the
+English one — "Dips", "Fartlek"), and the **account** says which to read (`syncState.exerciseLanguage`, pulled with
+the library it governs). `naming.ts` is the mobile twin of the server's `ExerciseNaming`, and the same rule holds:
+a component that writes `row.name` bypasses the preference.
+
+- **Both labels are stored, never just the current one.** `?since` only slims the library; keeping the resolved
+  label would freeze every row a delta doesn't re-send in the old language.
+- **The living name wins over the frozen copy.** The program and the log each carry a name (French by
+  construction — one is the live name at pull time, the other a snapshot taken during the workout). The session
+  re-resolves through `exerciseId` against the local library and only falls back to the transported name when the
+  exercise has left it. Renaming an exercise therefore renames it in history — same accepted consequence as the web.
+- **What gets frozen takes the canonical name.** `loggedExercise.exerciseName` is written from the library row
+  (`libraryReference`), never from the displayed label: a snapshot carries one language and it travels to the
+  server.
+- **Search reads both names, sorting reads the displayed one.** `toOptions()` resolves label, search text and
+  order in one pass, per language change — not per keystroke.
+- The preference is **read-only here** (shown in the settings "Compte" card); it is set in the web app's
+  `/profile/settings`.
+
 ### Sync engine: push always before pull, one cycle at a time
 
 `syncNow(trigger)` in `src/sync/engine.ts` (also extensively commented) never throws and never blocks the UI —

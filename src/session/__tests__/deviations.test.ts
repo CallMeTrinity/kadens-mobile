@@ -333,6 +333,18 @@ describe('addExercise', () => {
     expect(extras[0].logged?.sourcePrescribedId).toBeNull();
   });
 
+  it('fige le nom canonique, pas le libellé qu’on avait sous les yeux', () => {
+    openStrengthWorkout();
+
+    // Ce que le sélecteur affichait : le compte lit en anglais.
+    addExercise(UUID, { id: 202, name: 'Machine chest press' }, programOf(UUID).prescribedCount);
+
+    // Ce qui se fige : le nom de la bibliothèque. Un snapshot ne porte qu'une
+    // langue, et il part au serveur — de l'anglais figé là ressortirait dans le
+    // réalisé d'un compte qui rebascule en français.
+    expect(programOf(UUID).extras[0].logged?.exerciseName).toBe('Développé guidé');
+  });
+
   it('naît sans série, et le nettoyage l’épargne', () => {
     openStrengthWorkout();
     addExercise(UUID, { id: 202, name: 'Développé guidé' }, programOf(UUID).prescribedCount);

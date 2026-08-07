@@ -3,6 +3,7 @@ import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqli
 
 import type {
   ActivityType,
+  ExerciseLanguage,
   MutationPayload,
   MutationType,
   PerformanceBest,
@@ -72,6 +73,17 @@ import type {
 export const exercise = sqliteTable('exercise', {
   id: integer('id').primaryKey(),
   name: text('name').notNull(),
+  /**
+   * Le nom anglais. **Nul quand le français EST déjà l'anglais** (« Dips »,
+   * « Fartlek ») : c'est une donnée métier, pas une traduction, et un doublon à
+   * l'identique serait du bruit dans la recherche.
+   *
+   * Les deux noms sont stockés, jamais un seul : la langue est une préférence
+   * de compte qui peut changer entre deux pulls, alors que `?since` n'allège
+   * la bibliothèque que de ce qui a bougé. Ne garder que le libellé courant
+   * laisserait toutes les autres lignes figées dans l'ancienne langue.
+   */
+  nameEn: text('name_en'),
   description: text('description'),
   activity: text('activity').$type<ActivityType>().notNull(),
   /** Liste de `TargetArea`. Toujours un tableau, jamais `null` — l'API garantit `[]`. */
@@ -242,6 +254,18 @@ export const syncState = sqliteTable(
     windowTo: text('window_to'),
     lastPulledAt: text('last_pulled_at'),
     lastPushedAt: text('last_pushed_at'),
+
+    /**
+     * La langue d'affichage des noms d'exercices, telle que le **compte** la
+     * règle sur le web. Elle est ici et non dans `preference` justement parce
+     * qu'elle n'appartient pas à l'appareil : c'est une valeur descendue, au
+     * même titre que la fenêtre ou le plancher de version, et la ranger avec les
+     * réglages locaux laisserait croire qu'on peut la changer d'ici.
+     *
+     * Nulle tant qu'aucun bootstrap n'a abouti — le libellé retombe alors sur le
+     * français, comme un lecteur sans compte côté serveur.
+     */
+    exerciseLanguage: text('exercise_language').$type<ExerciseLanguage>(),
 
     // --- Ce que le serveur attend comme version d'app (KL-43) ---------------
     //

@@ -29,6 +29,13 @@
       "when": 1785940285760,
       "tag": "0003_app_version",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786052371532,
+      "tag": "0004_exercise_language",
+      "breakpoints": true
     }
   ]
 }

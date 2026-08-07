@@ -4,8 +4,16 @@ import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 're
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
 import { Button, Card, Chip, Header, NumberStepper } from '@/components';
-import { clearDatabase, localDate, patchPreferences, seedDemo } from '@/db';
-import { dayOffset, REST_STEP, shortDate, startRest, usePreferences, useToday } from '@/session';
+import { clearDatabase, localDate, patchPreferences, seedDemo, type ExerciseLanguage } from '@/db';
+import {
+  dayOffset,
+  REST_STEP,
+  shortDate,
+  startRest,
+  useExerciseLanguage,
+  usePreferences,
+  useToday,
+} from '@/session';
 import {
   MAX_ATTEMPTS,
   rearmExhausted,
@@ -88,6 +96,7 @@ export default function SettingsScreen() {
 function AccountCard() {
   const session = useSession();
   const queue = useMutationQueue();
+  const language = useExerciseLanguage();
 
   useCompletedIdentity(session.user === null);
 
@@ -115,6 +124,12 @@ function AccountCard() {
         <Row label="Compte" value={session.user?.email ?? 'connu au prochain passage en ligne'} />
         <Row label="Serveur" value={getApiBaseUrl() ?? 'aucun serveur appairé'} />
         <Row label="Appareil" value={deviceName()} />
+        {/* En lecture seule, et dans la carte du **compte** et non celles de
+            l'appareil : la langue des noms d'exercices se règle sur le site, le
+            téléphone ne fait que la suivre. Elle est écrite ici parce qu'un
+            écran soudain en anglais se lit comme un bug tant qu'on ne sait pas
+            d'où ça vient. */}
+        <Row label="Noms d’exercices" value={`${languageLabel(language)}, réglé sur le site`} />
 
         {/* Fantôme : se déconnecter n'est pas ce qu'on vient faire ici, et le
             rouge est réservé à l'action primaire (règle 2). La confirmation
@@ -548,6 +563,11 @@ function Row({ label, value, mono = false }: { label: string; value: string; mon
  * `toLocaleString` qui retombe sur l'anglais donnerait « Aug 4 » au milieu d'une
  * identité qui n'a qu'une langue.
  */
+/** « Français » / « Anglais ». Deux valeurs, pas de table : l'enum en a deux. */
+function languageLabel(language: ExerciseLanguage): string {
+  return language === 'en' ? 'Anglais' : 'Français';
+}
+
 function when(iso: string | null, today: string): string {
   if (iso === null) {
     return 'jamais';

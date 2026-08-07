@@ -62,6 +62,7 @@ const EXERCISES = [
   {
     id: 106,
     name: 'Développé couché',
+    nameEn: 'Bench press',
     description: 'Barre au niveau des pectoraux, coudes à 45°, pause à la poitrine.',
     activity: 'gym' as const,
     targetAreas: ['chest', 'triceps', 'shoulders'] as const,
@@ -70,6 +71,7 @@ const EXERCISES = [
   {
     id: 107,
     name: 'Développé incliné à la machine convergente',
+    nameEn: 'Converging machine incline press',
     description: null,
     activity: 'gym' as const,
     targetAreas: ['chest', 'shoulders'] as const,
@@ -78,6 +80,7 @@ const EXERCISES = [
   {
     id: 112,
     name: 'Tractions pronation',
+    nameEn: 'Pull-up',
     description: 'Amplitude complète, bras tendus en bas.',
     activity: 'gym' as const,
     targetAreas: ['back', 'biceps'] as const,
@@ -86,6 +89,7 @@ const EXERCISES = [
   {
     id: 118,
     name: 'Rowing barre buste penché',
+    nameEn: 'Bent-over barbell row',
     description: null,
     activity: 'gym' as const,
     targetAreas: ['back', 'lower_back', 'biceps'] as const,
@@ -94,6 +98,7 @@ const EXERCISES = [
   {
     id: 124,
     name: 'Squat barre haute',
+    nameEn: 'High-bar squat',
     description: null,
     activity: 'gym' as const,
     targetAreas: ['quadriceps', 'glutes', 'lower_back'] as const,
@@ -102,6 +107,7 @@ const EXERCISES = [
   {
     id: 131,
     name: 'Gainage ventral',
+    nameEn: 'Plank',
     description: null,
     activity: 'gym' as const,
     targetAreas: ['abs', 'obliques'] as const,
@@ -112,6 +118,7 @@ const EXERCISES = [
     // « mon exercice » sur autre chose qu'un cas théorique.
     id: 402,
     name: 'Développé couché prise serrée (barre EZ)',
+    nameEn: 'Close-grip bench press (EZ bar)',
     description: 'Ma variante, coudes au corps.',
     activity: 'gym' as const,
     targetAreas: ['triceps', 'chest'] as const,
@@ -121,6 +128,8 @@ const EXERCISES = [
     // Du cardio : il s'affiche, il se coche, il ne se saisit pas.
     id: 210,
     name: 'Sortie footing',
+    // Pas de nameEn : rien à traduire qui vaille la peine d'être cherché.
+    nameEn: null,
     description: null,
     activity: 'running' as const,
     targetAreas: ['full_body'] as const,
@@ -331,6 +340,7 @@ export function seedDemo(): void {
         EXERCISES.map((e) => ({
           id: e.id,
           name: e.name,
+          nameEn: e.nameEn,
           description: e.description,
           activity: e.activity,
           targetAreas: [...e.targetAreas],

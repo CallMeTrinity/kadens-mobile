@@ -56,8 +56,8 @@ import {
   dropEmptyLoggedExercise,
   ensureLoggedExercise,
   isOpen,
+  libraryReference,
   nextExercisePosition,
-  referenceableExerciseId,
 } from './writes';
 
 /** Ce qu'une série réalisée porte de saisissable. Brut : kg, secondes. */
@@ -69,6 +69,11 @@ export interface LoggedSetValues extends SetValues {
 /** Un exercice de la bibliothèque locale, tel que le sélecteur le rend. */
 export interface ExerciseRef {
   id: number;
+  /**
+   * Le libellé qu'on avait sous les yeux en choisissant — donc dans la langue du
+   * compte. Il ne sert que de **repli** : le snapshot écrit en base prend le nom
+   * canonique de la bibliothèque (`referenceValues`, plus bas).
+   */
   name: string;
 }
 
@@ -387,12 +392,20 @@ export function removeExercise(scheduledUuid: string, exercise: SessionExercise)
  *
  * Le nom est un **snapshot** : il part toujours au serveur, qui refuserait une
  * ligne sans référence ni nom. La référence, elle, passe par la vérification de
- * `referenceableExerciseId` — même si le choix vient de la bibliothèque locale,
- * c'est la garde qui empêche une clé étrangère de faire échouer l'insertion.
+ * `libraryReference` — même si le choix vient de la bibliothèque locale, c'est la
+ * garde qui empêche une clé étrangère de faire échouer l'insertion.
+ *
+ * Le nom vient de la **bibliothèque**, pas du libellé qu'on avait sous les yeux
+ * en choisissant : le sélecteur affiche l'anglais quand le compte le demande, et
+ * un snapshot ne porte qu'une langue (voir `libraryReference`). Le libellé reçu
+ * ne sert que lorsque l'exercice n'est plus référençable — c'est alors le seul
+ * nom qu'on ait.
  */
 function referenceValues(tx: Writer, reference: ExerciseRef) {
+  const known = libraryReference(tx, reference.id);
+
   return {
-    exerciseId: referenceableExerciseId(tx, reference.id),
-    exerciseName: reference.name,
+    exerciseId: known.id,
+    exerciseName: known.name ?? reference.name,
   };
 }

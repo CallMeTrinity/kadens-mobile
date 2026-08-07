@@ -53,6 +53,7 @@ export function exercisePayload(
   return {
     id,
     name: `Exercice ${id}`,
+    nameEn: null,
     description: null,
     activity: 'gym',
     targetAreas: ['chest'],
@@ -138,6 +139,7 @@ export function bootstrapPayload(overrides: Partial<BootstrapPayload> = {}): Boo
   return {
     serverTime: '2026-08-04T09:00:00Z',
     since: null,
+    exerciseLanguage: 'fr',
     window: { from: dayFromNow(-30), to: dayFromNow(14) },
     exercises: [exercisePayload(101)],
     schedule: [],

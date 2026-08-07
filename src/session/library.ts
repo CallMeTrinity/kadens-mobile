@@ -43,17 +43,68 @@
  * le même fait finissent par se contredire.
  */
 
-import type { ActivityType, TargetArea } from '@/db';
+import type { ActivityType, ExerciseLanguage, TargetArea } from '@/db';
+
+import { exerciseLabel, exerciseSearchText, type ExerciseNames } from './naming';
 
 /** Un exercice de la bibliothèque, tel que le sélecteur le montre. */
 export interface ExerciseOption {
   id: number;
+  /** Le libellé **affiché**, déjà résolu dans la langue du compte (`naming.ts`). */
   name: string;
+  /**
+   * Ce sur quoi la frappe mord : les **deux** noms, repliés une fois pour
+   * toutes. « incline bench » trouve « Développé incliné » sur un téléphone en
+   * français, et l'inverse — on cherche un mouvement dans la langue où on l'a
+   * appris, pas dans celle où l'app l'affiche.
+   *
+   * Précalculé et non replié à la frappe : `fold()` s'appliquerait sinon à toute
+   * la bibliothèque à chaque caractère tapé.
+   */
+  search: string;
   /** Exercice de l'app (par opposition à un exercice perso). Marqué à l'écran. */
   global: boolean;
   activity: ActivityType;
   /** Toujours un tableau, jamais `null` — l'API garantit `[]` (`db/schema.ts`). */
   targetAreas: TargetArea[];
+}
+
+/** Une ligne de la bibliothèque locale, telle que `exerciseLibraryQuery` la rend. */
+export type ExerciseRowForOption = ExerciseNames & {
+  id: number;
+  global: boolean;
+  activity: ActivityType;
+  targetAreas: TargetArea[];
+};
+
+/**
+ * Résout les libellés et **classe la liste**, une fois par changement de langue
+ * ou de bibliothèque — pas à chaque frappe.
+ *
+ * Le tri est ici et non en SQL parce qu'il suit le nom **affiché** : classer sur
+ * le français pendant qu'on lit l'anglais donnerait un ordre qui ne correspond à
+ * rien à l'écran. Il compare des chaînes **repliées**, jamais `localeCompare`,
+ * qui retomberait sur ICU — même raison que `searchExercises` plus bas.
+ */
+export function toOptions(
+  rows: ExerciseRowForOption[],
+  language: ExerciseLanguage,
+): ExerciseOption[] {
+  return rows
+    .map((row) => ({
+      id: row.id,
+      name: exerciseLabel(row, language),
+      search: fold(exerciseSearchText(row)),
+      global: row.global,
+      activity: row.activity,
+      targetAreas: row.targetAreas,
+    }))
+    .sort((a, b) => {
+      const left = fold(a.name);
+      const right = fold(b.name);
+
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
 }
 
 /**
@@ -132,13 +183,16 @@ export function fold(value: string): string {
 /**
  * Filtre la bibliothèque sur ce qui est tapé.
  *
- * Chaque **mot** du terme doit se retrouver dans le nom, dans n'importe quel
- * ordre : « couché barre » trouve « Développé couché à la barre ». Une recherche
- * par sous-chaîne entière ne le ferait pas, et c'est précisément la façon dont on
- * se souvient d'un nom d'exercice — par deux morceaux, rarement dans l'ordre.
+ * Chaque **mot** du terme doit se retrouver dans l'un des deux noms, dans
+ * n'importe quel ordre : « couché barre » trouve « Développé couché à la
+ * barre ». Une recherche par sous-chaîne entière ne le ferait pas, et c'est
+ * précisément la façon dont on se souvient d'un nom d'exercice — par deux
+ * morceaux, rarement dans l'ordre.
  *
  * À égalité, ce qui **commence** par le terme passe devant : « dips » doit sortir
- * « Dips » avant « Dips lestés à la ceinture ».
+ * « Dips » avant « Dips lestés à la ceinture ». Ce palier-là se juge sur le seul
+ * nom **affiché** : une entrée qui remonterait en tête à cause d'un libellé qu'on
+ * ne voit pas se lirait comme un tri cassé.
  */
 export function searchExercises(
   library: ExerciseOption[],
@@ -154,7 +208,7 @@ export function searchExercises(
 
   return library
     .map((option) => ({ option, folded: fold(option.name) }))
-    .filter(({ folded }) => words.every((word) => folded.includes(word)))
+    .filter(({ option }) => words.every((word) => option.search.includes(word)))
     .sort((a, b) => {
       const starts = Number(b.folded.startsWith(needle)) - Number(a.folded.startsWith(needle));
 

@@ -101,6 +101,12 @@ export function ensureLoggedExercise(
       // Le snapshot du nom, pris au moment du log. Il part **toujours** au
       // serveur, qui refuserait une ligne sans référence ni nom : c'est lui qui
       // garde le réalisé lisible quand l'exercice quitte la bibliothèque.
+      //
+      // C'est le nom **transporté par le programme**, donc le français, et non le
+      // libellé affiché : un snapshot ne porte qu'une langue, et l'écrire dans
+      // celle du téléphone laisserait de l'anglais figé dans le réalisé de
+      // quelqu'un qui lit en français. Tant que l'exercice existe, le libellé
+      // vivant prime de toute façon à l'affichage (`naming.ts`).
       exerciseName: prescribed.name ?? 'Exercice',
       sourcePrescribedId: prescribed.prescribedId,
       position: exercise.position,
@@ -129,17 +135,34 @@ export function ensureLoggedExercise(
  * une erreur de catégorie.
  */
 export function referenceableExerciseId(tx: Writer, exerciseId: number | null): number | null {
+  return libraryReference(tx, exerciseId).id;
+}
+
+/**
+ * La référence **et** le nom canonique d'un exercice de la bibliothèque locale.
+ *
+ * Le nom rendu est `exercise.name`, jamais le libellé affiché : c'est celui qui
+ * se fige dans un snapshot de réalisé, et un snapshot ne porte qu'une langue. Le
+ * figer dans celle du téléphone laisserait de l'anglais dans le réalisé d'un
+ * compte qui bascule ensuite en français — alors que la bibliothèque, elle, est
+ * francophone d'origine. L'affichage n'y perd rien : tant que l'exercice existe,
+ * c'est le libellé vivant qui prime (`naming.ts`).
+ */
+export function libraryReference(
+  tx: Writer,
+  exerciseId: number | null,
+): { id: number | null; name: string | null } {
   if (exerciseId === null) {
-    return null;
+    return { id: null, name: null };
   }
 
   const known = tx
-    .select({ id: exerciseTable.id })
+    .select({ id: exerciseTable.id, name: exerciseTable.name })
     .from(exerciseTable)
     .where(eq(exerciseTable.id, exerciseId))
     .get();
 
-  return known ? exerciseId : null;
+  return known ? { id: known.id, name: known.name } : { id: null, name: null };
 }
 
 /** La prochaine position libre dans un exercice réalisé. */

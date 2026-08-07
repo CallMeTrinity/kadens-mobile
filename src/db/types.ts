@@ -39,6 +39,16 @@ export type SetType = 'warmup' | 'normal' | 'degressive' | 'to_failure' | 'drop_
 
 export type ActivityType = 'gym' | 'running' | 'swimming' | 'cycling' | 'mobility' | 'other';
 
+/**
+ * La langue sous laquelle les **noms d'exercices** s'affichent.
+ *
+ * Ce n'est pas de l'i18n : l'app reste française en dur, seuls les noms
+ * d'exercices basculent — un mouvement de salle se pense souvent en anglais.
+ * La valeur appartient au **compte** et descend du bootstrap ; elle ne se règle
+ * pas ici, l'API n'ayant aucun moyen de la changer.
+ */
+export type ExerciseLanguage = 'fr' | 'en';
+
 export type TargetArea =
   | 'chest'
   | 'back'

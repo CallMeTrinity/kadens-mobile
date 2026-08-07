@@ -17,10 +17,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
 
 import {
+  DEFAULT_LANGUAGE,
   DEFAULT_PREFERENCES,
   localDate,
   type ActivityType,
   type ExerciseHistoryRow,
+  type ExerciseLanguage,
   type PreferenceRow,
   type ScheduledWorkoutRow,
   type TargetArea,
@@ -32,14 +34,18 @@ import {
   libraryActivities,
   libraryAreas,
   searchExercises,
+  toOptions,
   type ExerciseOption,
 } from './library';
-import { buildProgram, exerciseIdsOf, type SessionProgram } from './program';
+import { exerciseNameBook, type ExerciseNameBook } from './naming';
+import { buildProgram, exerciseIdsOf, referencedExerciseIds, type SessionProgram } from './program';
 import { elapsedSeconds } from './summary';
 import {
   dayCountsQuery,
   exerciseHistoryQuery,
+  exerciseLanguageQuery,
   exerciseLibraryQuery,
+  exerciseNamesQuery,
   loggedExercisesQuery,
   loggedSetCountsAllQuery,
   loggedSetCountsQuery,
@@ -144,6 +150,38 @@ export function useWorkout(uuid: string): ScheduledWorkoutRow | null | undefined
 }
 
 /**
+ * La langue d'affichage des noms d'exercices, telle que le compte la règle.
+ *
+ * `fr` tant qu'aucun bootstrap n'a abouti — la langue d'origine de la
+ * bibliothèque, jamais un trou. C'est le seul défaut de tout ce fichier qui ne
+ * vient pas d'une table locale : la valeur appartient au serveur, l'app ne la
+ * choisit pas.
+ */
+export function useExerciseLanguage(): ExerciseLanguage {
+  const { data } = useLiveQuery(exerciseLanguageQuery());
+
+  return data[0]?.language ?? DEFAULT_LANGUAGE;
+}
+
+/**
+ * L'annuaire des libellés des exercices donnés, dans la langue du compte
+ * (`naming.ts`).
+ *
+ * Même patron que `useSessionHistory` : la clé de dépendance est la liste
+ * d'identifiants **triée**, donc la requête ne se remonte que quand l'ensemble
+ * change, pas à chaque série cochée. La langue, elle, y entre aussi : c'est ce
+ * qui fait qu'une bascule faite sur le web repeint la séance ouverte au pull
+ * suivant, sans la rouvrir.
+ */
+export function useExerciseNames(exerciseIds: number[]): ExerciseNameBook {
+  const key = exerciseIds.join(',');
+  const language = useExerciseLanguage();
+  const { data } = useLiveQuery(exerciseNamesQuery(exerciseIds), [key]);
+
+  return useMemo(() => exerciseNameBook(data, language), [data, language]);
+}
+
+/**
  * Le déroulé d'une séance : son programme et son réalisé, croisés (KL-29).
  *
  * **Trois lectures vives et non une**, parce que `useLiveQuery` n'écoute que la
@@ -151,6 +189,11 @@ export function useWorkout(uuid: string): ScheduledWorkoutRow | null | undefined
  * réalisés quand on coche la première série de l'un d'eux, les séries à chaque
  * coche. Une requête jointe unique n'aurait été republiée que par sa table de
  * tête, et le déroulé serait resté figé sur les deux autres.
+ *
+ * S'y ajoute l'annuaire des libellés, quatrième lecture pour la même raison : les
+ * noms vivent dans `exercise`, que le prescrit ne fait que **référencer**. C'est
+ * lui qui décide sous quelle langue la séance s'écrit, et il prime sur les noms
+ * transportés par le programme, français par construction.
  *
  * Le croisement est mémoïsé : il est pur (`buildProgram`), et le refaire à chaque
  * rendu de l'écran ferait retomber tout le déroulé sur des objets neufs.
@@ -160,9 +203,13 @@ export function useSessionProgram(uuid: string): SessionProgram {
   const { data: exercises } = useLiveQuery(loggedExercisesQuery(uuid), [uuid]);
   const { data: sets } = useLiveQuery(loggedSetsOfWorkoutQuery(uuid), [uuid]);
 
+  const blocks = useMemo(() => snapshot[0]?.blocks ?? [], [snapshot]);
+  const ids = useMemo(() => referencedExerciseIds(blocks, exercises), [blocks, exercises]);
+  const names = useExerciseNames(ids);
+
   return useMemo(
-    () => buildProgram(snapshot[0]?.blocks ?? [], exercises, sets),
-    [snapshot, exercises, sets],
+    () => buildProgram(blocks, exercises, sets, names),
+    [blocks, exercises, sets, names],
   );
 }
 
@@ -223,9 +270,15 @@ export function useExerciseLibrary(
   area: TargetArea | null = null,
 ): ExerciseLibraryView {
   const { data } = useLiveQuery(exerciseLibraryQuery());
+  const language = useExerciseLanguage();
 
-  const activities = useMemo(() => libraryActivities(data), [data]);
-  const inActivity = useMemo(() => filterLibrary(data, activity, null), [data, activity]);
+  // Les libellés se résolvent **une fois**, à la lecture, jamais à la frappe :
+  // `toOptions` fait la langue, le texte cherché et le classement d'un coup, et
+  // tout ce qui suit travaille sur des chaînes déjà repliées.
+  const library = useMemo(() => toOptions(data, language), [data, language]);
+
+  const activities = useMemo(() => libraryActivities(library), [library]);
+  const inActivity = useMemo(() => filterLibrary(library, activity, null), [library, activity]);
   const areas = useMemo(() => libraryAreas(inActivity), [inActivity]);
   const scoped = useMemo(() => filterLibrary(inActivity, null, area), [inActivity, area]);
   const results = useMemo(() => searchExercises(scoped, term), [scoped, term]);

@@ -13,12 +13,17 @@
  * qu'elle était.
  */
 
+import { DEFAULT_LANGUAGE } from '@/db';
 import {
   allExercises,
   buildProgram,
+  exerciseLanguageQuery,
+  exerciseNameBook,
+  exerciseNamesQuery,
   loggedExercisesQuery,
   loggedSetsOfWorkoutQuery,
   prescribedSnapshotQuery,
+  referencedExerciseIds,
   withDraftSets,
   type SessionExercise,
   type SessionProgram,
@@ -26,11 +31,20 @@ import {
 } from '@/session';
 
 export function programOf(uuid: string): SessionProgram {
-  return buildProgram(
-    prescribedSnapshotQuery(uuid).all()[0]?.blocks ?? [],
-    loggedExercisesQuery(uuid).all(),
-    loggedSetsOfWorkoutQuery(uuid).all(),
+  const blocks = prescribedSnapshotQuery(uuid).all()[0]?.blocks ?? [];
+  const logged = loggedExercisesQuery(uuid).all();
+
+  // Les libellés se relisent en base, comme `useSessionProgram` le fait : un
+  // test qui passerait l'annuaire à la main lirait les noms **transportés**,
+  // c'est-à-dire justement le repli que l'app n'emprunte que lorsque l'exercice
+  // a quitté la bibliothèque.
+  const language = exerciseLanguageQuery().all()[0]?.language ?? DEFAULT_LANGUAGE;
+  const names = exerciseNameBook(
+    exerciseNamesQuery(referencedExerciseIds(blocks, logged)).all(),
+    language,
   );
+
+  return buildProgram(blocks, logged, loggedSetsOfWorkoutQuery(uuid).all(), names);
 }
 
 /** Le n-ième exercice du déroulé, blocs puis hors programme. */

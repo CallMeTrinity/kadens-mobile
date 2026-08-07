@@ -59,6 +59,35 @@ describe('la bibliothèque', () => {
     ]);
   });
 
+  it('garde les deux libellés, et la langue sous laquelle les lire', async () => {
+    applyBootstrap(
+      bootstrapPayload({
+        exerciseLanguage: 'en',
+        exercises: [
+          exercisePayload(101, { name: 'Traction en supination', nameEn: 'Chin-up' }),
+          exercisePayload(102, { name: 'Dips', nameEn: null }),
+        ],
+      }),
+    );
+
+    // Les deux noms sont stockés, jamais le seul libellé courant : la préférence
+    // peut changer entre deux pulls alors que `?since` n'allège que ce qui a
+    // bougé — les autres lignes resteraient figées dans l'ancienne langue.
+    expect(
+      db
+        .select()
+        .from(exercise)
+        .orderBy(exercise.id)
+        .all()
+        .map((row) => [row.name, row.nameEn]),
+    ).toEqual([
+      ['Traction en supination', 'Chin-up'],
+      ['Dips', null],
+    ]);
+
+    expect((await getSyncState())?.exerciseLanguage).toBe('en');
+  });
+
   it('oublie les exercices que le serveur déclare disparus', () => {
     seedBootstrap({ exercises: [exercisePayload(101), exercisePayload(102)] });
 

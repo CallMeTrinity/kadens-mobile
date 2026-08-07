@@ -19,6 +19,7 @@
 
 import type {
   ActivityType,
+  ExerciseLanguage,
   PerformanceBest,
   PerformanceSession,
   PlanRef,
@@ -115,6 +116,8 @@ export interface AppVersionPayload {
 export interface ExercisePayload {
   id: number;
   name: string;
+  /** Le nom anglais, `null` quand le français EST déjà l'anglais (« Dips »). */
+  nameEn: string | null;
   description: string | null;
   activity: ActivityType;
   targetAreas: TargetArea[];
@@ -194,6 +197,15 @@ export interface BootstrapPayload {
    */
   serverTime: string;
   since: string | null;
+  /**
+   * Sous quelle langue le **compte** lit les noms d'exercices.
+   *
+   * Les deux libellés descendent toujours (`name` et `nameEn`) : le serveur n'en
+   * choisit aucun, et c'est délibéré — `?since` allège la bibliothèque, un nom
+   * traduit à la descente resterait figé sur toutes les lignes qu'un delta ne
+   * remonte pas. La résolution est ici, dans `@/session/naming.ts`.
+   */
+  exerciseLanguage: ExerciseLanguage;
   window: BootstrapWindow;
   /** Allégée par `?since`, et elle seule. */
   exercises: ExercisePayload[];

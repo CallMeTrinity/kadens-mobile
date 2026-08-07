@@ -68,6 +68,15 @@
  *    un programme. La bibliothèque, elle, gagne des **facettes** (`library.ts`) :
  *    activité et zone se choisissent, le nom se tape, et les deux ne répondent
  *    pas à la même question.
+ * 10. **Un seul endroit décide sous quel nom un exercice s'affiche** :
+ *     `naming.ts`. La bibliothèque porte deux libellés (`name`, `nameEn`) et le
+ *     compte dit lequel lire ; le nom **vivant** prime toujours sur celui que le
+ *     programme ou le réalisé transportent, qui sont français par construction et
+ *     ne reprennent la main que si l'exercice a quitté la bibliothèque. Un
+ *     composant qui écrit `row.name` court-circuite la préférence — même règle
+ *     qu'`exercise_name()` côté web. Corollaire d'écriture : ce qui se **fige**
+ *     (le snapshot d'un réalisé) prend le nom canonique, jamais le libellé
+ *     affiché.
  */
 
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
@@ -79,7 +88,9 @@ export {
   useDayStrip,
   useDayWorkouts,
   useElapsedSeconds,
+  useExerciseLanguage,
   useExerciseLibrary,
+  useExerciseNames,
   usePastWorkouts,
   usePreferences,
   useRunningWorkout,
@@ -119,8 +130,19 @@ export {
   libraryAreas,
   searchExercises,
   SEARCH_LIMIT,
+  toOptions,
 } from './library';
-export type { ExerciseOption } from './library';
+export type { ExerciseOption, ExerciseRowForOption } from './library';
+
+export {
+  alternateName,
+  EMPTY_NAME_BOOK,
+  exerciseLabel,
+  exerciseNameBook,
+  exerciseSearchText,
+  referenceLabel,
+} from './naming';
+export type { ExerciseNameBook, ExerciseNames } from './naming';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 
@@ -133,6 +155,7 @@ export {
   findExercise,
   findSetLine,
   nextTarget,
+  referencedExerciseIds,
   setDeviates,
   withDraftSets,
 } from './program';
@@ -172,7 +195,9 @@ export { useKeepScreenAwake } from './wake';
 export {
   dayCountsQuery,
   exerciseHistoryQuery,
+  exerciseLanguageQuery,
   exerciseLibraryQuery,
+  exerciseNamesQuery,
   isClosed,
   isRunning,
   loggedExercisesQuery,

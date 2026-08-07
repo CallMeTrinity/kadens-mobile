@@ -39,6 +39,8 @@ import {
   preference,
   prescribedSnapshot,
   scheduledWorkout,
+  SYNC_STATE_ID,
+  syncState,
   type ScheduledWorkoutRow,
 } from '@/db';
 
@@ -294,12 +296,57 @@ export function exerciseHistoryQuery(exerciseIds: number[]) {
 }
 
 /**
+ * Les deux libellés des exercices que la séance référence, pour l'annuaire de
+ * `naming.ts`.
+ *
+ * Par identifiants et non la table entière, même arbitrage que
+ * `exerciseHistoryQuery` juste au-dessus : une séance travaille dix exercices,
+ * la bibliothèque en compte trois cents, et cette lecture-ci reste montée tout
+ * le temps que dure la séance.
+ *
+ * Écoute `exercise` : un pull qui renomme un exercice — ou qui change la langue
+ * du compte, écrite dans la même transaction — repeint le déroulé sans que rien
+ * n'ait à prévenir l'écran.
+ */
+export function exerciseNamesQuery(exerciseIds: number[]) {
+  return db
+    .select({ id: exercise.id, name: exercise.name, nameEn: exercise.nameEn })
+    .from(exercise)
+    .where(inArray(exercise.id, exerciseIds.length > 0 ? exerciseIds : [NO_EXERCISE]));
+}
+
+/**
+ * La langue d'affichage des noms d'exercices, telle que le dernier bootstrap l'a
+ * descendue.
+ *
+ * Une lecture à part et non `useSyncState()` de `@/sync` : le domaine séance n'a
+ * pas à connaître l'état de synchronisation pour écrire un nom, et une requête
+ * qui ne remonte qu'une colonne ne se republie pas à chaque `lastPushedAt`.
+ *
+ * Écoute `sync_state`, où le pull l'écrit **avec** les `name_en` qu'elle
+ * gouverne : la bascule de langue est un seul geste, elle ne peut pas s'afficher
+ * à moitié.
+ */
+export function exerciseLanguageQuery() {
+  return db
+    .select({ language: syncState.exerciseLanguage })
+    .from(syncState)
+    .where(eq(syncState.id, SYNC_STATE_ID))
+    .limit(1);
+}
+
+/**
  * La bibliothèque locale, pour remplacer ou ajouter un exercice (KL-30, facettes
  * en KL-34).
  *
- * Elle part **entière**, triée par nom, et se filtre en mémoire (`library.ts`) :
- * `LIKE` ne replierait pas les accents, et la table tient en quelques centaines de
- * lignes.
+ * Elle part **entière** et se filtre en mémoire (`library.ts`) : `LIKE` ne
+ * replierait pas les accents, et la table tient en quelques centaines de lignes.
+ *
+ * **Sans `ORDER BY`, depuis qu'il y a deux libellés.** L'ordre suit le nom
+ * **affiché** — classer sur le français pendant qu'on lit l'anglais donnerait une
+ * liste qui ne correspond à rien à l'écran — et SQLite ne connaît ni la
+ * préférence ni le repli d'accents qui la départage. Le tri se fait donc en
+ * mémoire, avec le reste (`toOptions`).
  *
  * `activity` et `target_areas` sont montées depuis KL-34, qui en fait des
  * facettes : elles ne servent pas à *lire* une ligne de la liste mais à la
@@ -315,12 +362,12 @@ export function exerciseLibraryQuery() {
     .select({
       id: exercise.id,
       name: exercise.name,
+      nameEn: exercise.nameEn,
       global: exercise.global,
       activity: exercise.activity,
       targetAreas: exercise.targetAreas,
     })
-    .from(exercise)
-    .orderBy(asc(exercise.name));
+    .from(exercise);
 }
 
 /**

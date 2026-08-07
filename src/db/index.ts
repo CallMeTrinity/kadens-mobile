@@ -33,7 +33,7 @@ export {
 export { useDatabaseMigrations } from './migrate';
 export { DEFAULT_PREFERENCES, getPreferences, patchPreferences } from './preferences';
 export { clearDatabase, seedDemo } from './seed';
-export { getSyncState, patchSyncState, patchSyncStateIn } from './syncState';
+export { DEFAULT_LANGUAGE, getSyncState, patchSyncState, patchSyncStateIn } from './syncState';
 export { localDate, nowIso } from './time';
 export { isUuidv7, uuidv7 } from './uuid';
 
@@ -70,6 +70,7 @@ export type {
 export type {
   ActivityType,
   BlockRole,
+  ExerciseLanguage,
   MutationPayload,
   MutationType,
   PerformanceBest,
