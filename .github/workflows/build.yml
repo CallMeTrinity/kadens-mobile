@@ -115,6 +115,21 @@ jobs:
               exit 1
             fi
             name="${GITHUB_REF_NAME#v}"
+
+            # La description de la release vient du CHANGELOG, pas d'un message
+            # générique : c'est le seul endroit où ce qui a changé est écrit
+            # pour un lecteur. Extraction ici, avant les dix minutes de Gradle,
+            # pour qu'un tag posé sans section échoue tout de suite.
+            awk -v v="$name" '
+              $0 ~ "^## \\[" v "\\]" { inside = 1; next }
+              inside && /^## / { exit }
+              inside { print }
+            ' CHANGELOG.md > "$RUNNER_TEMP/release-notes.md"
+
+            if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/release-notes.md"; then
+              echo "::error::Aucune section « ## [$name] » dans CHANGELOG.md."
+              exit 1
+            fi
           else
             # Hors tag, la version d'`app.json` : un build de branche n'est pas
             # une version publiée et ne doit pas prétendre l'être.
@@ -234,9 +249,21 @@ jobs:
         if: github.ref_type == 'tag'
         run: |
           set -euo pipefail
+
+          # Le contenu du CHANGELOG d'abord, la fiche technique ensuite : on
+          # lit une release pour savoir ce qui change, pas pour son versionCode.
+          notes="$RUNNER_TEMP/release-notes.md"
+          cat >> "$notes" <<EOF
+
+          ---
+
+          versionName ${{ steps.version.outputs.name }}, versionCode ${{ steps.version.outputs.code }}.
+          APK arm64-v8a, minifié par R8. Le mapping ci-joint est nécessaire pour relire une trace de crash.
+          EOF
+
           gh release create "$GITHUB_REF_NAME" \
             --title "Kadens Live ${{ steps.version.outputs.name }}" \
-            --notes "versionName ${{ steps.version.outputs.name }}, versionCode ${{ steps.version.outputs.code }}. APK arm64-v8a, minifié par R8 — le mapping ci-joint est nécessaire pour relire une trace de crash." \
+            --notes-file "$notes" \
             dist-apk/*
         env:
           GH_TOKEN: ${{ github.token }}
