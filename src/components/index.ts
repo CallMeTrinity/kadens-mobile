@@ -9,6 +9,7 @@
  * fait au moins `layout.touchTarget` points.
  */
 
+export { BodyMap, bodyLevelColor, type BodyLevel, type BodyMapProps } from './BodyMap';
 export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button';
 export { Card, type CardProps } from './Card';
 export { Chip, type ChipProps, type ChipRank, type ChipTone } from './Chip';

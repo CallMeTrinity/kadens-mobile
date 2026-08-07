@@ -79,6 +79,9 @@
  *     affiché.
  */
 
+export { buildBodyLoad, EMPTY_BODY_LOAD } from './areas';
+export type { AreaLoad, BodyLoad, ExerciseAreaBook } from './areas';
+
 export { DAY_REACH, dayOffset, dayTitle, dayWindow, longDate, shiftDate, shortDate } from './days';
 export type { DayCell } from './days';
 
@@ -88,6 +91,7 @@ export {
   useDayStrip,
   useDayWorkouts,
   useElapsedSeconds,
+  useExerciseAreas,
   useExerciseLanguage,
   useExerciseLibrary,
   useExerciseNames,
@@ -194,6 +198,7 @@ export { useKeepScreenAwake } from './wake';
 
 export {
   dayCountsQuery,
+  exerciseAreasQuery,
   exerciseHistoryQuery,
   exerciseLanguageQuery,
   exerciseLibraryQuery,

@@ -28,6 +28,7 @@ import {
   type TargetArea,
 } from '@/db';
 
+import { type ExerciseAreaBook } from './areas';
 import { dayWindow, type DayCell } from './days';
 import {
   filterLibrary,
@@ -42,6 +43,7 @@ import { buildProgram, exerciseIdsOf, referencedExerciseIds, type SessionProgram
 import { elapsedSeconds } from './summary';
 import {
   dayCountsQuery,
+  exerciseAreasQuery,
   exerciseHistoryQuery,
   exerciseLanguageQuery,
   exerciseLibraryQuery,
@@ -234,6 +236,23 @@ export function useSessionHistory(program: SessionProgram): Map<number, Exercise
   return useMemo(() => new Map(data.map((row) => [row.exerciseId, row])), [data]);
 }
 
+/**
+ * Les zones travaillées par les exercices du déroulé, pour la carte musculaire de
+ * la clôture (`areas.ts`).
+ *
+ * Même patron que `useSessionHistory` juste au-dessus, et pour la même raison :
+ * la clé de dépendance est la liste triée des exercices, donc la lecture ne se
+ * remonte pas à chaque série cochée — alors que la carte, elle, se recalcule
+ * bien à chaque coche, puisque le déroulé change.
+ */
+export function useExerciseAreas(program: SessionProgram): ExerciseAreaBook {
+  const ids = useMemo(() => exerciseIdsOf(program), [program]);
+  const key = ids.join(',');
+  const { data } = useLiveQuery(exerciseAreasQuery(ids), [key]);
+
+  return useMemo(() => new Map(data.map((row) => [row.id, row.targetAreas])), [data]);
+}
+
 /** Ce que le sélecteur d'exercice affiche : sa liste, et les facettes qui la cadrent. */
 export interface ExerciseLibraryView {
   results: ExerciseOption[];
@@ -300,7 +319,12 @@ export function usePreferences(): Omit<PreferenceRow, 'id'> {
   return useMemo(
     () =>
       row
-        ? { restSeconds: row.restSeconds, vibrate: row.vibrate, autoRest: row.autoRest }
+        ? {
+            restSeconds: row.restSeconds,
+            vibrate: row.vibrate,
+            autoRest: row.autoRest,
+            silhouette: row.silhouette,
+          }
         : DEFAULT_PREFERENCES,
     [row],
   );

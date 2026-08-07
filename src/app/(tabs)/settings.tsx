@@ -4,7 +4,14 @@ import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 're
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
 import { Button, Card, Chip, Header, NumberStepper } from '@/components';
-import { clearDatabase, localDate, patchPreferences, seedDemo, type ExerciseLanguage } from '@/db';
+import {
+  clearDatabase,
+  localDate,
+  patchPreferences,
+  seedDemo,
+  type BodySilhouette,
+  type ExerciseLanguage,
+} from '@/db';
 import {
   dayOffset,
   REST_STEP,
@@ -40,9 +47,10 @@ import { colors, space, text } from '@/theme';
  *
  * ## Ce qu'il montre, dans cet ordre
  *
- * Compte, synchronisation, repos, application. C'est l'ordre des questions qu'on
- * vient y poser : **qui suis-je pour ce serveur**, **est-ce que mes séances sont
- * parties**, **comment sonne le repos**, **quelle version je porte**. La
+ * Compte, synchronisation, repos, résumé, application. C'est l'ordre des
+ * questions qu'on vient y poser : **qui suis-je pour ce serveur**, **est-ce que
+ * mes séances sont parties**, **comment sonne le repos**, **à quoi ressemble ma
+ * clôture**, **quelle version je porte**. La
  * synchronisation vient en deuxième parce que c'est la seule chose qui puisse
  * mal aller sans qu'aucun autre écran le dise.
  *
@@ -76,6 +84,7 @@ export default function SettingsScreen() {
         <AccountCard />
         <SyncCard />
         <RestCard />
+        <SummaryCard />
         <AppCard />
       </ScrollView>
     </View>
@@ -455,6 +464,47 @@ function RestCard() {
       </View>
     </Card>
   );
+}
+
+/* --- Clôture --------------------------------------------------------------- */
+
+/**
+ * La silhouette de la carte musculaire de clôture.
+ *
+ * **Un réglage d'affichage, pas une donnée de compte.** Le serveur porte bien un
+ * sexe sur la fiche athlète, mais il sert au score de force normalisé, il n'est
+ * pas dans le contrat mobile, et il accepte une valeur qui ne désigne aucun
+ * dessin. Ce bouton-ci ne change qu'un tracé, sur ce téléphone.
+ *
+ * Une bascule à deux états plutôt qu'un choix ouvert : il n'y a que deux jeux de
+ * tracés, et un sélecteur pour deux valeurs coûte un écran de plus pour la même
+ * réponse.
+ */
+function SummaryCard() {
+  const preferences = usePreferences();
+  const other: BodySilhouette = preferences.silhouette === 'male' ? 'female' : 'male';
+
+  return (
+    <Card title="Résumé de séance">
+      <View style={styles.stack}>
+        <Button
+          label={`Silhouette : ${silhouetteLabel(preferences.silhouette)}`}
+          variant="secondary"
+          block
+          accessibilityHint={`Basculer sur la silhouette ${silhouetteLabel(other)}`}
+          onPress={() => patchPreferences({ silhouette: other })}
+        />
+        <Text style={styles.caption}>
+          Elle sert au dessin des muscles chargés, à la clôture d’une séance. Les zones travaillées,
+          elles, ne changent pas.
+        </Text>
+      </View>
+    </Card>
+  );
+}
+
+function silhouetteLabel(silhouette: BodySilhouette): string {
+  return silhouette === 'female' ? 'femme' : 'homme';
 }
 
 /* --- Application ----------------------------------------------------------- */

@@ -49,6 +49,15 @@ export type ActivityType = 'gym' | 'running' | 'swimming' | 'cycling' | 'mobilit
  */
 export type ExerciseLanguage = 'fr' | 'en';
 
+/**
+ * La silhouette de la carte musculaire de clôture.
+ *
+ * Ici et non dans `@/components` avec les tracés qu'elle choisit : c'est une
+ * valeur **persistée** (`preference.silhouette`), et le schéma ne peut pas
+ * dépendre d'un composant. Le dessin, lui, ne connaît que ce type.
+ */
+export type BodySilhouette = 'male' | 'female';
+
 export type TargetArea =
   | 'chest'
   | 'back'

@@ -70,6 +70,7 @@ export type {
 export type {
   ActivityType,
   BlockRole,
+  BodySilhouette,
   ExerciseLanguage,
   MutationPayload,
   MutationType,

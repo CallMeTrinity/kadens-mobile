@@ -4,6 +4,8 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
+  BodyMap,
+  bodyLevelColor,
   Button,
   Chip,
   duration,
@@ -12,17 +14,24 @@ import {
   Header,
   useKeyboardOverlap,
   weight,
+  type BodyLevel,
 } from '@/components';
+import type { BodySilhouette, TargetArea } from '@/db';
 import {
+  buildBodyLoad,
   buildSessionSummary,
   closeWorkout,
   isClosed,
   isRunning,
   longDate,
+  targetAreaLabel,
   useElapsedSeconds,
+  useExerciseAreas,
+  usePreferences,
   useSessionProgram,
   useWorkout,
   useWorkoutPendingSync,
+  type BodyLoad,
   type DeviationAxis,
   type DeviationState,
   type ExerciseOutcome,
@@ -108,6 +117,13 @@ export default function SessionCloseScreen() {
     [summary],
   );
 
+  // La carte musculaire (`areas.ts`) : les zones viennent de la bibliothèque
+  // locale, que le prescrit ne fait que référencer. Le réglage de silhouette est
+  // local, il n'appartient pas au compte — voir `preference.silhouette`.
+  const areas = useExerciseAreas(program);
+  const { silhouette } = usePreferences();
+  const load = useMemo(() => buildBodyLoad(program, areas), [program, areas]);
+
   if (workout === undefined) {
     return <View style={styles.screen} />;
   }
@@ -178,6 +194,8 @@ export default function SessionCloseScreen() {
         </View>
 
         <Metrics summary={summary} startedAt={workout.startedAt} endedAt={workout.endedAt} />
+
+        <Muscles load={load} silhouette={silhouette} />
 
         <Deviations outcomes={deviations} counts={summary.counts} />
 
@@ -350,6 +368,81 @@ function Metric({
   );
 }
 
+/**
+ * Ce que la séance a chargé, sur une silhouette.
+ *
+ * ## La section disparaît quand il n'y a rien à cartographier
+ *
+ * Pas d'état vide dessiné, et c'est l'exception assumée à la règle du projet : un
+ * corps entièrement gris sous le titre « Muscles chargés » ne dirait rien de plus
+ * qu'un silence, et il le dirait à une sortie course — qui n'a pas de zones parce
+ * qu'elle n'a pas de séries, pas parce que quelque chose a échoué. Le résumé
+ * au-dessus a déjà tout dit d'elle.
+ *
+ * ## Le dessin est une aide, la légende est la source
+ *
+ * Trois nuances de rouge ne se comptent pas à l'œil et ne survivent pas à un
+ * daltonisme : **chaque zone est écrite, chiffrée et ordonnée** en dessous, du
+ * plus chargé au moins chargé. La carte donne la forme, la liste donne les
+ * nombres — et rien n'existe seulement dans la carte.
+ *
+ * Les deux compteurs de bas de section suivent la règle de l'écran : ce qui sort
+ * du dessin se dit, jamais ne s'escamote. « Corps entier » n'y peint rien
+ * (`areas.ts`), une zone inconnue non plus.
+ */
+function Muscles({ load, silhouette }: { load: BodyLoad; silhouette: BodySilhouette }) {
+  const levels = useMemo(
+    () => new Map<TargetArea, BodyLevel>(load.areas.map((area) => [area.area, area.level])),
+    [load],
+  );
+
+  if (load.areas.length === 0 && load.fullBody === 0 && load.unmapped === 0) {
+    return null;
+  }
+
+  const aside = [
+    load.fullBody > 0 ? `${sets(load.fullBody)} corps entier` : null,
+    load.unmapped > 0 ? `${sets(load.unmapped)} sans zone déclarée` : null,
+  ]
+    .filter((part) => part !== null)
+    .join(' · ');
+
+  return (
+    <View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        Muscles chargés
+      </Text>
+      <Text style={styles.caption}>D’après les séries de travail consignées.</Text>
+
+      <BodyMap levels={levels} silhouette={silhouette} />
+
+      {load.areas.map((area) => (
+        <View
+          key={area.area}
+          accessible
+          accessibilityLabel={`${targetAreaLabel(area.area)} : ${sets(area.sets)}, ${area.percent} %`}
+          style={styles.areaRow}
+        >
+          <View style={[styles.areaDot, { backgroundColor: bodyLevelColor(area.level) }]} />
+          <Text style={styles.name} numberOfLines={1}>
+            {targetAreaLabel(area.area)}
+          </Text>
+          <View style={styles.spacer} />
+          <Text style={styles.areaValue}>{area.sets}</Text>
+          <Text style={styles.areaShare}>{Math.round(area.percent)} %</Text>
+        </View>
+      ))}
+
+      {aside.length > 0 ? <Text style={styles.caption}>+ {aside}</Text> : null}
+    </View>
+  );
+}
+
+/** « 1 série », « 4 séries ». Le pluriel se pose une fois. */
+function sets(count: number): string {
+  return `${count} série${count > 1 ? 's' : ''}`;
+}
+
 /** Les six états de `LogDeviation`, mot pour mot ceux du serveur. */
 const STATE_LABELS: Record<DeviationState, string> = {
   held: 'Tenu',
@@ -507,6 +600,20 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   sectionTitle: { ...text.sectionTitle, color: colors.text },
+
+  // Une ligne de légende de la carte musculaire. La pastille reprend la teinte du
+  // dessin ; elle est bordée, sinon le palier le plus clair s'effacerait sur le
+  // papier — et elle ne porte aucune information que la ligne n'écrive déjà.
+  areaRow: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  areaDot: {
+    width: space[5],
+    height: space[5],
+    borderWidth: layout.hairline,
+    borderColor: colors.borderStrong,
+  },
+  areaValue: { ...text.numeric, color: colors.text },
+  // Une part se lit en second : c'est le rang qui compte, pas le pourcent exact.
+  areaShare: { ...text.numeric, color: colors.textSecondary, minWidth: 44, textAlign: 'right' },
 
   // Un filet gauche, pas un fond : l'écart se signale sans introduire de teinte,
   // et l'identité n'a qu'une couleur — elle est prise (règle 2).

@@ -1,0 +1,1 @@
+ALTER TABLE `preference` ADD `silhouette` text DEFAULT 'male' NOT NULL;

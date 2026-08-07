@@ -3,6 +3,7 @@ import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqli
 
 import type {
   ActivityType,
+  BodySilhouette,
   ExerciseLanguage,
   MutationPayload,
   MutationType,
@@ -344,6 +345,16 @@ export const preference = sqliteTable(
      * ses ajustements.
      */
     autoRest: integer('auto_rest', { mode: 'boolean' }).notNull().default(true),
+    /**
+     * La silhouette de la carte musculaire, à la clôture d'une séance.
+     *
+     * **Un réglage d'affichage, et rien d'autre.** Le serveur porte bien un
+     * `User.sex`, mais il n'est pas dans le contrat mobile, il accepte `other` —
+     * qui ne désigne aucun dessin — et il sert au score de force normalisé
+     * (DOTS). Le brancher ici ferait qu'un choix de rendu toucherait une donnée
+     * de calcul : deux questions différentes, deux endroits différents.
+     */
+    silhouette: text('silhouette').$type<BodySilhouette>().notNull().default('male'),
   },
   (t) => [check('preference_singleton', sql`${t.id} = 1`)],
 );

@@ -36,6 +36,13 @@
       "when": 1786052371532,
       "tag": "0004_exercise_language",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786105923655,
+      "tag": "0005_silhouette",
+      "breakpoints": true
     }
   ]
 }

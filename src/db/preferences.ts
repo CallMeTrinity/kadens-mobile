@@ -35,6 +35,7 @@ export const DEFAULT_PREFERENCES: Omit<PreferenceRow, 'id'> = {
   restSeconds: 90,
   vibrate: true,
   autoRest: true,
+  silhouette: 'male',
 };
 
 /** Les réglages, ou leurs valeurs par défaut tant que rien n'a été touché. */
@@ -42,7 +43,12 @@ export function getPreferences(): Omit<PreferenceRow, 'id'> {
   const row = db.select().from(preference).where(eq(preference.id, PREFERENCE_ID)).get();
 
   return row
-    ? { restSeconds: row.restSeconds, vibrate: row.vibrate, autoRest: row.autoRest }
+    ? {
+        restSeconds: row.restSeconds,
+        vibrate: row.vibrate,
+        autoRest: row.autoRest,
+        silhouette: row.silhouette,
+      }
     : DEFAULT_PREFERENCES;
 }
 

@@ -316,6 +316,23 @@ export function exerciseNamesQuery(exerciseIds: number[]) {
 }
 
 /**
+ * Les zones travaillées par les exercices de la séance, pour la carte musculaire
+ * de la clôture (`areas.ts`).
+ *
+ * Une lecture à part et non une colonne de plus sur `exerciseNamesQuery` : les
+ * deux ne servent pas le même écran ni la même dépendance — les libellés se
+ * relisent à chaque bascule de langue, les zones jamais. Même arbitrage que ses
+ * voisines pour le reste : par identifiants, et `exercise` en `from`, donc un
+ * pull qui corrige les zones d'un exercice repeint la carte.
+ */
+export function exerciseAreasQuery(exerciseIds: number[]) {
+  return db
+    .select({ id: exercise.id, targetAreas: exercise.targetAreas })
+    .from(exercise)
+    .where(inArray(exercise.id, exerciseIds.length > 0 ? exerciseIds : [NO_EXERCISE]));
+}
+
+/**
  * La langue d'affichage des noms d'exercices, telle que le dernier bootstrap l'a
  * descendue.
  *
