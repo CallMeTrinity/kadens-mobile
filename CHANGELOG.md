@@ -11,6 +11,14 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.0.1] - 2026-08-07
+
+### Corrigé
+
+- Le numéro de build annoncé par l'application correspond de nouveau à celui de
+  l'APK installé. La 1.0.0 s'annonçait en build 1 et s'affichait donc comme trop
+  ancienne pour le serveur, jusqu'à l'écran de mise à jour obligatoire.
+
 ## [1.0.0] - 2026-08-05
 
 ### Ajouté
@@ -57,7 +65,9 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.3...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.3...v1.0.0
 [0.0.3]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/CallMeTrinity/kadens-mobile/releases/tag/v0.0.1

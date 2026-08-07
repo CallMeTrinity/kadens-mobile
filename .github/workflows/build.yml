@@ -177,14 +177,51 @@ jobs:
       # Les quatre secrets passent par l'environnement du processus Gradle, lu
       # par le plugin `with-release-signing` : rien n'est écrit sur disque, rien
       # n'apparaît dans la ligne de commande affichée par Actions.
+      #
+      # `KADENS_VERSION_*` sont ici **aussi**, et pas seulement au prebuild : les
+      # deux numéros voyagent par deux chemins distincts, et il faut les poser
+      # sur les deux. Le prebuild écrit le `versionCode` d'Android dans
+      # `build.gradle` ; `expo-constants` regénère de son côté le manifeste
+      # embarqué (`assets/app.config`) à **chaque** build Gradle, en réévaluant
+      # `app.config.ts` dans l'environnement de Gradle. Sans ces variables ici,
+      # ce manifeste retombe sur `app.json` — donc `versionCode: 1` — et c'est
+      # cette valeur-là que lit `installedVersionCode()` (`src/sync/version.ts`) :
+      # l'APK s'installe et se met à jour normalement, mais se croit sous le
+      # plancher du serveur et affiche l'écran de blocage. C'est le bug de la
+      # v1.0.0 (KL-43).
       - name: Compiler l'APK signé
         working-directory: android
         run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
         env:
+          KADENS_VERSION_CODE: ${{ steps.version.outputs.code }}
+          KADENS_VERSION_NAME: ${{ steps.version.outputs.name }}
           KADENS_RELEASE_STORE_FILE: ${{ runner.temp }}/kadens-release.jks
           KADENS_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KADENS_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           KADENS_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+
+      # Le pendant du contrôle de signature, pour la version : on relit dans
+      # l'APK produit le manifeste que l'app lira sur le téléphone, plutôt que de
+      # faire confiance à l'environnement qu'on vient de poser. Un manifeste qui
+      # annonce un autre numéro que le binaire donne une app qui se bloque
+      # elle-même, et ça ne se voit qu'après installation.
+      - name: Vérifier la version embarquée
+        run: |
+          set -euo pipefail
+
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          unzip -p "$apk" assets/app.config > "$RUNNER_TEMP/app.config"
+
+          embedded="$(node -p "JSON.parse(require('fs').readFileSync('$RUNNER_TEMP/app.config','utf8')).android.versionCode")"
+          name="$(node -p "JSON.parse(require('fs').readFileSync('$RUNNER_TEMP/app.config','utf8')).version")"
+          expected="${{ steps.version.outputs.code }}"
+
+          if [ "$embedded" != "$expected" ]; then
+            echo "::error::Manifeste embarqué en versionCode $embedded, attendu $expected. KADENS_VERSION_CODE manque à l'étape Gradle."
+            exit 1
+          fi
+
+          echo "Manifeste embarqué cohérent ($name, versionCode $embedded)." >> "$GITHUB_STEP_SUMMARY"
 
       # Le garde-fou du plugin : sans clé, il laisse la release retomber sur la
       # signature de debug plutôt que d'échouer, pour qu'un build local marche

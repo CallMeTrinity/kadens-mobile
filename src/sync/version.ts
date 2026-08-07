@@ -210,10 +210,16 @@ export function verdictFor(
  * Le `versionCode` du binaire, ou `null` quand il n'y en a pas de vrai.
  *
  * Lu dans le manifeste embarqué (`expo-constants`), comme l'écran de réglages
- * (KL-35) : l'app n'embarque pas `expo-updates`, le manifeste est figé au build
- * et ne peut donc pas diverger de l'APK installé. C'est la question que KL-35
- * laissait ouverte, et la réponse n'a pas changé — pas de module natif de plus
- * pour une valeur déjà là.
+ * (KL-35) : l'app n'embarque pas `expo-updates`, le manifeste est figé au build.
+ * C'est la question que KL-35 laissait ouverte, et la réponse n'a pas changé —
+ * pas de module natif de plus pour une valeur déjà là.
+ *
+ * Figé, mais **pas garanti égal** au `versionCode` du binaire : ce sont deux
+ * écritures de la même valeur, par deux chemins (le `prebuild` pour Android, une
+ * tâche Gradle d'`expo-constants` pour ce manifeste-ci). La 1.0.0 les a vues
+ * diverger — manifeste à `1`, APK à `10` — et l'app s'est bloquée elle-même. Le
+ * workflow les recoupe désormais sur l'APK produit, juste après la compilation :
+ * c'est là que la garantie se fabrique, pas ici.
  */
 export function installedVersionCode(): number | null {
   if (__DEV__) {

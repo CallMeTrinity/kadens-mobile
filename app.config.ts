@@ -16,6 +16,16 @@ import type { ConfigContext, ExpoConfig } from 'expo/config';
  *
  * Absentes, les valeurs d'`app.json` s'appliquent : un build local reste un
  * build local, il ne prétend pas être une version publiée.
+ *
+ * **Ce fichier est relu deux fois, et les deux comptent.** Au `prebuild`, pour
+ * écrire le `versionCode` d'Android dans `build.gradle` ; puis à **chaque** build
+ * Gradle, par `expo-constants`, qui regénère le manifeste embarqué
+ * (`assets/app.config`) — celui que `Constants.expoConfig` rend sur le téléphone,
+ * et donc celui que compare `src/sync/version.ts`. Les deux variables doivent
+ * être posées sur les deux étapes du workflow : ne les poser qu'au prebuild donne
+ * un APK correctement versionné pour Android mais qui s'annonce en `1` à
+ * lui-même, jusqu'à se croire sous le plancher du serveur et se bloquer. C'était
+ * le cas de la 1.0.0.
  */
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
