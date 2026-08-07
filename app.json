@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Kadens",
+    "name": "Kadens Live",
     "slug": "kadens",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -37,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Autorise Kadens à utiliser l’appareil photo pour scanner le QR d’appairage.",
+          "cameraPermission": "Autorise Kadens Live à utiliser l’appareil photo pour scanner le QR d’appairage.",
           "recordAudioAndroid": false
         }
       ],

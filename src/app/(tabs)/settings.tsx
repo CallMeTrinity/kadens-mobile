@@ -533,7 +533,7 @@ function AppCard() {
   const updateUrl = version.status === 'update' ? version.installUrl : null;
 
   return (
-    <Card title="Application" right={<Chip label="Kadens" rank={2} />}>
+    <Card title="Application" right={<Chip label={config?.name ?? 'Kadens Live'} rank={2} />}>
       <View style={styles.stack}>
         <Row label="Version" value={config?.version ?? 'inconnue'} mono />
         <Row label="Build" value={buildLabel()} mono />

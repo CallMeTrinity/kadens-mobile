@@ -142,8 +142,8 @@ export default function PairingScreen() {
       return (
         <View style={styles.stack}>
           <Text style={styles.hint}>
-            Kadens a besoin de l’appareil photo pour lire le QR affiché sur l’écran de connexion du
-            site. Rien d’autre n’est ni capturé ni enregistré.
+            Kadens Live a besoin de l’appareil photo pour lire le QR affiché sur l’écran de
+            connexion du site. Rien d’autre n’est ni capturé ni enregistré.
           </Text>
           {permission.canAskAgain ? (
             <Button label="Activer la caméra" onPress={() => void requestPermission()} block />

@@ -235,7 +235,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release create "$GITHUB_REF_NAME" \
-            --title "Kadens ${{ steps.version.outputs.name }}" \
+            --title "Kadens Live ${{ steps.version.outputs.name }}" \
             --notes "versionName ${{ steps.version.outputs.name }}, versionCode ${{ steps.version.outputs.code }}. APK arm64-v8a, minifié par R8 — le mapping ci-joint est nécessaire pour relire une trace de crash." \
             dist-apk/*
         env:
