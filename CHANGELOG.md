@@ -13,6 +13,12 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ### Ajouté
 
+- Annulation d'une séance commencée, tant qu'elle n'est pas terminée. Une séance
+  **prévue** redevient à faire : la borne de départ est retirée et tout ce qui y
+  avait été coché est effacé, ici comme sur le web. Une séance **libre**, qui
+  n'existait que parce qu'on l'avait créée, disparaît. Le geste est confirmé et
+  sans retour, et il n'a rien à voir avec terminer une séance : rien n'entre dans
+  l'historique.
 - Réorganisation de la séance en cours : un mode « Réorganiser les exercices »
   permet de déplacer un exercice dans son bloc, de l'enchaîner à son voisin en
   superset ou de l'en détacher. L'ordre est **local au téléphone**, il ne modifie

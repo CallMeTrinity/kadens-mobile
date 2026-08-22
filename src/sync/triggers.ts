@@ -113,3 +113,16 @@ export function useSyncTriggers(enabled: boolean): void {
 export function syncOnWorkoutClosed(): void {
   void syncNow('workout-closed');
 }
+
+/**
+ * Le cinquième : une séance commencée vient d'être annulée (`session/cancel.ts`).
+ *
+ * Même forme que la clôture, et même raison de partir tout de suite : ce que le
+ * serveur montre au calendrier web est faux tant que l'annulation n'est pas
+ * arrivée — une séance « en cours » qui n'a pas lieu, ou une séance libre qui
+ * n'existe plus. Sans `await` non plus : l'annulation est déjà écrite en base et
+ * sa mutation déjà en file, l'envoi n'est qu'une tentative immédiate.
+ */
+export function syncOnWorkoutCancelled(): void {
+  void syncNow('workout-cancelled');
+}

@@ -61,6 +61,14 @@
  *    **en local**, avec la cascade d'axes de `LogComparator` et le périmètre de
  *    `LogMetrics` : il doit donner le même verdict que `/schedule/{id}`, sinon il
  *    vaudrait moins que rien.
+ * 7 bis. **Annuler n'est ni clôturer ni supprimer un peu de tout** (`cancel.ts`).
+ *    Une séance commencée par erreur se défait tant qu'elle n'est pas close :
+ *    une séance **programmée** redevient « à faire » (`started_at` à `null`, son
+ *    réalisé effacé), une séance **libre** disparaît (elle n'existait que parce
+ *    qu'on l'avait créée). Effacer du réalisé étant du réalisé, la mutation part
+ *    dans la même transaction — mais **seulement** s'il y avait quelque chose à
+ *    reprendre au serveur, une séance ouverte puis annulée sans rien cocher
+ *    n'ayant rien poussé (point 2).
  * 8. **L'historique affiché en séance est celui du serveur, pas du téléphone.**
  *    `useSessionHistory` (KL-32) lit `exercise_history`, que le pull réécrit en
  *    entier ; rien n'est recalculé localement à partir du réalisé en cours. Deux
@@ -156,6 +164,9 @@ export {
   referenceLabel,
 } from './naming';
 export type { ExerciseNameBook, ExerciseNames } from './naming';
+
+export { cancelWorkout } from './cancel';
+export type { CancelOutcome } from './cancel';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 

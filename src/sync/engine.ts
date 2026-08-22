@@ -48,6 +48,8 @@ export type SyncTrigger =
   | 'network'
   /** Une séance vient d'être clôturée (KL-33) : ce qu'on veut voir partir tout de suite. */
   | 'workout-closed'
+  /** Une séance commencée vient d'être annulée : le serveur doit la reprendre aussi. */
+  | 'workout-cancelled'
   /** Premier pull après un appairage (KL-26). */
   | 'first-sync'
   /** Geste explicite depuis les réglages (KL-35). */
@@ -97,7 +99,7 @@ const INITIAL: SyncStatus = {
  * ne sont pas concernés : ils viennent de quelqu'un, pas d'un capteur.
  */
 const AUTOMATIC_COOLDOWN_MS = 10_000;
-const DELIBERATE: SyncTrigger[] = ['workout-closed', 'manual', 'first-sync'];
+const DELIBERATE: SyncTrigger[] = ['workout-closed', 'workout-cancelled', 'manual', 'first-sync'];
 
 let status: SyncStatus = INITIAL;
 let inflight: Promise<SyncOutcome> | null = null;

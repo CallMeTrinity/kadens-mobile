@@ -45,7 +45,7 @@ export type { OfflineNotice, QueuedMutation } from './hooks';
 export { resyncAll } from './reset';
 export type { ResetOutcome, ResetRefusal } from './reset';
 
-export { syncOnWorkoutClosed, useSyncTriggers } from './triggers';
+export { syncOnWorkoutCancelled, syncOnWorkoutClosed, useSyncTriggers } from './triggers';
 
 export {
   checkAppVersion,
@@ -65,6 +65,7 @@ export {
   isExhausted,
   listMutations,
   MAX_ATTEMPTS,
+  pendingUuids,
   rearmExhausted,
 } from './queue';
 

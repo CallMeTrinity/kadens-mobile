@@ -24,6 +24,7 @@ import {
   adjustRest,
   beginWorkout,
   blockRoleLabel,
+  cancelWorkout,
   canReplaceExercise,
   chainExercise,
   checkSet,
@@ -318,6 +319,49 @@ export default function SessionScreen() {
     },
     [uuid, dropDraft],
   );
+
+  // Annuler la séance : elle n'a pas eu lieu. **Confirmé**, parce que c'est le
+  // seul geste de cet écran qui efface du réalisé et qu'aucun « défaire » ne le
+  // rattrape — les autres irréversibles de l'app (la clôture) ont un écran à eux
+  // pour ça, celui-ci n'en mérite pas un, il n'a rien à résumer.
+  //
+  // Ce qui suit dépend de ce qui reste. Une séance **libre** n'existe plus : il
+  // n'y a plus rien à afficher, on revient d'où l'on vient. Une séance
+  // **programmée** est toujours là, redevenue « à faire » : rester dessus est la
+  // bonne réponse, l'écran repasse tout seul en « pas commencée » (`startable`)
+  // et la barre basse reproposera « Démarrer la séance ». Les brouillons partent
+  // avec — ils décrivaient des séries d'une séance qui n'a pas eu lieu.
+  const onCancel = useCallback(() => {
+    const freeform = workout?.freeform ?? false;
+
+    Alert.alert(
+      freeform ? 'Supprimer cette séance ?' : 'Annuler cette séance ?',
+      freeform
+        ? 'Elle disparaît avec tout ce qui y a été consigné, ici comme sur le web. C’est sans retour.'
+        : 'Elle redevient à faire, et tout ce qui a été coché est effacé. C’est sans retour.',
+      [
+        { text: 'Continuer la séance', style: 'cancel' },
+        {
+          text: freeform ? 'Supprimer' : 'Annuler la séance',
+          style: 'destructive',
+          onPress: () => {
+            const outcome = cancelWorkout(uuid);
+
+            if (outcome === null) {
+              return;
+            }
+
+            setDrafts(new Set());
+            setReordering(false);
+
+            if (outcome === 'deleted') {
+              router.back();
+            }
+          },
+        },
+      ],
+    );
+  }, [uuid, workout?.freeform]);
 
   // Ranger le déroulé (KL-52). Un seul point d'entrée pour les quatre gestes :
   // ils écrivent la même chose — l'ordre entier — et ne diffèrent que par la
@@ -615,6 +659,25 @@ export default function SessionScreen() {
                   : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
               }
               onPress={() => router.push(`/session/${uuid}/close`)}
+            />
+          ) : null}
+
+          {/* La sortie de secours : la séance a été ouverte par erreur, ou on
+              renonce. Elle est **sous** la porte de la clôture et en `ghost` —
+              c'est le geste qu'on ne cherche pas, et l'écran n'a qu'une action
+              primaire, dans la barre basse (KL-39). Elle disparaît avec la
+              clôture : une séance close ne s'annule plus (`cancel.ts`). */}
+          {running && !reordering ? (
+            <Button
+              label={workout.freeform ? 'Supprimer cette séance' : 'Annuler la séance'}
+              variant="ghost"
+              block
+              accessibilityHint={
+                workout.freeform
+                  ? 'Elle n’a pas eu lieu : elle disparaît, ici comme sur le web'
+                  : 'Elle n’a pas eu lieu : elle redevient à faire, et ce qui a été coché est effacé'
+              }
+              onPress={onCancel}
             />
           ) : null}
         </ScrollView>
