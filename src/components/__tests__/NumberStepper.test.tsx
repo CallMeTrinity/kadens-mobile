@@ -8,9 +8,10 @@
  *
  * Trois choses s'y vérifient et nulle part ailleurs :
  *
- * - **la frappe ne remonte pas au parent** tant que le champ est édité — sans
- *   quoi « 82, » serait impossible à taper, la valeur étant réécrite sous les
- *   doigts ;
+ * - **la frappe remonte au parent, l'affichage non** : le nombre part à chaque
+ *   frappe qui se lit — sans quoi « 12 » suivi d'un appui sur « Valider »
+ *   validerait la valeur d'avant — mais le texte reste tel quel à l'écran, sans
+ *   quoi « 82, » serait impossible à taper ;
  * - **les bornes s'appliquent à la saisie directe** comme au pas ;
  * - **le bouton dit ce qu'il fait** : `accessibilityLabel` porte le pas et
  *   l'unité, c'est ce que TalkBack annonce à quelqu'un qui ne voit pas l'écran.
@@ -49,22 +50,37 @@ describe('NumberStepper', () => {
     expect(onChange).toHaveBeenLastCalledWith(80);
   });
 
-  it('ne remonte rien tant que le champ est en cours de frappe', async () => {
+  it('remonte la valeur à la frappe, sans réécrire ce qui est tapé', async () => {
+    const onChange = jest.fn();
+
+    await render(<NumberStepper testID="charge" value={80} onChange={onChange} />);
+
+    await fireEvent(screen.getByTestId('charge-input'), 'focus');
+    await fireEvent.changeText(screen.getByTestId('charge-input'), '12');
+
+    // Le parent sait déjà : « 12 » puis un appui sur « Valider » doit valider
+    // 12, et sur Android cet appui ne relâche pas forcément le champ.
+    expect(onChange).toHaveBeenLastCalledWith(12);
+    // Ce qui est affiché reste ce qui est tapé : la valeur ne se réécrit pas
+    // sous les doigts.
+    expect(screen.getByTestId('charge-input').props.value).toBe('12');
+  });
+
+  it('laisse taper la virgule sans réécrire le champ', async () => {
     const onChange = jest.fn();
 
     await render(<NumberStepper testID="charge" value={80} onChange={onChange} />);
 
     await fireEvent.changeText(screen.getByTestId('charge-input'), '82,');
 
-    // « 82, » ne fait pas un nombre : convertir à chaque frappe rendrait la
-    // virgule impossible à taper.
-    expect(onChange).not.toHaveBeenCalled();
+    // « 82, » se lit 82 — le nombre part — mais le texte reste « 82, » : le
+    // convertir à l'affichage rendrait la virgule impossible à taper.
+    expect(onChange).toHaveBeenLastCalledWith(82);
     expect(screen.getByTestId('charge-input').props.value).toBe('82,');
 
     await fireEvent.changeText(screen.getByTestId('charge-input'), '82,5');
-    await fireEvent(screen.getByTestId('charge-input'), 'blur');
 
-    expect(onChange).toHaveBeenCalledWith(82.5);
+    expect(onChange).toHaveBeenLastCalledWith(82.5);
   });
 
   it('repart d’un champ vide à la prise de focus, sans perdre le premier chiffre', async () => {

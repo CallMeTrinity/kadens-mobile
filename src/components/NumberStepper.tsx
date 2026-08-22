@@ -9,11 +9,26 @@
  *
  * Trois choses non évidentes tiennent ce fichier :
  *
- * 1. **La frappe ne remonte pas au parent.** Tant que le champ est en cours
- *    d'édition, la valeur vit dans un brouillon de texte local : convertir à
- *    chaque frappe rendrait « 82, » impossible à taper (la virgule seule ne
- *    fait pas un nombre, la valeur serait réécrite sous les doigts). Le parent
- *    n'est informé qu'au relâchement du champ ou à la validation.
+ * 1. **La frappe remonte au parent, l'affichage non.** Deux choses distinctes,
+ *    et les confondre était le défaut : la valeur affichée vient d'un brouillon
+ *    de texte local — c'est ce qui rend « 82, » possible à taper, la valeur ne
+ *    se réécrivant jamais sous les doigts — mais le nombre, lui, part au parent
+ *    **à chaque frappe qui se lit comme un nombre**.
+ *
+ *    La version d'origine n'informait le parent qu'au relâchement du champ ou à
+ *    la validation du clavier, et le raisonnement se tenait jusqu'à ce qu'on
+ *    regarde une feuille : taper « 12 » puis appuyer directement sur « Valider »
+ *    ne validait pas 12. Sur Android, appuyer sur un bouton ne relâche pas
+ *    forcément le champ ; l'appui partait avec la valeur d'avant, et la seule
+ *    façon d'être compris était de fermer son clavier d'abord — un geste que
+ *    rien n'annonce, dans le seul écran qu'on tient d'une main. Une saisie qu'il
+ *    faut confirmer deux fois est une saisie perdue une fois sur deux.
+ *
+ *    Une frappe illisible (champ vide, « 82, » seul) ne remonte rien : elle
+ *    laisse la dernière valeur comprise en place plutôt que d'en inventer une.
+ *    Le relâchement du champ commit une dernière fois, ce qui n'a plus grand
+ *    chose à faire — sinon serrer aux bornes ce que la frappe y avait déjà
+ *    serré, et rendre l'affichage au format de l'app.
  *
  *    **Le champ se vide à la prise de focus**, et la valeur en place passe en
  *    `placeholder`. C'est la correction de KL-39 : la version précédente
@@ -151,9 +166,33 @@ export function NumberStepper({
     if (parsed === null) {
       return; // Saisie vide ou illisible : on revient à la valeur en place.
     }
+    publish(parsed);
+  }
+
+  /**
+   * Remonte un nombre au parent, serré aux bornes.
+   *
+   * La ref est écrite **avant** l'appel : le pas répété (`bump`) y lit sa base,
+   * et il avance plus vite que les rendus du parent.
+   */
+  function publish(parsed: number) {
     const next = clamp(round(parsed));
     currentRef.current = next;
     onChange(next);
+  }
+
+  /**
+   * Ce qui est tapé. Le texte reste tel quel à l'écran — « 82, » doit pouvoir
+   * s'écrire — et le nombre part tout de suite s'il s'en lit un (§1).
+   */
+  function onType(text: string) {
+    setDraft(text);
+
+    const parsed = parseNumber(text);
+
+    if (parsed !== null) {
+      publish(parsed);
+    }
   }
 
   const atMin = value <= min;
@@ -218,7 +257,7 @@ export function NumberStepper({
             placeholder={formatNumber(value)}
             placeholderTextColor={colors.textSoft}
             value={draft ?? formatNumber(value)}
-            onChangeText={setDraft}
+            onChangeText={onType}
             onBlur={commitDraft}
             onSubmitEditing={commitDraft}
             style={styles.value}

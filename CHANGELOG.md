@@ -35,6 +35,13 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
   n'était jusqu'ici déductible que des valeurs, donc figé en répétitions pour un
   exercice ajouté en séance ; les séries suivantes en héritent.
 
+### Corrigé
+
+- Une valeur tapée au clavier numérique est prise en compte sans avoir à valider
+  le clavier d'abord. Taper « 12 » puis appuyer directement sur « Valider »
+  enregistrait jusqu'ici la valeur d'avant : sur Android, appuyer sur un bouton
+  ne referme pas forcément le champ, et la saisie restait en suspens.
+
 ## [1.0.1] - 2026-08-07
 
 ### Corrigé
