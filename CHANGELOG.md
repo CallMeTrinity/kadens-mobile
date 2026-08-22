@@ -11,7 +11,7 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
-### [1.1.0] - 2026-08-23
+## [1.1.0] - 2026-08-23
 
 ### Ajouté
 
