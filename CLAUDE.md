@@ -231,9 +231,15 @@ none of them is cosmetic.
   exercise move within its block, chain to its neighbour, or detach; a chain is made of **contiguous** neighbours,
   exactly like the server's `groupLabel` prefixes, which is why moving one out of a group detaches it with nothing
   to write. Reordering is **local and never pushed** (see `sessionLayout` above): "on dévie, on ne recompose pas"
-  still holds — the program isn't rewritten, only the order it was led in. Buttons, not drag-and-drop: dragging
-  asks for four precise gestures (aim, hold, track a scrolling target, release) in the exact context this section
-  describes.
+  still holds — the program isn't rewritten, only the order it was led in. Moving is **drag-and-drop**
+  (`react-native-reorderable-list`, one non-scrolling `NestedReorderableList` per lane inside a
+  `ScrollViewContainer`): the button version it replaced cost four taps to move an exercise three places, each one
+  re-rendering the list under the finger — the very "track a moving target" the buttons were meant to avoid, four
+  times over. Chaining stays a button (a drag can't say "and this one runs with the previous"), and the drag handle
+  carries `accessibilityActions` for up/down, the only path TalkBack has. The library is **pure JS** over
+  Reanimated and Gesture Handler, both already installed, so it adds no native module and no dev-client rebuild —
+  only a `GestureHandlerRootView` at the root of `app/_layout.tsx`, which nothing mounted before (expo-router's
+  `Stack` is the native one).
 - **The current set is never lost**: it's written in the dock, and the scroll view catches up to it via
   `useRevealTarget` when the current _exercise_ changes (never between two sets of the same one — a screen that
   re-centres under your thumb is worse than the problem). Measurement is `measureInWindow` on the target and on

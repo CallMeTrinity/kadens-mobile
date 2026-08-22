@@ -1,6 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  NestedReorderableList,
+  ScrollViewContainer,
+  useReorderableDrag,
+} from 'react-native-reorderable-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -38,6 +43,7 @@ import {
   isRunning,
   longDate,
   moveExercise,
+  moveExerciseTo,
   nextTarget,
   removeExercise,
   replaceExercise,
@@ -233,9 +239,6 @@ export default function SessionScreen() {
   // mode, et le déroulé ne doit pas se recaler sous le doigt au moment précis où
   // on déplace une ligne (`useRevealTarget`).
   const target = running && !reordering ? nextTarget(program) : null;
-  // Où chaque exercice se trouve dans sa file : de quoi griser « monter » en tête
-  // et « descendre » en queue plutôt que de laisser l'appui ne rien faire.
-  const arrangement = useMemo(() => arrangementOf(program), [program]);
   // Les hors-programme se regroupent comme les exercices d'un bloc : sans ordre
   // local chacun est son propre groupe, avec un enchaînement improvisé ils
   // partagent un rail. Mémoïsé comme le reste du déroulé — il se reconstruit à
@@ -366,6 +369,17 @@ export default function SessionScreen() {
   // Ranger le déroulé (KL-52). Un seul point d'entrée pour les quatre gestes :
   // ils écrivent la même chose — l'ordre entier — et ne diffèrent que par la
   // modification qu'ils y appliquent (`@/session`, `order.ts`).
+  // Le relâchement d'un glisser-déposer. Il ne dit pas « d'un cran », il dit
+  // « à cette place » — et les deux rangs qu'il donne sont ceux de la **file**
+  // qu'on traînait, c'est-à-dire exactement l'espace dans lequel `order.ts`
+  // range (un bloc, ou les hors-programme). Rien à traduire, donc.
+  const onReorder = useCallback(
+    (exerciseKey: string, to: number) => {
+      moveExerciseTo(uuid, program, exerciseKey, to);
+    },
+    [uuid, program],
+  );
+
   const onArrange = useCallback(
     (exerciseKey: string, action: ArrangeAction) => {
       switch (action) {
@@ -485,86 +499,77 @@ export default function SessionScreen() {
         bord. Avec elle, la mesure **contient déjà** la zone sûre, que la barre
         prend en rembourrage — l'ajouter ici la compterait deux fois.
       */}
-      {/* La fenêtre de lecture : c'est elle que `useRevealTarget` mesure pour
-          savoir si la série courante est encore dedans. */}
-      <View ref={frameRef} style={styles.frame}>
-        <ScrollView
-          ref={scrollRef}
-          onScroll={onScroll}
-          scrollEventThrottle={16}
-          contentContainerStyle={[
-            styles.page,
-            dockHeight > 0
-              ? { paddingBottom: dockHeight + space[13] }
-              : { paddingBottom: space[13] + insets.bottom },
-          ]}
-        >
-          {/* Le bouton de démarrage n'est plus ici mais dans la barre basse : on
+      {/* Ranger le déroulé remplace la page, il ne s'y glisse pas (KL-52) : les
+          séries disparaissent, les listes deviennent traînables, et la page
+          d'ordinaire simple devient un conteneur de listes imbriquées. Deux
+          arbres plutôt qu'un arbre à conditions — celui de la séance ne connaît
+          pas le rangement, et réciproquement. */}
+      {reordering ? (
+        <ArrangeBoard
+          program={program}
+          freeform={workout.freeform}
+          bottomInset={dockHeight > 0 ? dockHeight + space[13] : space[13] + insets.bottom}
+          onReset={() => resetExecutionOrder(uuid)}
+          onArrange={onArrange}
+          onReorder={onReorder}
+        />
+      ) : (
+        /* La fenêtre de lecture : c'est elle que `useRevealTarget` mesure pour
+         savoir si la série courante est encore dedans. */
+        <View ref={frameRef} style={styles.frame}>
+          <ScrollView
+            ref={scrollRef}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={[
+              styles.page,
+              dockHeight > 0
+                ? { paddingBottom: dockHeight + space[13] }
+                : { paddingBottom: space[13] + insets.bottom },
+            ]}
+          >
+            {/* Le bouton de démarrage n'est plus ici mais dans la barre basse : on
               arrive sur cet écran pour **lire** ce qu'il y a à faire (« Voir la
               séance », écran « Aujourd'hui »), on déroule, et l'action reste au
               pouce où qu'on soit rendu. La même action aux deux endroits ferait
               douter qu'elle fait la même chose. */}
-          {startable ? (
-            <View style={styles.notice}>
-              <Text style={styles.body}>
-                Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
-              </Text>
-            </View>
-          ) : null}
+            {startable ? (
+              <View style={styles.notice}>
+                <Text style={styles.body}>
+                  Cette séance n’est pas commencée. Rien ne se consigne tant qu’elle ne l’est pas.
+                </Text>
+              </View>
+            ) : null}
 
-          {/* Ranger le déroulé se dit, sinon la disparition des séries se lit
-              comme une panne — et la portée de ce qu'on fait doit être écrite :
-              rien de ce qui se range ici ne part au serveur. */}
-          {reordering ? (
-            <View style={styles.notice}>
-              <Text style={styles.body}>
-                Range la séance dans l’ordre où tu la mènes. Ça ne change pas le programme et ne
-                part pas au serveur : ça décide de ce que la barre du bas propose.
-              </Text>
-              {program.reordered ? (
-                <Button
-                  label="Rétablir l’ordre du programme"
-                  variant="ghost"
-                  block
-                  accessibilityHint="Le déroulé retrouve l’ordre prescrit. Rien de consigné n’est perdu"
-                  onPress={() => resetExecutionOrder(uuid)}
-                />
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Sans ce mot, l'absence de bouton se lirait comme une panne : le
+            {/* Sans ce mot, l'absence de bouton se lirait comme une panne : le
               programme est là, la séance est datée, et rien ne se coche. */}
-          {closedElsewhere ? (
-            <View style={styles.notice}>
-              <Text style={styles.body}>
-                Séance déjà déclarée faite. Elle se relit, elle ne se consigne plus.
-              </Text>
-            </View>
-          ) : null}
+            {closedElsewhere ? (
+              <View style={styles.notice}>
+                <Text style={styles.body}>
+                  Séance déjà déclarée faite. Elle se relit, elle ne se consigne plus.
+                </Text>
+              </View>
+            ) : null}
 
-          {program.blocks.map((block) => (
-            <BlockSection
-              key={block.key}
-              block={block}
-              editable={running}
-              reordering={reordering}
-              arrangement={arrangement}
-              history={history}
-              today={today}
-              targetKey={target?.exercise.key ?? null}
-              targetRef={targetRef}
-              onCheck={onCheck}
-              onCardio={onCardio}
-              onAdjustSet={setOpenSet}
-              onAddSet={onAddSet}
-              onDropSet={dropDraft}
-              onOpenExercise={setOpenExercise}
-              onArrange={onArrange}
-            />
-          ))}
+            {program.blocks.map((block) => (
+              <BlockSection
+                key={block.key}
+                block={block}
+                editable={running}
+                history={history}
+                today={today}
+                targetKey={target?.exercise.key ?? null}
+                targetRef={targetRef}
+                onCheck={onCheck}
+                onCardio={onCardio}
+                onAdjustSet={setOpenSet}
+                onAddSet={onAddSet}
+                onDropSet={dropDraft}
+                onOpenExercise={setOpenExercise}
+              />
+            ))}
 
-          {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
+            {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
             ajoute, et ce que le pull peut en descendre. Du réalisé invisible
             serait la pire trahison de « rien n'est jamais perdu ».
 
@@ -572,116 +577,116 @@ export default function SessionScreen() {
             aucun programme dont on puisse être « hors ». L'en-tête dit donc
             simplement ce que c'est, sinon la séance entière se lirait comme une
             longue déviation. */}
-          {program.extras.length > 0 ? (
-            <View style={styles.block}>
-              <View style={styles.blockHead}>
-                <Text accessibilityRole="header" style={styles.blockRole}>
-                  {workout.freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme'}
-                </Text>
-              </View>
-              {/* Par groupes et non un à un : une séance libre (KL-34) n'a **que**
+            {program.extras.length > 0 ? (
+              <View style={styles.block}>
+                <View style={styles.blockHead}>
+                  <Text accessibilityRole="header" style={styles.blockRole}>
+                    {workout.freeform && program.blocks.length === 0
+                      ? 'Exercices'
+                      : 'Hors programme'}
+                  </Text>
+                </View>
+                {/* Par groupes et non un à un : une séance libre (KL-34) n'a **que**
                   des hors-programme, et un superset improvisé s'y dessine au même
                   rail que dans un bloc (KL-52). Sans ordre local, chacun est son
                   propre groupe et le rendu est celui d'avant, à l'identique. */}
-              {extraGroups.map((group) => (
-                <GroupSection
-                  key={group.key}
-                  group={group}
-                  editable={running}
-                  reordering={reordering}
-                  arrangement={arrangement}
-                  history={history}
-                  today={today}
-                  targetKey={target?.exercise.key ?? null}
-                  targetRef={targetRef}
-                  onCheck={onCheck}
-                  onCardio={onCardio}
-                  onAdjustSet={setOpenSet}
-                  onAddSet={onAddSet}
-                  onDropSet={dropDraft}
-                  onOpenExercise={setOpenExercise}
-                  onArrange={onArrange}
-                />
-              ))}
-            </View>
-          ) : null}
+                {extraGroups.map((group) => (
+                  <GroupSection
+                    key={group.key}
+                    group={group}
+                    editable={running}
+                    history={history}
+                    today={today}
+                    targetKey={target?.exercise.key ?? null}
+                    targetRef={targetRef}
+                    onCheck={onCheck}
+                    onCardio={onCardio}
+                    onAdjustSet={setOpenSet}
+                    onAddSet={onAddSet}
+                    onDropSet={dropDraft}
+                    onOpenExercise={setOpenExercise}
+                  />
+                ))}
+              </View>
+            ) : null}
 
-          {program.blocks.length === 0 && program.extras.length === 0 ? (
-            <EmptyState
-              title={workout.freeform ? 'Séance libre, sans programme' : 'Aucun programme'}
-              hint={
-                workout.freeform
-                  ? 'Ajoute les exercices au fur et à mesure, ils partiront avec la séance.'
-                  : 'Le programme de cette séance n’est pas descendu. Une synchronisation le rapportera.'
-              }
-            />
-          ) : null}
+            {program.blocks.length === 0 && program.extras.length === 0 ? (
+              <EmptyState
+                title={workout.freeform ? 'Séance libre, sans programme' : 'Aucun programme'}
+                hint={
+                  workout.freeform
+                    ? 'Ajoute les exercices au fur et à mesure, ils partiront avec la séance.'
+                    : 'Le programme de cette séance n’est pas descendu. Une synchronisation le rapportera.'
+                }
+              />
+            ) : null}
 
-          {running && !reordering ? (
-            <Button
-              label="Ajouter un exercice"
-              variant="secondary"
-              block
-              onPress={() => setPicker({ mode: 'add' })}
-            />
-          ) : null}
+            {running ? (
+              <Button
+                label="Ajouter un exercice"
+                variant="secondary"
+                block
+                onPress={() => setPicker({ mode: 'add' })}
+              />
+            ) : null}
 
-          {/* La porte du rangement (KL-52), en fin de déroulé et **une seule** :
+            {/* La porte du rangement (KL-52), en fin de déroulé et **une seule** :
               le même geste à deux endroits ferait douter qu'il fait la même
               chose. Elle s'ouvre aussi avant le démarrage — on lit le programme,
               on sait déjà que le rack sera pris — puisque rien de ce qu'elle
               écrit n'est du réalisé. */}
-          {!closed && !reordering && exerciseCount(program) > 1 ? (
-            <Button
-              label="Réorganiser les exercices"
-              variant="ghost"
-              block
-              accessibilityHint="Changer l’ordre et les enchaînements, sur ce téléphone seulement"
-              onPress={() => setReordering(true)}
-            />
-          ) : null}
+            {!closed && exerciseCount(program) > 1 ? (
+              <Button
+                label="Réorganiser les exercices"
+                variant="ghost"
+                block
+                accessibilityHint="Changer l’ordre et les enchaînements, sur ce téléphone seulement"
+                onPress={() => setReordering(true)}
+              />
+            ) : null}
 
-          {/* La porte de la clôture (KL-33), en fin de déroulé : c'est là qu'on
+            {/* La porte de la clôture (KL-33), en fin de déroulé : c'est là qu'on
             arrive une fois la dernière série cochée. Le geste lui-même, son
             résumé et sa note vivent sur l'écran suivant.
 
             En **secondaire** tant que la séance court : l'action primaire de
             l'écran est celle de la barre basse, et il n'y en a qu'une (KL-39).
             Ce bouton-ci reste le chemin de celui qui arrête plus tôt. */}
-          {!reordering && (running || (closed && !closedElsewhere)) ? (
-            <Button
-              label={closed ? 'Voir le résumé' : 'Terminer la séance'}
-              variant="secondary"
-              block
-              accessibilityHint={
-                closed
-                  ? 'Relire ce qui a été fait'
-                  : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
-              }
-              onPress={() => router.push(`/session/${uuid}/close`)}
-            />
-          ) : null}
+            {running || (closed && !closedElsewhere) ? (
+              <Button
+                label={closed ? 'Voir le résumé' : 'Terminer la séance'}
+                variant="secondary"
+                block
+                accessibilityHint={
+                  closed
+                    ? 'Relire ce qui a été fait'
+                    : 'Voir le résumé avant de la déclarer terminée. Rien n’est clôturé tant qu’on ne le confirme pas'
+                }
+                onPress={() => router.push(`/session/${uuid}/close`)}
+              />
+            ) : null}
 
-          {/* La sortie de secours : la séance a été ouverte par erreur, ou on
+            {/* La sortie de secours : la séance a été ouverte par erreur, ou on
               renonce. Elle est **sous** la porte de la clôture et en `ghost` —
               c'est le geste qu'on ne cherche pas, et l'écran n'a qu'une action
               primaire, dans la barre basse (KL-39). Elle disparaît avec la
               clôture : une séance close ne s'annule plus (`cancel.ts`). */}
-          {running && !reordering ? (
-            <Button
-              label={workout.freeform ? 'Supprimer cette séance' : 'Annuler la séance'}
-              variant="ghost"
-              block
-              accessibilityHint={
-                workout.freeform
-                  ? 'Elle n’a pas eu lieu : elle disparaît, ici comme sur le web'
-                  : 'Elle n’a pas eu lieu : elle redevient à faire, et ce qui a été coché est effacé'
-              }
-              onPress={onCancel}
-            />
-          ) : null}
-        </ScrollView>
-      </View>
+            {running ? (
+              <Button
+                label={workout.freeform ? 'Supprimer cette séance' : 'Annuler la séance'}
+                variant="ghost"
+                block
+                accessibilityHint={
+                  workout.freeform
+                    ? 'Elle n’a pas eu lieu : elle disparaît, ici comme sur le web'
+                    : 'Elle n’a pas eu lieu : elle redevient à faire, et ce qui a été coché est effacé'
+                }
+                onPress={onCancel}
+              />
+            ) : null}
+          </ScrollView>
+        </View>
+      )}
 
       {reordering ? (
         <ArrangeDock onHeight={setDockHeight} onDone={() => setReordering(false)} />
@@ -1094,13 +1099,6 @@ function useRevealTarget(targetKey: string | null, { bottomInset }: { bottomInse
 type SectionHandlers = {
   editable: boolean;
   /**
-   * Le déroulé est en cours de rangement (KL-52) : chaque exercice se réduit à
-   * son nom et à ses poignées de déplacement, séries comprises.
-   */
-  reordering: boolean;
-  /** Où chaque exercice se trouve dans sa file, pour griser ce qui n'a pas de sens. */
-  arrangement: Map<string, Arrangement>;
-  /**
    * La dernière performance et le record, indexés par identifiant d'exercice
    * (KL-32). Le déroulé entier en reçoit **une seule** copie : une lecture par
    * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
@@ -1119,50 +1117,61 @@ type SectionHandlers = {
   /** Retire la série annoncée et pas encore faite. Prend la clé de l'exercice. */
   onDropSet: (exerciseKey: string) => void;
   onOpenExercise: (key: string) => void;
-  /** Déplacer, enchaîner, détacher. Prend la clé de l'exercice (KL-52). */
-  onArrange: (exerciseKey: string, action: ArrangeAction) => void;
-};
-
-/** Les quatre gestes du rangement. Ils écrivent tous l'ordre entier (`order.ts`). */
-type ArrangeAction = 'up' | 'down' | 'chain' | 'unchain';
-
-/** Ce qu'il faut savoir d'un exercice pour lui proposer les bons gestes. */
-type Arrangement = {
-  /** En tête de sa file : rien au-dessus, donc ni montée ni enchaînement possible. */
-  first: boolean;
-  /** En queue de sa file. */
-  last: boolean;
-  /** Membre d'un enchaînement — c'est exactement ce que porter un rang veut dire. */
-  chained: boolean;
 };
 
 /**
- * La place de chaque exercice dans sa file, calculée une fois pour tout le
- * déroulé.
+ * Les gestes du rangement qui restent des **boutons** (KL-52).
  *
- * Les files sont celles de `order.ts` — un bloc, ou les hors-programme — et
- * c'est la raison pour laquelle ce calcul ne peut pas vivre dans le composant du
- * groupe : un groupe ne sait pas s'il est le premier de son bloc, et un bouton
- * « monter » actif en tête de file serait un appui sans effet.
+ * Le déplacement, lui, se traîne désormais et n'est plus ici : `up` et `down`
+ * survivent pour TalkBack, qui n'a aucun moyen de traîner quoi que ce soit, et
+ * qui les trouve en actions d'accessibilité sur la poignée (`ArrangeRow`).
  */
-function arrangementOf(program: SessionProgram): Map<string, Arrangement> {
-  const map = new Map<string, Arrangement>();
-  const pools = [
-    ...program.blocks.map((block) => block.groups.flatMap((group) => group.exercises)),
-    program.extras,
-  ];
+type ArrangeAction = 'up' | 'down' | 'chain' | 'unchain';
 
-  for (const pool of pools) {
-    pool.forEach((exercise, index) => {
-      map.set(exercise.key, {
-        first: index === 0,
-        last: index === pool.length - 1,
-        chained: exercise.groupLabel !== null,
-      });
+/**
+ * Les files réordonnables du déroulé, telles que le rangement les dessine.
+ *
+ * Une file par bloc, plus les hors-programme — **exactement** les files de
+ * `order.ts` (`pools`), et ce n'est pas une coïncidence qu'il faut entretenir :
+ * les deux rangs que le glisser-déposer rend au relâchement sont des rangs dans
+ * cette liste-là, et `moveExerciseTo` les applique tels quels. Les composer
+ * autrement ici ferait atterrir l'exercice ailleurs qu'où le doigt l'a lâché.
+ *
+ * Le groupe (superset) n'est **pas** une file : il n'a pas de conteneur dans le
+ * modèle, et un enchaînement se fait et se défait de voisins contigus. On aplatit
+ * donc les groupes, et le rang porté par chaque ligne dit le reste.
+ */
+type ArrangeLane = {
+  key: string;
+  /** Le numéro du bloc, ou `null` pour les hors-programme, qui n'en ont pas. */
+  number: string | null;
+  title: string;
+  label: string | null;
+  exercises: SessionExercise[];
+};
+
+function arrangeLanes(program: SessionProgram, freeform: boolean): ArrangeLane[] {
+  const lanes: ArrangeLane[] = program.blocks.map((block) => ({
+    key: block.key,
+    number: String(block.number).padStart(2, '0'),
+    title: blockRoleLabel(block.block.role),
+    label: block.block.label,
+    exercises: block.groups.flatMap((group) => group.exercises),
+  }));
+
+  if (program.extras.length > 0) {
+    lanes.push({
+      key: 'extras',
+      number: null,
+      // Une séance libre n'a **que** ça : l'appeler « hors programme » ferait
+      // lire la séance entière comme une longue déviation (même mot que la page).
+      title: freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme',
+      label: null,
+      exercises: [...program.extras],
     });
   }
 
-  return map;
+  return lanes;
 }
 
 /** Combien d'exercices la séance porte, hors programme compris. */
@@ -1232,8 +1241,6 @@ function GroupSection({ group, ...handlers }: { group: SessionGroup } & SectionH
 function ExerciseSection({
   exercise,
   editable,
-  reordering,
-  arrangement,
   history,
   today,
   targetKey,
@@ -1244,23 +1251,8 @@ function ExerciseSection({
   onAddSet,
   onDropSet,
   onOpenExercise,
-  onArrange,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const { prescribed, lines } = exercise;
-
-  // Ranger, c'est regarder la séance de haut : les séries, l'historique et les
-  // consignes disparaissent le temps du mode, parce qu'un déroulé complet ne
-  // tient pas à l'écran et qu'on ne peut pas déplacer ce qu'on ne voit pas.
-  if (reordering) {
-    return (
-      <ArrangeRow
-        exercise={exercise}
-        arrangement={arrangement.get(exercise.key) ?? null}
-        onArrange={onArrange}
-      />
-    );
-  }
-
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
@@ -1367,50 +1359,207 @@ function ExerciseSection({
 }
 
 /**
+ * Le déroulé en mode rangement (KL-52) : les files, et rien qu'elles.
+ *
+ * ## Le glisser-déposer, et le retour en arrière qu'il représente
+ *
+ * La première version rangeait aux **boutons**, et le disait longuement : viser
+ * une poignée, maintenir, suivre une cible qui défile, relâcher au bon endroit,
+ * ça fait quatre exigences de précision dans le contexte de KL-39 — debout, à
+ * bout de bras, écran gras. C'était un raisonnement juste sur le mauvais geste.
+ * Déplacer un exercice de la position 6 à la position 2 demandait **quatre**
+ * appuis successifs, chacun suivi d'un re-rendu de la liste entière, la ligne
+ * qu'on suit changeant de place à chaque fois — soit exactement le « suivre une
+ * cible qui bouge » qu'on cherchait à éviter, en quatre fois.
+ *
+ * La bibliothèque est `react-native-reorderable-list`, et le choix se tient en
+ * une ligne : elle est **entièrement en JavaScript**, posée sur Reanimated et
+ * Gesture Handler, tous deux déjà là. Aucun module natif de plus, donc aucune
+ * reconstruction du client de développement (voir CLAUDE.md, « Native modules »)
+ * — la seule chose que l'app y gagne est une `GestureHandlerRootView` à la
+ * racine, que rien ne montait jusqu'ici.
+ *
+ * Ce que le geste garde de l'ancien : on ne traîne que **dans sa file**, chaque
+ * liste étant close sur son bloc (un bloc est une section de la séance, en
+ * sortir un exercice le changerait de nature), et rien ne part au serveur.
+ *
+ * ## Une liste imbriquée par file, dans un conteneur qui défile
+ *
+ * `ScrollViewContainer` remplace la `ScrollView` de la page, et chaque bloc porte
+ * une `NestedReorderableList` non défilante (`scrollable={false}`, `scrollEnabled`
+ * à `false`) : c'est le montage que la bibliothèque prévoit pour des listes dans
+ * une page, et c'est aussi ce qui évite l'erreur de React Native sur les listes
+ * virtualisées imbriquées — elle ne se déclenche que sur une liste **défilante**.
+ * Les files font trois à six lignes, il n'y a rien à virtualiser.
+ *
+ * ## Ce qui est vrai est en base, ici aussi
+ *
+ * Le relâchement **écrit** (`moveExerciseTo`), et la liste se redessine parce que
+ * la base a republié — pas parce qu'un état local aurait bougé. C'est la règle de
+ * l'écran (§1 de son en-tête), et elle vaut la peine d'être tenue jusqu'ici : un
+ * ordre optimiste en mémoire serait une deuxième version de l'ordre, et deux
+ * versions d'un même fait finissent toujours par diverger.
+ */
+function ArrangeBoard({
+  program,
+  freeform,
+  bottomInset,
+  onReset,
+  onArrange,
+  onReorder,
+}: {
+  program: SessionProgram;
+  freeform: boolean;
+  /** Le dégagement sous la page : la barre basse mesurée, ou la zone sûre. */
+  bottomInset: number;
+  onReset: () => void;
+  onArrange: (exerciseKey: string, action: ArrangeAction) => void;
+  onReorder: (exerciseKey: string, to: number) => void;
+}) {
+  const lanes = useMemo(() => arrangeLanes(program, freeform), [program, freeform]);
+  const reducedMotion = useReducedMotion();
+
+  return (
+    <ScrollViewContainer contentContainerStyle={[styles.page, { paddingBottom: bottomInset }]}>
+      {/* Ranger le déroulé se dit, sinon la disparition des séries se lit comme
+          une panne — et la portée de ce qu'on fait doit être écrite : rien de ce
+          qui se range ici ne part au serveur. */}
+      <View style={styles.notice}>
+        <Text style={styles.body}>
+          Range la séance dans l’ordre où tu la mènes : tire un exercice par sa poignée. Ça ne
+          change pas le programme et ne part pas au serveur : ça décide de ce que la barre du bas
+          propose.
+        </Text>
+        {program.reordered ? (
+          <Button
+            label="Rétablir l’ordre du programme"
+            variant="ghost"
+            block
+            accessibilityHint="Le déroulé retrouve l’ordre prescrit. Rien de consigné n’est perdu"
+            onPress={onReset}
+          />
+        ) : null}
+      </View>
+
+      {lanes.map((lane) => (
+        <View key={lane.key} style={styles.block}>
+          <View style={styles.blockHead}>
+            {lane.number ? <Text style={styles.blockNumber}>{lane.number}</Text> : null}
+            <Text accessibilityRole="header" style={styles.blockRole}>
+              {lane.title}
+            </Text>
+            {lane.label ? <Text style={styles.blockLabel}>{lane.label}</Text> : null}
+          </View>
+
+          <NestedReorderableList
+            data={lane.exercises}
+            keyExtractor={(exercise) => exercise.key}
+            // Non défilante : c'est la page qui défile, et c'est ce qui tait
+            // l'erreur des listes virtualisées imbriquées (voir l'en-tête).
+            scrollable={false}
+            scrollEnabled={false}
+            // Le mouvement est le seul de cet écran qui ne passe pas par
+            // `useReducedMotion` sans qu'on lui dise : la bibliothèque anime le
+            // replacement des lignes, on lui coupe la durée.
+            animationDuration={reducedMotion ? 0 : undefined}
+            onReorder={({ from, to }) => {
+              const moved = lane.exercises[from];
+
+              if (moved) {
+                onReorder(moved.key, to);
+              }
+            }}
+            renderItem={({ item, index }) => (
+              <ArrangeRow
+                exercise={item}
+                first={index === 0}
+                last={index === lane.exercises.length - 1}
+                onArrange={onArrange}
+              />
+            )}
+          />
+        </View>
+      ))}
+    </ScrollViewContainer>
+  );
+}
+
+/**
  * Un exercice, réduit à ce qu'il faut pour le ranger (KL-52).
- *
- * ## Des boutons, pas un glisser-déposer
- *
- * Le glisser-déposer est le geste évident sur une liste, et c'est le mauvais ici.
- * Il demande de viser une poignée, de maintenir, de suivre une cible qui défile,
- * puis de relâcher au bon endroit — quatre exigences de précision dans le
- * contexte que KL-39 décrit : debout, à bout de bras, écran gras, parfois dans le
- * noir. Deux boutons au plancher tactile font le même travail en appuis discrets,
- * chacun rattrapable, et ils s'annoncent à TalkBack. Ils évitent aussi une
- * dépendance native de plus, donc une reconstruction du dev client.
  *
  * ## Ce que la ligne dit, et ce qu'elle tait
  *
- * Le nom, son rang d'enchaînement, et rien d'autre : ni séries, ni historique, ni
- * consigne. Ranger est une vue de haut, et un déroulé complet ne tient pas à
- * l'écran — on ne déplace pas ce qu'on ne voit pas. Un exercice **sauté** garde
- * sa marque : il reste dans l'ordre, il est réglé, pas absent.
+ * Le nom, son rang d'enchaînement, une poignée, et rien d'autre : ni séries, ni
+ * historique, ni consigne. Ranger est une vue de haut, et un déroulé complet ne
+ * tient pas à l'écran — on ne déplace pas ce qu'on ne voit pas. Un exercice
+ * **sauté** garde sa marque : il reste dans l'ordre, il est réglé, pas absent.
  *
- * Les deux gestes d'enchaînement sont **un seul bouton**, parce qu'ils sont un
- * seul fait vu des deux côtés : ou l'exercice est lié à celui qui le précède, ou
- * il ne l'est pas. Il porte donc le rang dans son libellé (« Détacher de A »),
- * seule façon de savoir de quoi on se détache sans compter les rails à l'œil.
+ * ## La poignée, et le déplacement au clavier qu'elle porte quand même
+ *
+ * Le glisser-déposer n'existe pas pour TalkBack : il n'y a rien à traîner quand
+ * on navigue au balayage. La poignée porte donc deux **actions d'accessibilité**,
+ * « Monter » et « Descendre », qui appellent le déplacement d'un cran resté dans
+ * `order.ts`. C'est le chemin d'origine, conservé là où il est le seul possible,
+ * et il ne coûte pas une cible de plus à l'écran.
+ *
+ * Le geste part à l'**appui**, pas à l'appui long : la poignée est une zone
+ * dédiée, rien d'autre ne s'y déclenche, et attendre une demi-seconde avant que
+ * la ligne décolle se lit comme un écran qui ne répond pas. La page, elle, se
+ * fait défiler partout ailleurs sur la ligne.
+ *
+ * ## L'enchaînement reste un bouton, et un seul
+ *
+ * Traîner ne sait pas dire « et celui-ci est enchaîné au précédent » : c'est une
+ * autre question que la place. Les deux gestes sont **un seul bouton**, parce
+ * qu'ils sont un seul fait vu des deux côtés — ou l'exercice est lié à celui qui
+ * le précède, ou il ne l'est pas. Il porte le rang dans son libellé (« Détacher
+ * de A »), seule façon de savoir de quoi on se détache sans compter les rails à
+ * l'œil.
  */
 function ArrangeRow({
   exercise,
-  arrangement,
+  first,
+  last,
   onArrange,
 }: {
   exercise: SessionExercise;
-  arrangement: Arrangement | null;
+  /** En tête de sa file : rien ne le précède, donc rien à quoi l'enchaîner. */
+  first: boolean;
+  /** En queue de sa file. Ne sert qu'à taire l'action « Descendre ». */
+  last: boolean;
   onArrange: (exerciseKey: string, action: ArrangeAction) => void;
 }) {
-  // Sans place connue, aucun geste n'a de sens : la ligne se lit, elle ne se
-  // range pas. N'arrive pas dans l'app — le déroulé et l'index viennent du même
-  // objet — mais un bouton actif qui ne fait rien serait pire que son absence.
-  const first = arrangement?.first ?? true;
-  const last = arrangement?.last ?? true;
-  const chained = arrangement?.chained ?? false;
+  const drag = useReorderableDrag();
+  const chained = exercise.groupLabel !== null;
   const previous = chained ? (exercise.groupLabel?.replace(/\d+$/, '') ?? null) : null;
 
   return (
     <View style={styles.arrange}>
       <View style={styles.arrangeHead}>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Déplacer ${exercise.name}`}
+          accessibilityHint="Tire pour changer sa place dans le bloc"
+          // Ce que TalkBack propose à la place du glissement, qu'il ne sait pas
+          // faire. Les deux actions sont annoncées, jamais grisées : une action
+          // absente en tête de file est plus claire qu'une action inerte.
+          accessibilityActions={[
+            ...(first ? [] : [{ name: 'moveUp', label: 'Monter' }]),
+            ...(last ? [] : [{ name: 'moveDown', label: 'Descendre' }]),
+          ]}
+          onAccessibilityAction={(event) => {
+            if (event.nativeEvent.actionName === 'moveUp') {
+              onArrange(exercise.key, 'up');
+            } else if (event.nativeEvent.actionName === 'moveDown') {
+              onArrange(exercise.key, 'down');
+            }
+          }}
+          onPressIn={drag}
+          style={({ pressed }) => [styles.grip, pressed && styles.gripPressed]}
+        >
+          <Icon name="grip-vertical" color={colors.textSecondary} />
+        </Pressable>
+
         {exercise.groupLabel ? <Text style={styles.rank}>{exercise.groupLabel}</Text> : null}
         <Text style={styles.name} numberOfLines={2}>
           {exercise.name}
@@ -1420,25 +1569,6 @@ function ArrangeRow({
       </View>
 
       <View style={styles.arrangeActions}>
-        <Button
-          label="Monter"
-          variant="secondary"
-          size="sm"
-          disabled={first}
-          accessibilityLabel={`Monter ${exercise.name}`}
-          accessibilityHint={first ? 'Déjà en tête de son bloc' : undefined}
-          onPress={() => onArrange(exercise.key, 'up')}
-        />
-        <Button
-          label="Descendre"
-          variant="secondary"
-          size="sm"
-          disabled={last}
-          accessibilityLabel={`Descendre ${exercise.name}`}
-          accessibilityHint={last ? 'Déjà en fin de son bloc' : undefined}
-          onPress={() => onArrange(exercise.key, 'down')}
-        />
-        <View style={styles.spacer} />
         <Button
           label={chained ? `Détacher${previous ? ` de ${previous}` : ''}` : 'Enchaîner'}
           variant="ghost"
@@ -2567,6 +2697,18 @@ const styles = StyleSheet.create({
   },
   arrangeHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   arrangeActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  // La poignée. Elle prend le plancher tactile en entier (`touchTarget`) alors
+  // que l'icône fait 20 points : c'est la seule cible de la ligne, et on la vise
+  // à bout de bras. Le décalage négatif lui rend ce qu'elle prend au rembourrage
+  // de la ligne, sinon le nom se décalerait de dix points en mode rangement.
+  grip: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    minWidth: layout.touchTarget,
+    minHeight: layout.touchTarget,
+    marginLeft: -space[5],
+  },
+  gripPressed: { backgroundColor: colors.fill },
 
   exercise: { paddingHorizontal: space[7], paddingVertical: space[6] },
   // L'exercice courant (KL-39). Le rail compense sa propre épaisseur en

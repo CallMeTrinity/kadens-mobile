@@ -1,6 +1,6 @@
 /**
- * L'ordre d'exécution d'une séance (KL-52) : déplacer un exercice, l'enchaîner à
- * son voisin, l'en détacher, tout rétablir.
+ * L'ordre d'exécution d'une séance (KL-52) : déplacer un exercice — d'un cran ou
+ * à une place donnée —, l'enchaîner à son voisin, l'en détacher, tout rétablir.
  *
  * ## Pourquoi ce fichier existe, alors que « on dévie, on ne recompose pas »
  *
@@ -19,7 +19,7 @@
  * contre celui qu'elle vise. Réordonner localement remet la barre d'accord avec
  * la salle, sans rien raconter au serveur.
  *
- * ## Les quatre gestes écrivent tous la même chose : l'ordre entier
+ * ## Tous les gestes écrivent la même chose : l'ordre entier
  *
  * Chaque appel **réécrit toutes les lignes** de `session_layout` pour cette
  * séance, calculées depuis le déroulé qu'on a sous les yeux. C'est plus simple
@@ -28,6 +28,10 @@
  * ordre et l'autre selon le nouveau, et les identifiants d'enchaînement n'ont pas
  * à être stables d'une écriture à l'autre — seule leur **égalité entre voisins**
  * a un sens (`withExecutionOrder`).
+ *
+ * C'est ce qui rend `moveExerciseTo` — le relâchement d'un glisser-déposer —
+ * aussi bon marché que `moveExercise` : les deux ne diffèrent que par la façon de
+ * bouger un élément dans un tableau, l'écriture est la même.
  *
  * Corollaire : la première écriture **fige l'ordre du programme** dans la table,
  * enchaînements compris. C'est ce qui fait qu'un superset descendu du serveur
@@ -196,6 +200,46 @@ export function moveExercise(
     }
 
     [lane[index], lane[target]] = [lane[target], lane[index]];
+
+    return true;
+  });
+}
+
+/**
+ * Déplace un exercice **à une place donnée** de sa file : le geste du
+ * glisser-déposer, qui ne connaît pas les crans.
+ *
+ * `to` est un rang **dans la file de l'exercice**, celui que la liste réordonnable
+ * annonce au relâchement — donc déjà l'index d'arrivée dans un tableau dont
+ * l'élément déplacé a été retiré. On applique exactement ça : `splice` sortant,
+ * `splice` entrant. Un rang hors bornes est serré dans la file plutôt que refusé :
+ * la bibliothèque ne rend jamais mieux que le dernier rang, et un déplacement qui
+ * ne ferait rien après un geste abouti se lirait comme un écran figé.
+ *
+ * L'enchaînement **suit l'exercice**, comme pour un déplacement d'un cran : ce
+ * qu'on traîne emporte son rang, et c'est la contiguïté qui décide de ce qui
+ * reste un superset (`withExecutionOrder`). Traverser un enchaînement le coupe
+ * donc en deux, ce qui est la lecture juste — on vient de s'intercaler au milieu.
+ *
+ * Rend `false` quand rien ne bouge : un exercice relâché là où il était n'a pas
+ * d'ordre à réécrire.
+ */
+export function moveExerciseTo(
+  scheduledUuid: string,
+  program: SessionProgram,
+  exerciseKey: string,
+  to: number,
+): boolean {
+  return arrange(scheduledUuid, program, exerciseKey, (lane, index) => {
+    const target = Math.min(Math.max(to, 0), lane.length - 1);
+
+    if (target === index) {
+      return false;
+    }
+
+    const [moved] = lane.splice(index, 1);
+
+    lane.splice(target, 0, moved);
 
     return true;
   });

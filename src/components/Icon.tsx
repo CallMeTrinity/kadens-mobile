@@ -50,6 +50,18 @@ const ICONS = {
   'external-link': [
     { d: 'M15 3h6v6m-11 5L21 3m-3 10v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6' },
   ],
+  /**
+   * La poignée de déplacement d'un exercice, en mode rangement (KL-52). Le même
+   * dessin que le compositeur web, qui l'emploie déjà au même endroit.
+   */
+  'grip-vertical': [
+    { cx: 9, cy: 12, r: 1 },
+    { cx: 9, cy: 5, r: 1 },
+    { cx: 9, cy: 19, r: 1 },
+    { cx: 15, cy: 12, r: 1 },
+    { cx: 15, cy: 5, r: 1 },
+    { cx: 15, cy: 19, r: 1 },
+  ],
   /** Le repos automatique, débranché. Barrée, comme tous les `*-off` de Lucide. */
   'timer-off': [
     {

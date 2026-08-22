@@ -170,7 +170,13 @@ export type { CancelOutcome } from './cancel';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 
-export { chainExercise, moveExercise, resetExecutionOrder, unchainExercise } from './order';
+export {
+  chainExercise,
+  moveExercise,
+  moveExerciseTo,
+  resetExecutionOrder,
+  unchainExercise,
+} from './order';
 
 export {
   allExercises,

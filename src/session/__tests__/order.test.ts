@@ -25,6 +25,7 @@ import {
   checkSet,
   closeWorkout,
   moveExercise,
+  moveExerciseTo,
   nextTarget,
   resetExecutionOrder,
   unchainExercise,
@@ -139,6 +140,55 @@ describe('moveExercise', () => {
     // Le déroulé est celui d'avant la clôture : c'est ce que l'écran a en main
     // quand il rejoue un appui parti trop tard.
     expect(moveExercise(UUID, program, 'e3', -1)).toBe(false);
+    expect(order()).toEqual(['Exercice 101', 'Exercice 102', 'Exercice 103']);
+  });
+});
+
+describe('moveExerciseTo', () => {
+  it('pose l’exercice à la place demandée, d’un seul geste', () => {
+    openSupersetWorkout();
+
+    // Ce que rend le relâchement d'un glisser-déposer : « celui-ci, en tête ».
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', 0)).toBe(true);
+
+    expect(order()).toEqual(['Exercice 103', 'Exercice 101', 'Exercice 102']);
+    expect(nextTarget(programOf(UUID))?.exercise.name).toBe('Exercice 103');
+  });
+
+  it('coupe l’enchaînement qu’il traverse : on s’intercale au milieu', () => {
+    openSupersetWorkout();
+
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', 1)).toBe(true);
+
+    expect(order()).toEqual(['Exercice 101', 'Exercice 103', 'Exercice 102']);
+    // Les deux membres du superset ne sont plus voisins : la contiguïté est la
+    // seule règle, et elle vient d'être rompue par ce qui s'est glissé entre.
+    expect(ranks()).toEqual(['—', '—', '—']);
+  });
+
+  it('rend false quand la ligne est relâchée là où elle était', () => {
+    openSupersetWorkout();
+
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e2', 1)).toBe(false);
+    // Pas d'ordre écrit du tout : un geste sans effet ne fige pas le programme
+    // dans la table.
+    expect(programOf(UUID).reordered).toBe(false);
+  });
+
+  it('serre un rang hors bornes dans la file plutôt que de refuser', () => {
+    openSupersetWorkout();
+
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e1', 99)).toBe(true);
+    expect(order()).toEqual(['Exercice 102', 'Exercice 103', 'Exercice 101']);
+  });
+
+  it('ne bouge plus rien une fois la séance close', () => {
+    openSupersetWorkout();
+    const program = programOf(UUID);
+
+    closeWorkout(UUID);
+
+    expect(moveExerciseTo(UUID, program, 'e3', 0)).toBe(false);
     expect(order()).toEqual(['Exercice 101', 'Exercice 102', 'Exercice 103']);
   });
 });

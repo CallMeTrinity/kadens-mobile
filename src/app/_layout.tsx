@@ -2,7 +2,8 @@ import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Linking } from 'react-native';
+import { Linking, StyleSheet } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { restoreSession, setApiBaseUrl, useSession } from '@/api';
@@ -132,28 +133,43 @@ export default function RootLayout() {
   }
 
   return (
-    <SafeAreaProvider>
-      <Stack
-        screenOptions={{
-          headerShown: false,
-          contentStyle: { backgroundColor: colors.bg },
-        }}
-      >
-        {/*
+    /*
+      La racine des gestes. `react-native-gesture-handler` en a besoin pour
+      reconnaître quoi que ce soit — `GestureDetector` **lève** sans elle en
+      développement, avec le message qui va bien — et rien ne la montait jusqu'ici
+      parce que rien ne s'en servait : la pile d'`expo-router` est une pile
+      **native** (`react-native-screens`), qui ne passe pas par la version JS et
+      son propre `GestureHandlerRootView`.
+
+      Elle est ici et non dans l'écran qui traîne des exercices, pour la raison
+      qui vaut pour tous les fournisseurs de cet écran : montée une fois, elle
+      couvre l'app entière, et le prochain geste n'aura rien à réinstaller. Elle
+      enveloppe `SafeAreaProvider` plutôt que l'inverse — c'est une `View` qui
+      prend toute la place, elle doit être la boîte, pas le contenu.
+    */
+    <GestureHandlerRootView style={styles.root}>
+      <SafeAreaProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            contentStyle: { backgroundColor: colors.bg },
+          }}
+        >
+          {/*
           Le garde de navigation. `Stack.Protected` retire les écrans de la pile
           au lieu de rendre une redirection : quand un 401 purge la session, la
           pile ne contient plus que `login` et le routeur y retombe seul. C'est
           ce qui rend « un 401 renvoie vers l'écran de connexion » vrai sans
           qu'aucun écran n'ait à intercepter d'erreur.
         */}
-        <Stack.Protected guard={readyForApp}>
-          {/*
+          <Stack.Protected guard={readyForApp}>
+            {/*
             Les trois destinations de la barre basse — Aujourd'hui, Historique,
             Réglages — vivent dans un seul écran de pile (KL-37). Un groupe
             n'apparaît pas dans l'URL : `/settings` reste `/settings`.
           */}
-          <Stack.Screen name="(tabs)" />
-          {/*
+            <Stack.Screen name="(tabs)" />
+            {/*
             Les deux écrans d'une séance. Ils sont déclarés **un par un** parce
             que le garde ne protège que ce qu'il liste : une route oubliée ici
             resterait navigable une fois la session purgée, et celle-ci ouvre le
@@ -164,22 +180,23 @@ export default function RootLayout() {
             disputeraient la place à la seule cible qui compte, valider une
             série. En sortir, c'est revenir, pas changer d'onglet.
           */}
-          <Stack.Screen name="session/[uuid]/index" />
-          <Stack.Screen name="session/[uuid]/close" />
-        </Stack.Protected>
+            <Stack.Screen name="session/[uuid]/index" />
+            <Stack.Screen name="session/[uuid]/close" />
+          </Stack.Protected>
 
-        <Stack.Protected guard={signedIn && session.awaitingFirstSync}>
-          <Stack.Screen name="bootstrapping" />
-        </Stack.Protected>
+          <Stack.Protected guard={signedIn && session.awaitingFirstSync}>
+            <Stack.Screen name="bootstrapping" />
+          </Stack.Protected>
 
-        <Stack.Protected guard={!signedIn}>
-          <Stack.Screen name="login" />
-          <Stack.Screen name="pairing" />
-          <Stack.Screen name="login-password" />
-        </Stack.Protected>
-      </Stack>
-      <StatusBar style="dark" />
-    </SafeAreaProvider>
+          <Stack.Protected guard={!signedIn}>
+            <Stack.Screen name="login" />
+            <Stack.Screen name="pairing" />
+            <Stack.Screen name="login-password" />
+          </Stack.Protected>
+        </Stack>
+        <StatusBar style="dark" />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -278,3 +295,11 @@ function useRestoredSession(dbSettled: boolean, dbReady: boolean): boolean {
 
   return settled;
 }
+
+/**
+ * La racine des gestes occupe la fenêtre entière. Sans `flex: 1`, elle se
+ * réduirait à la hauteur de son contenu et rognerait l'app à sa première mesure.
+ */
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});
