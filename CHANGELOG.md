@@ -11,6 +11,8 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### [1.1.0] - 2026-08-23
+
 ### Ajouté
 
 - Correction d'une série **avant** de la faire : la zone de valeurs d'une ligne
@@ -96,7 +98,8 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.1...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.3...v1.0.0
 [0.0.3]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.2...v0.0.3
