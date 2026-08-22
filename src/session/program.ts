@@ -48,6 +48,10 @@
  * annonce avant de la faire (`withDraftSets`, plus bas). Elle ne vit qu'en
  * mémoire, le temps du rendu, et disparaît en devenant du réalisé.
  *
+ * Et une **valeur** de la même nature : la correction posée sur une série pas
+ * encore faite (`withPlannedOverrides`, plus bas). Même statut, même durée de
+ * vie — rien en base tant que la série n'est pas cochée.
+ *
  * ## L'ordre du programme, et celui dans lequel on l'a mené (KL-52)
  *
  * Les deux ne sont plus le même depuis `withExecutionOrder` (plus bas). Le
@@ -102,6 +106,13 @@ export interface SessionSetLine {
   /** Le type qui qualifie la ligne : celui du fait quand il existe, du prévu sinon. */
   type: SetType;
   planned: SetValues | null;
+  /**
+   * Les valeurs corrigées **avant** de faire la série, projetées par
+   * `withPlannedOverrides`. `null` dans le cas courant : on fait ce qui est
+   * écrit. Ni prescrit ni réalisé, donc rien en base — c'est ce que la ligne
+   * consignera quand on la cochera, et ce qu'elle affiche en attendant.
+   */
+  override: SetValues | null;
   logged: LoggedSetRow | null;
   /** Cochable : c'est la prochaine série de sa file (échauffement ou travail). */
   actionable: boolean;
@@ -439,6 +450,7 @@ function buildLines(
         weightKg: line.weightKg,
         durationSeconds: line.durationSeconds,
       },
+      override: null,
       logged,
       actionable: logged === null && rank === queue.length,
       undoable: logged !== null && rank === queue.length - 1,
@@ -458,6 +470,7 @@ function buildLines(
         index,
         type: set.type,
         planned: null,
+        override: null,
         logged: set,
         actionable: false,
         undoable: set.uuid === queues[file][queues[file].length - 1].uuid,
@@ -467,6 +480,126 @@ function buildLines(
   }
 
   return lines;
+}
+
+/**
+ * La clé d'une série dans la séance entière : celle de son exercice, puis la
+ * sienne.
+ *
+ * Une clé de ligne n'est unique **qu'entre frères** (`p1`, `l{uuid}`, `d{clé}`)
+ * — c'est tout ce qu'une clé React demande, et le déroulé n'a jamais eu besoin
+ * de plus. Corriger une série avant de la faire, si : l'écran retient ces
+ * corrections dans une table, et deux exercices y auraient tous les deux une
+ * « série 1 ». La composée est stable dans les trois cas : le rang prescrit ne
+ * bouge pas, l'uuid d'une série faite non plus, et un brouillon en porte un seul
+ * par exercice.
+ */
+export function lineKey(exercise: SessionExercise, line: SessionSetLine): string {
+  return `${exercise.key}/${line.key}`;
+}
+
+/**
+ * Retrouve une série par sa clé composée. C'est ce que les feuilles de l'écran
+ * retiennent — jamais l'objet, qui décrirait la séance d'avant la dernière
+ * écriture.
+ */
+export function findLine(
+  program: SessionProgram,
+  key: string,
+): { exercise: SessionExercise; line: SessionSetLine } | null {
+  for (const exercise of allExercises(program)) {
+    const line = exercise.lines?.find((candidate) => lineKey(exercise, candidate) === key);
+
+    if (line) {
+      return { exercise, line };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Les valeurs qu'une ligne **affiche et consignera** : le fait s'il existe, la
+ * correction posée d'avance sinon, le prescrit en dernier.
+ *
+ * Un seul endroit décide de cet ordre, et c'est ce qui fait que la ligne, la
+ * barre basse et l'écriture disent tous la même chose. Le prescrit ne disparaît
+ * pas pour autant — il reste lisible à côté (`setDeviates`), parce que c'est
+ * l'écart, et que c'est la seule chose que la ligne ne peut pas taire.
+ */
+export function lineValues(line: SessionSetLine): SetValues | null {
+  return line.logged ?? line.override ?? line.planned;
+}
+
+/**
+ * Corriger une série **avant** de la faire (« tous les poids d'un coup »).
+ *
+ * ## Pourquoi ça n'est pas une déviation, et pourquoi rien n'est en base
+ *
+ * « On ne dévie que sur ce qui a été fait » (`deviations.ts`) reste vrai mot pour
+ * mot : le prescrit ne bouge pas — `prescribed_snapshot` est remplacé en entier
+ * au pull suivant, il n'a aucun endroit où accueillir « la série 3 se fera à
+ * 82,5 kg » — et le réalisé n'existe pas avant d'être coché. Ce qui manquait
+ * n'était pas une colonne, c'était un endroit **hors base** : la barre est
+ * chargée à 82,5 kg pour les quatre séries, on le sait avant de commencer, et
+ * cocher-puis-corriger quatre fois est quatre allers-retours pour un seul fait.
+ *
+ * Ces valeurs vivent donc exactement où vit la série en brouillon
+ * (`withDraftSets`) : dans l'écran, projetées sur le déroulé le temps du rendu.
+ * Conséquence assumée et identique : l'app tuée avec des corrections en attente
+ * les perd — elles ne portaient aucune information, seulement une intention.
+ * Elles s'écrivent au moment où la série est cochée, par la voie normale
+ * (`checkSet`), et disparaissent en devenant du réalisé.
+ *
+ * ## Ce qu'elle ne touche pas
+ *
+ * Une série **faite** : elle a sa feuille d'ajustement, qui écrit en base
+ * (`updateSet`). Une correction posée d'avance sur une ligne déjà cochée serait
+ * une seconde vérité sur le même fait.
+ */
+export function withPlannedOverrides(
+  program: SessionProgram,
+  overrides: ReadonlyMap<string, SetValues>,
+): SessionProgram {
+  if (overrides.size === 0) {
+    return program;
+  }
+
+  const corrected = (exercise: SessionExercise): SessionExercise => {
+    const lines = exercise.lines;
+
+    if (lines === null) {
+      return exercise;
+    }
+
+    let touched = false;
+    const next = lines.map((line) => {
+      const override =
+        line.logged === null ? (overrides.get(lineKey(exercise, line)) ?? null) : null;
+
+      if (override === null) {
+        return line;
+      }
+
+      touched = true;
+
+      return { ...line, override };
+    });
+
+    return touched ? { ...exercise, lines: next } : exercise;
+  };
+
+  return {
+    ...program,
+    blocks: program.blocks.map((block) => ({
+      ...block,
+      groups: block.groups.map((group) => ({
+        ...group,
+        exercises: group.exercises.map(corrected),
+      })),
+    })),
+    extras: program.extras.map(corrected),
+  };
 }
 
 /**
@@ -538,6 +671,7 @@ function draftLineFor(exercise: SessionExercise): SessionSetLine | null {
     // échauffement ajouté après coup décalerait la lecture de toute la séance.
     type: 'normal',
     planned: draftSetValues(exercise),
+    override: null,
     logged: null,
     actionable: true,
     undoable: false,
@@ -888,22 +1022,29 @@ export function findSetLine(
 }
 
 /**
- * Une série réalisée dévie-t-elle de ce qui était prescrit ?
+ * Une série dévie-t-elle de ce qui était prescrit ?
  *
  * Sur l'axe demandé seulement : une charge ne se compare pas à une absence de
  * charge (même règle que `LogComparator` côté serveur — un axe muet d'un côté ne
  * tranche jamais). C'est ce qui décide d'afficher, ou non, la valeur prévue à
  * côté de la valeur saisie.
+ *
+ * Une série **corrigée d'avance** dévie déjà, avant d'avoir été faite : elle
+ * annonce 82,5 kg là où le programme en demandait 80, et cacher l'écart jusqu'à
+ * la coche reviendrait à laisser croire qu'on fait ce qui est écrit. C'est le
+ * même écart, lu au même endroit, simplement plus tôt.
  */
 export function setDeviates(line: SessionSetLine, axis: keyof SetValues): boolean {
-  if (line.planned === null || line.logged === null) {
+  const values = line.logged ?? line.override;
+
+  if (line.planned === null || values === null) {
     return false;
   }
 
   const planned = line.planned[axis];
-  const logged = line.logged[axis];
+  const actual = values[axis];
 
-  return planned !== null && logged !== null && planned !== logged;
+  return planned !== null && actual !== null && planned !== actual;
 }
 
 /**

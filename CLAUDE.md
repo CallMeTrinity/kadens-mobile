@@ -224,7 +224,12 @@ none of them is cosmetic.
   tested): the first checkable set in reading order, except inside a superset, where members **alternate** by
   fewest logged sets. No target left means the row becomes the close button, which is why the in-flow "Terminer
   la séance" button is `secondary` — one primary per screen. Set rows stay individually tappable; the dock is
-  the short path, not a replacement for reading the table.
+  the short path, not a replacement for reading the table. A row's **value zone opens its sheet whether the set is
+  done or not**: the barbell is loaded at 82.5 kg for all four sets and you know it before the first one, so
+  correcting used to mean checking first — declaring four sets done before doing them. What that sheet validates on
+  an unlogged row is not logged data; it is a value carried on the line (`withPlannedOverrides`), living in the
+  screen like the draft set, written only when the row is checked. The prescription still doesn't move, so the
+  deviation now reads before the set instead of after.
 - **The order the workout is led in is not the program** (KL-52, `session/order.ts`). A workout doesn't go as
   planned — the rack is taken, the finisher goes first, a superset gets improvised with the machine next door —
   and the dock's alternation then proposes the wrong thing every time. A "Réorganiser les exercices" mode lets an

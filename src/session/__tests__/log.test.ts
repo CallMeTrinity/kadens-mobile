@@ -18,7 +18,15 @@
  * appelé depuis une écriture locale ferait échouer la suite.
  */
 
-import { beginWorkout, checkSet, closeWorkout, setCardioDone, uncheckSet } from '@/session';
+import {
+  beginWorkout,
+  checkSet,
+  closeWorkout,
+  lineKey,
+  setCardioDone,
+  uncheckSet,
+  withPlannedOverrides,
+} from '@/session';
 import { listMutations } from '@/sync';
 import { resetDatabase } from '@/test/database';
 import {
@@ -56,6 +64,36 @@ describe('checkSet', () => {
     expect(line?.logged?.rpe).toBeNull();
     expect(line?.logged?.completedAt).not.toBeNull();
     expect(listMutations()).toHaveLength(1);
+  });
+
+  it('consigne la correction posée d’avance, pas le prescrit', () => {
+    openStrengthWorkout();
+
+    // Ce que fait la feuille d'une série pas encore faite : elle note, elle
+    // n'écrit pas. La valeur n'atteint la base qu'en cochant.
+    const before = exerciseAt(UUID);
+    const line = nextLine(before);
+    const corrected = withPlannedOverrides(
+      programOf(UUID),
+      new Map([[lineKey(before, line), { reps: 8, weightKg: 82.5, durationSeconds: null }]]),
+    );
+    const exercise = corrected.blocks[0].groups[0].exercises[0];
+
+    expect(checkSet(UUID, exercise, nextLine(exercise))).toBe(true);
+
+    const logged = programOf(UUID).blocks[0].groups[0].exercises[0].lines?.[0]?.logged;
+
+    expect(logged).toMatchObject({ reps: 8, weightKg: 82.5 });
+    // Le RPE ne s'annonce pas : il se ressent, et la feuille d'avant ne le
+    // propose même pas.
+    expect(logged?.rpe).toBeNull();
+    // Le prescrit n'a pas bougé : c'est lui qui fait l'écart, ici comme au
+    // serveur.
+    expect(programOf(UUID).blocks[0].groups[0].exercises[0].lines?.[0]?.planned).toEqual({
+      reps: 8,
+      weightKg: 80,
+      durationSeconds: null,
+    });
   });
 
   it('n’empile qu’une mutation pour toute la séance', () => {

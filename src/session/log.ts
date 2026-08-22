@@ -50,6 +50,14 @@ import { dropEmptyLoggedExercise, ensureLoggedExercise, isOpen, nextSetPosition 
  * ajouter une série que le programme ne réclame pas, est le sujet de KL-30 —
  * d'où le fait qu'une ligne sans prescrit ne se coche pas ici : elle n'existe que
  * parce qu'une série a déjà été consignée en face.
+ *
+ * Sauf si la ligne porte une **correction posée d'avance** (`line.override`,
+ * projetée par `withPlannedOverrides`) : la barre est chargée autrement qu'écrit,
+ * on l'a dit avant de la soulever, et c'est ce qui se consigne. Elle ne remplace
+ * pas le prescrit, qui reste sur la ligne et fait l'écart — elle remplace ce
+ * qu'on recopie. Le garde-fou, lui, ne bouge pas : une ligne sans prescrit ne se
+ * coche toujours pas ici, une correction n'étant pas de quoi faire naître une
+ * série.
  */
 export function checkSet(
   scheduledUuid: string,
@@ -60,7 +68,9 @@ export function checkSet(
     return false;
   }
 
-  const planned = line.planned;
+  // Ce que la série va consigner : la correction si on en a posé une, le
+  // prescrit sinon. Une seule lecture, celle du déroulé (`lineValues`).
+  const planned = line.override ?? line.planned;
 
   return db.transaction((tx) => {
     if (!isOpen(tx, scheduledUuid)) {

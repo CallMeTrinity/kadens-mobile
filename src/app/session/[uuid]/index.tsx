@@ -37,8 +37,10 @@ import {
   deleteSet,
   exerciseIdOf,
   findExercise,
-  findSetLine,
+  findLine,
   groupExercises,
+  lineKey,
+  lineValues,
   isClosed,
   isRunning,
   longDate,
@@ -71,6 +73,7 @@ import {
   useWorkout,
   useWorkoutPendingSync,
   withDraftSets,
+  withPlannedOverrides,
   type ExerciseRef,
   type LoggedSetValues,
   type RestState,
@@ -80,6 +83,7 @@ import {
   type SessionProgram,
   type SessionSetLine,
   type SessionTarget,
+  type SetValues,
 } from '@/session';
 import { colors, layout, space, text, useReducedMotion } from '@/theme';
 import {
@@ -135,13 +139,24 @@ import {
  * chemin court du cas nominal, elle ne remplace pas la lecture d'un tableau —
  * un superset qu'on mène dans un autre ordre, une série qu'on rattrape.
  *
- * ## Les deux gestes, et pourquoi ils sont distincts (KL-30)
+ * ## Les deux gestes d'une ligne, avant comme après (KL-30, revu)
  *
- * Une ligne **non cochée** se coche d'un appui n'importe où : c'est le geste
- * nominal en salle, on fait ce qui est écrit. Une fois **cochée**, la ligne
- * devient un objet qu'on corrige : sa zone de valeurs ouvre la feuille
- * d'ajustement, sa case reste le décochage. Deux cibles dans une ligne plutôt
- * qu'un appui long, qui n'est visible nulle part et se découvre par accident.
+ * Une ligne a **deux cibles**, qu'elle soit faite ou non : sa zone de valeurs
+ * ouvre la feuille, sa case coche ou décoche. Deux cibles plutôt qu'un appui
+ * long, qui n'est visible nulle part et se découvre par accident.
+ *
+ * La version d'origine réservait la feuille aux séries **faites** : on faisait ce
+ * qui était écrit, puis on corrigeait. C'est juste pour une série qu'on découvre
+ * en la faisant, et faux pour celle qu'on sait d'avance — la barre est chargée à
+ * 82,5 kg, elle le sera pour les quatre séries, et on le sait avant la première.
+ * Il fallait alors cocher pour corriger, c'est-à-dire déclarer faite chaque série
+ * avant de la faire, quatre fois. La feuille s'ouvre donc aussi **avant**, et ce
+ * qu'on y valide n'est pas du réalisé : c'est une valeur posée sur la ligne
+ * (`withPlannedOverrides`), qui vit en mémoire comme la série en brouillon et que
+ * la coche consigne.
+ *
+ * Le prescrit ne bouge pas pour autant, et c'est ce qui rend la chose licite :
+ * il reste écrit à côté, et l'écart se lit avant la série au lieu d'après.
  *
  * **Ajouter une série n'ouvre rien, et ne la coche pas** (KL-39, revu). Elle naît
  * pré-remplie par la précédente — ce qui est juste dans le cas courant — mais
@@ -152,10 +167,12 @@ import {
  * la barre basse, et rien ne va en base avant. Le brouillon vit donc ici, dans
  * l'écran (`drafts`), et se projette sur le déroulé par `withDraftSets`.
  *
- * Corollaire du modèle, pas de l'écran : **on ne dévie que sur ce qui a été
- * fait**. Le prescrit ne bouge jamais (§0.3) et n'a aucun endroit où accueillir
- * « la série 3 se fera à 82,5 kg ». On coche aux valeurs prescrites, puis on
- * corrige.
+ * Corollaire du modèle, pas de l'écran : **rien ne s'écrit avant la coche**. Le
+ * prescrit ne bouge jamais (§0.3) et n'a aucun endroit où accueillir « la série 3
+ * se fera à 82,5 kg » ; le réalisé, lui, n'existe pas avant d'avoir eu lieu. Ce
+ * qu'on annonce d'avance — une série de plus, une charge revue — vit donc dans
+ * l'écran, se projette sur le déroulé au rendu, et va en base par le seul chemin
+ * qui écrive du réalisé.
  *
  * ## Le repos et la veille (KL-31)
  *
@@ -207,7 +224,22 @@ export default function SessionScreen() {
   // seulement : une série non faite n'est ni du prescrit ni du réalisé, elle n'a
   // aucune colonne où s'écrire (`withDraftSets`).
   const [drafts, setDrafts] = useState<ReadonlySet<string>>(() => new Set());
-  const program = useMemo(() => withDraftSets(base, drafts), [base, drafts]);
+  // Les valeurs corrigées **avant** que la série soit faite, par clé de série.
+  // Même statut que les brouillons ci-dessus, et pour la même raison : ni du
+  // prescrit ni du réalisé, donc aucune colonne où s'écrire
+  // (`withPlannedOverrides`). Elles se consignent en cochant, et pas avant.
+  //
+  // Sans RPE, et ce n'est pas un oubli : le RPE se **ressent**, il ne s'annonce
+  // pas — `checkSet` écrit `null` pour la même raison, et il se saisit après coup
+  // dans la feuille de la série faite.
+  const [overrides, setOverrides] = useState<ReadonlyMap<string, SetValues>>(() => new Map());
+  // L'ordre compte : les corrections se posent **après** les brouillons, la série
+  // annoncée n'existant pas avant d'être projetée — et c'est justement une de
+  // celles qu'on veut pouvoir corriger avant de la faire.
+  const program = useMemo(
+    () => withPlannedOverrides(withDraftSets(base, drafts), overrides),
+    [base, drafts, overrides],
+  );
   const history = useSessionHistory(program);
   // Le repère des dates d'historique : le vrai jour, pas celui de la séance
   // affichée. Relire une séance d'il y a trois jours ne doit pas faire dire
@@ -270,6 +302,40 @@ export default function SessionScreen() {
     });
   }, []);
 
+  // La correction posée d'avance est **consommée par la coche** : la série est
+  // faite, ses valeurs sont en base, et la corriger encore passe désormais par la
+  // feuille de la série faite (`updateSet`). La laisser traîner donnerait deux
+  // vérités sur le même fait — et c'est aussi ce qui évite qu'une clé survive à
+  // la ligne qu'elle décrivait.
+  const dropOverride = useCallback((key: string) => {
+    setOverrides((current) => {
+      if (!current.has(key)) {
+        return current;
+      }
+
+      const next = new Map(current);
+      next.delete(key);
+
+      return next;
+    });
+  }, []);
+
+  // Enregistrer une correction. Elle **n'écrit rien** : la série reste à faire,
+  // elle affiche seulement ce qu'on va y mettre. Une correction qui retombe sur
+  // le prescrit n'en est plus une, et s'efface plutôt que de se poser.
+  const onOverride = useCallback(
+    (key: string, values: SetValues | null) => {
+      if (values === null) {
+        dropOverride(key);
+
+        return;
+      }
+
+      setOverrides((current) => new Map(current).set(key, values));
+    },
+    [dropOverride],
+  );
+
   // On ne consigne que dans une séance ouverte. Une séance close est close
   // (§2.3 point 5) ; une séance jamais commencée n'a pas d'heure de début, et un
   // réalisé sans borne de départ serait une séance qu'on n'a pas faite.
@@ -281,6 +347,7 @@ export default function SessionScreen() {
       if (line.actionable) {
         if (checkSet(uuid, exercise, line)) {
           dropDraft(exercise.key);
+          dropOverride(lineKey(exercise, line));
           startRestAfterSet(exercise);
         }
       } else if (line.undoable) {
@@ -290,7 +357,7 @@ export default function SessionScreen() {
         }
       }
     },
-    [uuid, dropDraft],
+    [uuid, dropDraft, dropOverride],
   );
 
   const onCardio = useCallback(
@@ -317,10 +384,11 @@ export default function SessionScreen() {
 
       if (checkSet(uuid, pending.exercise, pending.line)) {
         dropDraft(pending.exercise.key);
+        dropOverride(lineKey(pending.exercise, pending.line));
         startRestAfterSet(pending.exercise);
       }
     },
-    [uuid, dropDraft],
+    [uuid, dropDraft, dropOverride],
   );
 
   // Annuler la séance : elle n'a pas eu lieu. **Confirmé**, parce que c'est le
@@ -355,6 +423,7 @@ export default function SessionScreen() {
             }
 
             setDrafts(new Set());
+            setOverrides(new Map());
             setReordering(false);
 
             if (outcome === 'deleted') {
@@ -453,7 +522,7 @@ export default function SessionScreen() {
   // Il n'y a donc ni durée, ni série, ni écart à résumer — l'écran se lit, il ne
   // se clôture pas.
   const closedElsewhere = closed && workout.endedAt === null;
-  const sheetSet = openSet === null ? null : findSetLine(program, openSet);
+  const sheetSet = openSet === null ? null : findLine(program, openSet);
   const sheetExercise = openExercise === null ? null : findExercise(program, openExercise);
 
   return (
@@ -710,6 +779,7 @@ export default function SessionScreen() {
           scheduledUuid={uuid}
           exercise={sheetSet.exercise}
           line={sheetSet.line}
+          onOverride={(values) => onOverride(openSet ?? '', values)}
           onClose={() => setOpenSet(null)}
         />
       ) : null}
@@ -1018,10 +1088,12 @@ function targetValues(target: SessionTarget): string {
     return target.exercise.prescribed?.summary ?? 'À marquer fait';
   }
 
-  const planned = target.line.planned;
-  const effort = setEffort(planned?.reps ?? null, planned?.durationSeconds ?? null) ?? 'série';
+  // Ce que la série **va** consigner, correction posée d'avance comprise : la
+  // barre ne peut pas annoncer 80 kg pour en écrire 82,5.
+  const values = lineValues(target.line);
+  const effort = setEffort(values?.reps ?? null, values?.durationSeconds ?? null) ?? 'série';
 
-  return planned?.weightKg != null ? `${effort} × ${weight(planned.weightKg)}` : effort;
+  return values?.weightKg != null ? `${effort} × ${weight(values.weightKg)}` : effort;
 }
 
 /** Ce que TalkBack annonce du bouton de validation : quoi, sur quoi, à combien. */
@@ -1112,7 +1184,8 @@ type SectionHandlers = {
   targetRef: Ref<View>;
   onCheck: (exercise: SessionExercise, line: SessionSetLine) => void;
   onCardio: (exercise: SessionExercise) => void;
-  onAdjustSet: (setUuid: string) => void;
+  /** Ouvre la feuille d'une série. Prend sa **clé composée** (`lineKey`). */
+  onAdjustSet: (key: string) => void;
   onAddSet: (exercise: SessionExercise) => void;
   /** Retire la série annoncée et pas encore faite. Prend la clé de l'exercice. */
   onDropSet: (exerciseKey: string) => void;
@@ -1329,7 +1402,7 @@ function ExerciseSection({
             line={line}
             editable={editable && !exercise.skipped}
             onToggle={() => onCheck(exercise, line)}
-            onAdjust={() => line.logged && onAdjustSet(line.logged.uuid)}
+            onAdjust={() => onAdjustSet(lineKey(exercise, line))}
           />
         ))
       )}
@@ -1849,17 +1922,26 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
 };
 
 /**
- * Une série : une ligne, une case.
+ * Une série : une ligne, deux cibles.
  *
- * **Deux états, deux gestes** (KL-30). Tant qu'elle n'est pas faite, la ligne
- * entière coche : on la vise avec un pouce moite, à bout de bras, entre deux
- * séries. Une fois faite, elle se scinde en deux cibles — la zone de valeurs
- * ouvre l'ajustement, la case décoche — chacune au plancher tactile. C'est ce qui
+ * **Une ligne se lit, se corrige et se coche** (KL-30, revu). La zone de valeurs
+ * ouvre la feuille, la case coche ou décoche — et c'est vrai **avant** comme
+ * après, ce qui n'était pas le cas : la ligne pas encore faite cochait sur toute
+ * sa largeur, et corriger une valeur demandait donc de cocher d'abord. Quatre
+ * séries chargées autrement qu'écrit se réglaient en huit gestes, la moitié
+ * consistant à déclarer faite une série qu'on n'avait pas encore commencée.
+ *
+ * La case garde une cible au plancher tactile de son côté, et la barre basse
+ * reste le chemin court du cas nominal : on ne perd pas le geste rapide, on
+ * cesse seulement de le faire déborder sur toute la ligne. C'est aussi ce qui
  * évite l'appui long, qui ne se voit nulle part.
  *
- * **Pas de glyphe** : le projet n'embarque pas de jeu d'icônes (KL-23), et un « ✓ »
- * dépendrait de ce que Barlow contient. Une case pleine à l'encre dit la même
- * chose et ne peut pas manquer.
+ * **Ce qu'une ligne affiche** est le fait quand il existe, la correction posée
+ * d'avance sinon, le prescrit en dernier (`lineValues`) — et le prévu reste écrit
+ * à côté dès que les deux divergent, avant comme après.
+ *
+ * **Pas de glyphe** : un « ✓ » dépendrait de ce que Barlow contient. Une case
+ * pleine à l'encre dit la même chose et ne peut pas manquer.
  */
 function SetRow({
   line,
@@ -1873,7 +1955,7 @@ function SetRow({
   onAdjust: () => void;
 }) {
   const checked = line.logged !== null;
-  const values = line.logged ?? line.planned;
+  const values = lineValues(line);
   const effort = values ? setEffort(values.reps, values.durationSeconds) : null;
   const load = values?.weightKg ?? null;
   const actionable = editable && (line.actionable || line.undoable);
@@ -1912,62 +1994,58 @@ function SetRow({
     </>
   );
 
-  // Ligne faite : deux cibles. La zone de valeurs ajuste, la case décoche — et
-  // elle ne décoche que la dernière de sa file (l'appariement par rang, KL-29).
-  if (checked) {
-    return (
-      <View style={[styles.setRow, styles.setRowChecked]}>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${setRowLabel(line, effort, load)}. Ajuster`}
-          accessibilityHint="Corriger les valeurs, ou supprimer cette série"
-          disabled={!editable}
-          onPress={onAdjust}
-          style={({ pressed }) => [styles.setValues, pressed && editable && styles.setRowPressed]}
-        >
-          {body}
-        </Pressable>
-
-        <Pressable
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: true, disabled: !actionable }}
-          accessibilityLabel="Annuler cette série"
-          accessibilityHint={
-            actionable ? undefined : 'Seule la dernière série faite peut être annulée'
-          }
-          disabled={!actionable}
-          onPress={onToggle}
-          style={({ pressed }) => [styles.boxTarget, pressed && actionable && styles.setRowPressed]}
-        >
-          <View style={[styles.box, styles.boxChecked]} />
-        </Pressable>
-      </View>
-    );
-  }
+  // Une **série faite en trop** n'a pas de prescrit à corriger d'avance : la
+  // feuille ne s'y ouvre que parce qu'elle est faite. Une ligne prescrite, elle,
+  // se corrige avant comme après.
+  const adjustable = editable && (checked || line.planned !== null);
 
   return (
-    <Pressable
-      accessibilityRole="checkbox"
-      accessibilityState={{ checked: false, disabled: !actionable }}
-      accessibilityLabel={setRowLabel(line, effort, load)}
-      accessibilityHint={
-        actionable
-          ? 'Consigner cette série'
-          : // Dire *pourquoi* la ligne ne répond pas : sans ça, un appui sans
-            // effet passe pour un écran figé.
-            'La série précédente n’est pas encore faite'
-      }
-      disabled={!actionable}
-      onPress={onToggle}
-      style={({ pressed }) => [
-        styles.setRow,
-        styles.setRowPadded,
-        pressed && actionable && styles.setRowPressed,
-      ]}
-    >
-      {body}
-      <View style={[styles.box, !actionable && styles.boxIdle]} />
-    </Pressable>
+    <View style={[styles.setRow, checked && styles.setRowChecked]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${setRowLabel(line, effort, load)}. ${
+          checked ? 'Ajuster' : 'Corriger avant de la faire'
+        }`}
+        accessibilityHint={
+          checked
+            ? 'Corriger les valeurs, ou supprimer cette série'
+            : 'Changer les valeurs de cette série. Elle reste à cocher'
+        }
+        disabled={!adjustable}
+        onPress={onAdjust}
+        style={({ pressed }) => [styles.setValues, pressed && adjustable && styles.setRowPressed]}
+      >
+        {body}
+      </Pressable>
+
+      <Pressable
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked, disabled: !actionable }}
+        accessibilityLabel={checked ? 'Annuler cette série' : setRowLabel(line, effort, load)}
+        accessibilityHint={
+          actionable
+            ? checked
+              ? undefined
+              : 'Consigner cette série'
+            : // Dire *pourquoi* la case ne répond pas : sans ça, un appui sans
+              // effet passe pour un écran figé.
+              checked
+              ? 'Seule la dernière série faite peut être annulée'
+              : 'La série précédente n’est pas encore faite'
+        }
+        disabled={!actionable}
+        onPress={onToggle}
+        style={({ pressed }) => [styles.boxTarget, pressed && actionable && styles.setRowPressed]}
+      >
+        <View
+          style={[
+            styles.box,
+            checked && styles.boxChecked,
+            !checked && !actionable && styles.boxIdle,
+          ]}
+        />
+      </Pressable>
+    </View>
   );
 }
 
@@ -2029,11 +2107,30 @@ function CardioRow({
 }
 
 /**
- * La feuille d'ajustement d'une série (KL-30).
+ * La feuille d'une série (KL-30), avant comme après.
  *
  * Le prescrit est en tête, jamais remplacé par ce qu'on saisit : c'est la
  * dernière case du ticket, et c'est la seule façon de voir l'écart au moment où
  * on le crée.
+ *
+ * ## Deux moments, une seule feuille
+ *
+ * **Une série faite** s'y corrige, et la correction va en base (`updateSet`).
+ * **Une série à faire** s'y prépare, et rien ne va en base : « Valider » note les
+ * valeurs sur la ligne (`onOverride`), la série reste à cocher, et c'est la coche
+ * qui consigne — la seule écriture de « une série a été faite » reste `checkSet`.
+ *
+ * Une seule feuille pour les deux, parce que c'est une seule question — quelles
+ * valeurs pour cette série — posée à deux moments. Deux feuilles auraient
+ * dupliqué la bascule d'axe, les compteurs et leurs bornes pour ne changer qu'un
+ * verbe. Ce qui diffère est écrit là où ça diffère : le RPE, qui se ressent, n'a
+ * rien à dire d'une série pas encore faite ; « Supprimer » devient « Rétablir le
+ * prévu », parce qu'on ne supprime pas ce qui n'existe pas encore.
+ *
+ * Ce qu'on y gagne est ce qui manquait : charger la barre à 82,5 kg pour les
+ * quatre séries se dit **une fois par série avant de commencer**, au lieu de
+ * cocher-puis-corriger quatre fois — c'est-à-dire au lieu de déclarer faites,
+ * quatre fois, des séries qui ne l'étaient pas.
  *
  * **Zéro veut dire « rien à dire », pas « zéro »**. Le compteur ne sait pas
  * représenter l'absence, et une série au poids du corps n'a pas de charge — la
@@ -2062,21 +2159,31 @@ function SetSheet({
   scheduledUuid,
   exercise,
   line,
+  onOverride,
   onClose,
 }: {
   scheduledUuid: string;
   exercise: SessionExercise;
   line: SessionSetLine;
+  /** Pose la correction d'une série pas encore faite. `null` la retire. */
+  onOverride: (values: SetValues | null) => void;
   onClose: () => void;
 }) {
   const logged = line.logged;
-  // La feuille s'ouvre sur ce qui est consigné et n'écoute plus la base ensuite :
-  // une saisie en cours ne doit pas être réécrite sous les doigts. Elle est
-  // rendue par une clé (`openSet`), donc remontée si la série change d'identité.
+  // Une série **pas encore faite** : la feuille ne consigne rien, elle note ce
+  // qu'on va y mettre (§ en-tête).
+  const pending = logged === null;
+  // Ce sur quoi la feuille s'ouvre : le fait, la correction déjà posée, le
+  // prescrit — le même ordre que la ligne (`lineValues`), sinon la feuille
+  // afficherait autre chose que ce qu'on vient d'appuyer.
+  const opening = lineValues(line);
+  // Elle n'écoute plus la base ensuite : une saisie en cours ne doit pas être
+  // réécrite sous les doigts. Elle est rendue par une clé (`openSet`), donc
+  // remontée si la série change d'identité.
   const [values, setValues] = useState<LoggedSetValues>(() => ({
-    reps: logged?.reps ?? null,
-    weightKg: logged?.weightKg ?? null,
-    durationSeconds: logged?.durationSeconds ?? null,
+    reps: opening?.reps ?? null,
+    weightKg: opening?.weightKg ?? null,
+    durationSeconds: opening?.durationSeconds ?? null,
     rpe: logged?.rpe ?? null,
   }));
 
@@ -2087,9 +2194,7 @@ function SetSheet({
   const zeroToNull = (value: number) => (value > 0 ? value : null);
 
   const [timed, setTimed] = useState(
-    () =>
-      (logged?.durationSeconds ?? line.planned?.durationSeconds ?? null) !== null &&
-      (logged?.reps ?? line.planned?.reps ?? null) === null,
+    () => (opening?.durationSeconds ?? null) !== null && (opening?.reps ?? null) === null,
   );
 
   // La bascule ne s'offre que là où personne n'a déjà tranché : une ligne du
@@ -2108,23 +2213,53 @@ function SetSheet({
     <Sheet
       visible
       onClose={onClose}
-      title={`Série ${String(line.index).padStart(2, '0')}`}
+      title={`Série ${String(line.index).padStart(2, '0')}${pending ? ' · à faire' : ''}`}
       footer={
         <View style={styles.sheetActions}>
-          <Button
-            label="Supprimer"
-            variant="ghost"
-            accessibilityHint="Cette série n’a finalement pas été faite"
-            onPress={() => {
-              deleteSet(scheduledUuid, exercise, line);
-              onClose();
-            }}
-          />
+          {/* Une série faite se supprime — elle n'a finalement pas eu lieu. Une
+              série à faire n'a rien à supprimer : ce qu'on y défait est la
+              correction, et le mot juste est donc « rétablir le prévu ». Elle
+              n'apparaît qu'une fois qu'il y a quelque chose à rétablir. */}
+          {pending ? (
+            line.override ? (
+              <Button
+                label="Rétablir le prévu"
+                variant="ghost"
+                accessibilityHint="La série repart sur les valeurs du programme"
+                onPress={() => {
+                  onOverride(null);
+                  onClose();
+                }}
+              />
+            ) : null
+          ) : (
+            <Button
+              label="Supprimer"
+              variant="ghost"
+              accessibilityHint="Cette série n’a finalement pas été faite"
+              onPress={() => {
+                deleteSet(scheduledUuid, exercise, line);
+                onClose();
+              }}
+            />
+          )}
           <View style={styles.spacer} />
           <Button
             label="Valider"
+            accessibilityHint={
+              pending ? 'Les valeurs sont notées sur la série. Elle reste à cocher' : undefined
+            }
             onPress={() => {
-              updateSet(scheduledUuid, line, values);
+              if (pending) {
+                onOverride({
+                  reps: values.reps,
+                  weightKg: values.weightKg,
+                  durationSeconds: values.durationSeconds,
+                });
+              } else {
+                updateSet(scheduledUuid, line, values);
+              }
+
               onClose();
             }}
           />
@@ -2187,14 +2322,21 @@ function SetSheet({
         unit="kg"
       />
 
-      <NumberStepper
-        label="RPE ressenti"
-        value={values.rpe ?? 0}
-        onChange={(next) => patch({ rpe: zeroToNull(next) })}
-        step={1}
-        max={10}
-      />
-      <Text style={styles.caption}>RPE à 0 : non renseigné. Le prescrit garde le sien.</Text>
+      {/* Le RPE se **ressent** : il n'a rien à faire sur une série pas encore
+          faite, et `checkSet` l'écrit `null` pour la même raison. Il apparaît
+          une fois la série cochée, quand la question a un sens. */}
+      {pending ? null : (
+        <>
+          <NumberStepper
+            label="RPE ressenti"
+            value={values.rpe ?? 0}
+            onChange={(next) => patch({ rpe: zeroToNull(next) })}
+            step={1}
+            max={10}
+          />
+          <Text style={styles.caption}>RPE à 0 : non renseigné. Le prescrit garde le sien.</Text>
+        </>
+      )}
     </Sheet>
   );
 }
@@ -2757,8 +2899,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surface,
   },
-  // Une ligne non cochée est une seule cible : le rembourrage est sur elle. Une
-  // ligne cochée en porte deux, chacune avec le sien (§ deux gestes).
+  // Le cardio est une seule cible — fait ou pas fait, il n'y a rien à corriger —
+  // donc le rembourrage est sur la ligne. Une série en porte deux, chacune avec
+  // le sien (§ une ligne, deux cibles).
   setRowPadded: { gap: space[4], paddingHorizontal: space[4] },
   // Une série faite se pose sur un fond appuyé et garde son filet : elle ne
   // disparaît pas, elle se range.

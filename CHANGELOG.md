@@ -13,6 +13,12 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ### Ajouté
 
+- Correction d'une série **avant** de la faire : la zone de valeurs d'une ligne
+  ouvre sa feuille qu'elle soit cochée ou non. Les valeurs saisies s'affichent sur
+  la ligne et dans la barre du bas, et c'est ce qui se consigne quand on coche.
+  Rien n'est écrit tant que la série n'est pas cochée, et le programme reste
+  affiché à côté. De quoi corriger la charge de quatre séries d'un coup au lieu
+  de les déclarer faites une à une pour pouvoir les corriger.
 - Annulation d'une séance commencée, tant qu'elle n'est pas terminée. Une séance
   **prévue** redevient à faire : la borne de départ est retirée et tout ce qui y
   avait été coché est effacé, ici comme sur le web. Une séance **libre**, qui

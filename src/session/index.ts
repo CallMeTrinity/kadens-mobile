@@ -39,12 +39,15 @@
  * 6. **On dévie, on ne recompose pas.** `deviations.ts` (KL-30) corrige une
  *    série, en ajoute, en retire, saute, remplace, ajoute un exercice — et rien
  *    d'autre : pas de bloc réécrit, pas de tour modifié, aucune ligne du
- *    programme touchée. Corollaire : on ne dévie que sur ce qui a **été fait**,
- *    le prescrit n'ayant aucun endroit où accueillir une valeur revue avant la
- *    série. Seule exception, et elle ne va pas en base : la **série en
- *    brouillon** (`withDraftSets`, `program.ts`), qui est une série de plus
- *    qu'on annonce avant de la faire et qui se coche ensuite par la voie
- *    normale.
+ *    programme touchée. Corollaire : **rien ne s'écrit avant la coche**, le
+ *    prescrit n'ayant aucun endroit où accueillir une valeur revue avant la
+ *    série et le réalisé n'existant pas avant d'avoir eu lieu. Ce qu'on annonce
+ *    d'avance vit donc **hors base**, projeté sur le déroulé le temps du rendu,
+ *    et va en base par `checkSet` comme tout le reste : la **série en brouillon**
+ *    (`withDraftSets`, `program.ts`), une série de plus qu'on annonce avant de la
+ *    faire, et la **correction posée d'avance** (`withPlannedOverrides`), la
+ *    charge ou les répétitions qu'on sait déjà autres que prescrites. Les deux
+ *    sont perdues si l'app est tuée : elles ne portaient qu'une intention.
  * 6 bis. **L'ordre dans lequel on la mène n'est pas le programme** (KL-52,
  *    `order.ts`). Déplacer un exercice, l'enchaîner à son voisin ou l'en
  *    détacher n'écrit ni dans `prescribed_snapshot` ni dans
@@ -185,13 +188,17 @@ export {
   exerciseIdOf,
   exerciseIdsOf,
   findExercise,
+  findLine,
   findSetLine,
   groupExercises,
+  lineKey,
+  lineValues,
   nextTarget,
   referencedExerciseIds,
   setDeviates,
   withDraftSets,
   withExecutionOrder,
+  withPlannedOverrides,
 } from './program';
 export type {
   ExecutionOrder,

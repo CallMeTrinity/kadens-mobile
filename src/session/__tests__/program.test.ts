@@ -15,7 +15,14 @@
  */
 
 import type { LoggedExerciseRow, LoggedSetRow } from '@/db';
-import { buildProgram, nextTarget, setDeviates } from '@/session';
+import {
+  buildProgram,
+  lineKey,
+  lineValues,
+  nextTarget,
+  setDeviates,
+  withPlannedOverrides,
+} from '@/session';
 import { prescribedBlock, prescribedExercise } from '@/test/fixtures';
 
 let nextSetId = 0;
@@ -272,5 +279,84 @@ describe('setDeviates', () => {
     // Une durée absente des deux côtés ne dit rien : un axe muet ne tranche
     // jamais, exactement comme `LogComparator` côté serveur.
     expect(setDeviates(line, 'durationSeconds')).toBe(false);
+  });
+});
+
+describe('withPlannedOverrides', () => {
+  /** Une séance d'un exercice, quatre séries de huit à 80 kg, rien de fait. */
+  function pristine() {
+    return buildProgram([prescribedBlock(1, [prescribedExercise(1)])], [], []);
+  }
+
+  function firstExercise(program: ReturnType<typeof pristine>) {
+    return program.blocks[0].groups[0].exercises[0];
+  }
+
+  it('pose les valeurs sur la ligne visée, et sur elle seule', () => {
+    const program = pristine();
+    const exercise = firstExercise(program);
+    const key = lineKey(exercise, exercise.lines![0]);
+
+    const corrected = firstExercise(
+      withPlannedOverrides(
+        program,
+        new Map([[key, { reps: 8, weightKg: 82.5, durationSeconds: null }]]),
+      ),
+    );
+
+    expect(corrected.lines![0].override).toEqual({
+      reps: 8,
+      weightKg: 82.5,
+      durationSeconds: null,
+    });
+    expect(corrected.lines![1].override).toBeNull();
+    // Le prescrit ne bouge pas : c'est lui qui fait l'écart, et il reste écrit
+    // à côté de ce qu'on annonce.
+    expect(corrected.lines![0].planned).toEqual({ reps: 8, weightKg: 80, durationSeconds: null });
+  });
+
+  it('fait dire à la ligne ce qu’elle va consigner', () => {
+    const program = pristine();
+    const exercise = firstExercise(program);
+    const key = lineKey(exercise, exercise.lines![0]);
+
+    const line = firstExercise(
+      withPlannedOverrides(
+        program,
+        new Map([[key, { reps: 6, weightKg: 100, durationSeconds: null }]]),
+      ),
+    ).lines![0];
+
+    expect(lineValues(line)).toEqual({ reps: 6, weightKg: 100, durationSeconds: null });
+    // L'écart se lit **avant** la série, pas seulement après : cacher jusqu'à la
+    // coche laisserait croire qu'on fait ce qui est écrit.
+    expect(setDeviates(line, 'weightKg')).toBe(true);
+    expect(setDeviates(line, 'reps')).toBe(true);
+  });
+
+  it('ignore une série déjà faite : elle a sa feuille, qui écrit en base', () => {
+    const program = buildProgram(
+      [prescribedBlock(1, [prescribedExercise(1)])],
+      [loggedRow()],
+      [setRow({ reps: 8, weightKg: 80, durationSeconds: null })],
+    );
+    const exercise = firstExercise(program);
+    const key = lineKey(exercise, exercise.lines![0]);
+
+    const line = firstExercise(
+      withPlannedOverrides(
+        program,
+        new Map([[key, { reps: 1, weightKg: 1, durationSeconds: null }]]),
+      ),
+    ).lines![0];
+
+    expect(line.override).toBeNull();
+    expect(lineValues(line)).toMatchObject({ reps: 8, weightKg: 80 });
+  });
+
+  it('rend le déroulé tel quel quand il n’y a rien à corriger', () => {
+    const program = pristine();
+
+    expect(withPlannedOverrides(program, new Map())).toBe(program);
   });
 });
