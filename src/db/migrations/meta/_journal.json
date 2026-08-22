@@ -43,6 +43,13 @@
       "when": 1786105923655,
       "tag": "0005_silhouette",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1787433719952,
+      "tag": "0006_session_layout",
+      "breakpoints": true
     }
   ]
 }

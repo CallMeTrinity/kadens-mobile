@@ -38,12 +38,21 @@
  *    redémarrage de l'app.
  * 6. **On dévie, on ne recompose pas.** `deviations.ts` (KL-30) corrige une
  *    série, en ajoute, en retire, saute, remplace, ajoute un exercice — et rien
- *    d'autre : pas de bloc réordonné, pas de superset créé, pas de tour modifié.
- *    Corollaire : on ne dévie que sur ce qui a **été fait**, le prescrit n'ayant
- *    aucun endroit où accueillir une valeur revue avant la série. Seule
- *    exception, et elle ne va pas en base : la **série en brouillon**
- *    (`withDraftSets`, `program.ts`), qui est une série de plus qu'on annonce
- *    avant de la faire et qui se coche ensuite par la voie normale.
+ *    d'autre : pas de bloc réécrit, pas de tour modifié, aucune ligne du
+ *    programme touchée. Corollaire : on ne dévie que sur ce qui a **été fait**,
+ *    le prescrit n'ayant aucun endroit où accueillir une valeur revue avant la
+ *    série. Seule exception, et elle ne va pas en base : la **série en
+ *    brouillon** (`withDraftSets`, `program.ts`), qui est une série de plus
+ *    qu'on annonce avant de la faire et qui se coche ensuite par la voie
+ *    normale.
+ * 6 bis. **L'ordre dans lequel on la mène n'est pas le programme** (KL-52,
+ *    `order.ts`). Déplacer un exercice, l'enchaîner à son voisin ou l'en
+ *    détacher n'écrit ni dans `prescribed_snapshot` ni dans
+ *    `logged_exercise.position` : ça remplit `session_layout`, une table qui ne
+ *    part **jamais** au serveur. Le web continue donc de lire la séance dans
+ *    l'ordre prescrit. Ce que ça change, ici, est ce que la barre basse propose
+ *    — `nextTarget` alterne les membres d'un superset, ce qui n'aide que si on
+ *    les mène dans l'ordre annoncé.
  * 7. **Clôturer est du réalisé, ouvrir ne l'est pas.** `close.ts` (KL-33) pose
  *    `ended_at`, passe la séance en `done` et empile sa mutation dans la même
  *    transaction, là où `beginWorkout` n'empile rien. Et c'est terminal : une
@@ -150,6 +159,8 @@ export type { ExerciseNameBook, ExerciseNames } from './naming';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
 
+export { chainExercise, moveExercise, resetExecutionOrder, unchainExercise } from './order';
+
 export {
   allExercises,
   buildProgram,
@@ -158,12 +169,16 @@ export {
   exerciseIdsOf,
   findExercise,
   findSetLine,
+  groupExercises,
   nextTarget,
   referencedExerciseIds,
   setDeviates,
   withDraftSets,
+  withExecutionOrder,
 } from './program';
 export type {
+  ExecutionOrder,
+  ExecutionSlot,
   SessionBlock,
   SessionExercise,
   SessionGroup,
@@ -214,6 +229,7 @@ export {
   preferencesQuery,
   prescribedSnapshotQuery,
   runningWorkoutQuery,
+  sessionLayoutQuery,
   toDayWorkout,
   workoutQuery,
   workoutsOfDayQuery,

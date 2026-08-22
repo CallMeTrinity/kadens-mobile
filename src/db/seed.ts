@@ -9,6 +9,7 @@ import {
   mutationQueue,
   prescribedSnapshot,
   scheduledWorkout,
+  sessionLayout,
   SYNC_STATE_ID,
   syncState,
 } from './schema';
@@ -669,6 +670,9 @@ function wipe(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
   tx.delete(loggedSet).where(all).run();
   tx.delete(loggedExercise).where(all).run();
   tx.delete(prescribedSnapshot).where(all).run();
+  // En cascade de `scheduled_workout`, comme `prescribed_snapshot` : nommée quand
+  // même, pour que la liste dise ce que le vidage emporte.
+  tx.delete(sessionLayout).where(all).run();
   tx.delete(scheduledWorkout).where(all).run();
   tx.delete(exerciseHistory).where(all).run();
   tx.delete(exercise).where(all).run();

@@ -47,6 +47,7 @@ export {
   preference,
   prescribedSnapshot,
   scheduledWorkout,
+  sessionLayout,
   SYNC_STATE_ID,
   syncState,
 } from './schema';
@@ -64,6 +65,7 @@ export type {
   PrescribedSnapshotRow,
   ScheduledWorkoutInsert,
   ScheduledWorkoutRow,
+  SessionLayoutRow,
   SyncStateRow,
 } from './schema';
 

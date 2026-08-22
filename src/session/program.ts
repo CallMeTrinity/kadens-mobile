@@ -48,6 +48,16 @@
  * annonce avant de la faire (`withDraftSets`, plus bas). Elle ne vit qu'en
  * mémoire, le temps du rendu, et disparaît en devenant du réalisé.
  *
+ * ## L'ordre du programme, et celui dans lequel on l'a mené (KL-52)
+ *
+ * Les deux ne sont plus le même depuis `withExecutionOrder` (plus bas). Le
+ * premier reste intouchable — c'est `prescribed_snapshot`, remplacé en entier à
+ * chaque pull, et `position`, sur laquelle le document poussé se trie. Le second
+ * est **local au téléphone**, ne part jamais au serveur, et ne sert qu'à deux
+ * choses : l'ordre d'affichage et ce que la barre basse propose. Une séance ne
+ * se passe pas comme prévu, l'alternance d'un superset n'aide que si on est dans
+ * l'ordre qu'elle suppose.
+ *
  * ## Un seul type d'exercice, prescrit ou non (KL-30)
  *
  * `SessionExercise.prescribed` est **nullable** depuis que l'app sait ajouter un
@@ -127,6 +137,16 @@ export interface SessionExercise {
    */
   substituted: boolean;
   /**
+   * Le rang dans son enchaînement — « A1 », « A2 » — ou `null` s'il est mené seul.
+   *
+   * Il vient du serveur par défaut (`prescribed.groupLabel`), et c'est le seul
+   * cas où l'exercice et sa ligne du programme disent la même chose. Dès qu'un
+   * **ordre d'exécution local** est posé (KL-52, `withExecutionOrder`), il est
+   * recalculé : les enchaînements sont alors ceux qu'on a menés, pas ceux qui
+   * étaient prévus, et lire `prescribed.groupLabel` afficherait l'ancien.
+   */
+  groupLabel: string | null;
+  /**
    * Les lignes de série, ou `null` pour un exercice **sans séries à saisir** —
    * course, vélo, AMRAP, for time. Le cardio ne se saisit pas sur le téléphone
    * (règle verrouillée) : il se coche fait / pas fait, et c'est tout.
@@ -142,7 +162,7 @@ export interface SessionExercise {
  * Un exercice isolé, ou un groupe lié dans un bloc.
  *
  * `label` porte le préfixe commun (« A »), jamais le rang complet : celui-là vit
- * sur chaque exercice, dans `prescribed.groupLabel`.
+ * sur chaque exercice, dans `groupLabel`.
  */
 export interface SessionGroup {
   key: string;
@@ -174,6 +194,11 @@ export interface SessionProgram {
    * 0 et passerait devant tout le programme dans le document poussé.
    */
   prescribedCount: number;
+  /**
+   * Un **ordre d'exécution local** est appliqué (KL-52). Les rangs
+   * d'enchaînement affichés sont alors calculés ici, pas descendus du serveur.
+   */
+  reordered: boolean;
   done: number;
   total: number;
 }
@@ -266,7 +291,14 @@ export function buildProgram(
       buildExercise(null, logged.position, logged, setsByExercise.get(logged.id) ?? [], names),
     );
 
-  return { blocks: sessionBlocks, extras, prescribedCount: position, done, total };
+  return {
+    blocks: sessionBlocks,
+    extras,
+    prescribedCount: position,
+    reordered: false,
+    done,
+    total,
+  };
 }
 
 function buildExercise(
@@ -297,6 +329,7 @@ function buildExercise(
     logged,
     name: exerciseName(prescribed, logged, substituted, names),
     substituted,
+    groupLabel: prescribed?.groupLabel ?? null,
     lines,
     skipped,
   };
@@ -536,6 +569,136 @@ export function draftSetValues(exercise: SessionExercise): SetValues {
 }
 
 /**
+ * L'ordre d'exécution local, tel que la base le retient : rang et enchaînement,
+ * par clé d'exercice (KL-52).
+ */
+export interface ExecutionSlot {
+  position: number;
+  /** L'enchaînement local. Deux **voisins** qui le partagent forment un superset. */
+  chain: number | null;
+}
+
+/** L'ordre d'exécution d'une séance entière. Vide = celui du programme. */
+export type ExecutionOrder = ReadonlyMap<string, ExecutionSlot>;
+
+/**
+ * Réordonne le déroulé selon l'ordre d'exécution local (KL-52).
+ *
+ * ## Ce que ça change, et ce que ça ne change pas
+ *
+ * Une séance ne se passe pas comme prévu : la machine de A2 est prise, le
+ * finisseur passe avant, le superset se mène autrement. Sans cette projection,
+ * la barre basse continue de proposer ce que le programme annonçait —
+ * l'alternance d'un superset (`nextTarget`) n'aide que si on est dans l'ordre
+ * qu'elle suppose, et travaille contre soi sinon. C'est le seul défaut qu'elle
+ * corrige, et c'est pour ça qu'elle est ici, dans le déroulé, plutôt que dans un
+ * réglage de la barre.
+ *
+ * **Le prescrit ne bouge pas pour autant.** Rien n'est réécrit dans
+ * `prescribed_snapshot`, rien ne part au serveur : `position` — celle que
+ * `logged_exercise` prend et sur laquelle le document poussé se trie — est
+ * conservée telle quelle, donc le web continue de lire la séance dans l'ordre du
+ * programme. « On dévie, on ne recompose pas » (`deviations.ts`) tient : ceci
+ * n'est pas une recomposition du programme, c'est l'ordre dans lequel il a été
+ * mené, et il ne vit que sur ce téléphone.
+ *
+ * ## Trois règles, et elles se déduisent toutes de la contiguïté
+ *
+ * 1. **On ne réordonne qu'à l'intérieur d'une file** — un bloc, ou les exercices
+ *    hors programme. Un bloc est une **section** de la séance (échauffement,
+ *    principal, retour au calme) : en sortir un exercice ne le déplacerait pas,
+ *    ça le changerait de nature.
+ * 2. **Un enchaînement est fait de voisins**, exactement comme les `groupLabel`
+ *    du serveur. C'est ce qui permet à un exercice qu'on déplace hors de son
+ *    groupe de s'en détacher tout seul, sans qu'aucune écriture ait à le prévoir.
+ * 3. **Les rangs affichés sont recalculés**, pour toute la séance et pas
+ *    seulement pour ce qu'on a touché. Garder « A1 » sur un exercice que son
+ *    voisin a quitté afficherait un enchaînement qui n'existe plus ; mélanger
+ *    des lettres du serveur et des lettres locales serait pire encore.
+ *
+ * Une clé absente de l'ordre — un exercice que le coach vient d'ajouter, un
+ * hors-programme posé après coup — retombe sur son rang de programme
+ * (`exercise.position`), donc à sa place naturelle parmi ceux qui n'ont pas
+ * bougé. Rien à réparer, rien à migrer.
+ */
+export function withExecutionOrder(program: SessionProgram, order: ExecutionOrder): SessionProgram {
+  if (order.size === 0) {
+    return program;
+  }
+
+  const sorted = (exercises: SessionExercise[]): SessionExercise[] =>
+    [...exercises].sort(
+      (a, b) =>
+        (order.get(a.key)?.position ?? a.position) - (order.get(b.key)?.position ?? b.position),
+    );
+
+  // Les lettres se distribuent sur la séance entière, pas bloc par bloc : c'est
+  // ce que fait le serveur (`PlanFlattener`), et deux blocs qui rouvriraient
+  // chacun sur « A » se liraient comme un seul enchaînement coupé en deux.
+  const letters = new Letters();
+  const relabel = (exercises: SessionExercise[]): SessionExercise[] =>
+    chains(exercises, order).flatMap((run) => {
+      const label = run.length > 1 ? letters.next() : null;
+
+      return run.map((exercise, rank) => ({
+        ...exercise,
+        groupLabel: label === null ? null : `${label}${rank + 1}`,
+      }));
+    });
+
+  return {
+    ...program,
+    reordered: true,
+    blocks: program.blocks.map((block) => {
+      const exercises = relabel(sorted(block.groups.flatMap((group) => group.exercises)));
+
+      return { ...block, groups: groupExercises(exercises) };
+    }),
+    extras: relabel(sorted(program.extras)),
+  };
+}
+
+/** Les suites de voisins qui partagent un enchaînement. Un exercice seul fait une suite d'un. */
+function chains(exercises: SessionExercise[], order: ExecutionOrder): SessionExercise[][] {
+  const runs: SessionExercise[][] = [];
+  let current: number | null = null;
+
+  for (const exercise of exercises) {
+    const chain = order.get(exercise.key)?.chain ?? null;
+    const last = runs[runs.length - 1];
+
+    if (chain !== null && chain === current && last) {
+      last.push(exercise);
+    } else {
+      runs.push([exercise]);
+    }
+
+    current = chain;
+  }
+
+  return runs;
+}
+
+/**
+ * Les lettres d'enchaînement, dans l'ordre : A, B, … Z, puis AA, AB.
+ *
+ * Le débordement au-delà de vingt-six n'arrivera pas dans une séance, et c'est
+ * précisément pour ça qu'il ne mérite pas mieux qu'une règle qui ne se casse
+ * pas : deux enchaînements ne doivent jamais porter la même lettre, sinon la
+ * contiguïté seule les distingue et le rail de gauche ment.
+ */
+class Letters {
+  private rank = 0;
+
+  next(): string {
+    const rank = this.rank++;
+    const letter = String.fromCharCode(65 + (rank % 26));
+
+    return rank < 26 ? letter : `${String.fromCharCode(64 + Math.floor(rank / 26))}${letter}`;
+  }
+}
+
+/**
  * Ce que la séance attend **maintenant** : une série à cocher, ou un cardio à
  * marquer fait.
  *
@@ -572,7 +735,9 @@ export interface SessionTarget {
 export function nextTarget(program: SessionProgram): SessionTarget | null {
   const pools: SessionExercise[][] = [
     ...program.blocks.flatMap((block) => block.groups.map((group) => group.exercises)),
-    ...program.extras.map((exercise) => [exercise]),
+    // Les hors-programme se regroupent comme les autres : une séance libre
+    // (KL-34) n'a **que** ça, et un superset improvisé s'y alterne pareil.
+    ...groupExercises(program.extras).map((group) => group.exercises),
   ];
 
   for (const pool of pools) {
@@ -742,7 +907,8 @@ export function setDeviates(line: SessionSetLine, axis: keyof SetValues): boolea
 }
 
 /**
- * Regroupe les exercices liés d'un bloc.
+ * Regroupe les exercices liés d'un bloc — ou les exercices hors programme, qui
+ * forment leur propre file (§ un enchaînement se lit là où il se déroule).
  *
  * Un groupe, ce sont des **voisins contigus** dont le libellé partage le même
  * préfixe. La contiguïté est la moitié de la règle : le compositeur web tient
@@ -750,11 +916,11 @@ export function setDeviates(line: SessionSetLine, axis: keyof SetValues): boolea
  * groupes du même bloc peuvent porter des lettres différentes (A1/A2 puis
  * B1/B2/B3). Une lecture par lettre seule recollerait des groupes séparés.
  */
-function groupExercises(exercises: SessionExercise[]): SessionGroup[] {
+export function groupExercises(exercises: SessionExercise[]): SessionGroup[] {
   const groups: SessionGroup[] = [];
 
   for (const exercise of exercises) {
-    const prefix = groupPrefix(exercise.prescribed?.groupLabel ?? null);
+    const prefix = groupPrefix(exercise.groupLabel);
     const current = groups[groups.length - 1];
 
     if (prefix !== null && current && current.label === prefix) {

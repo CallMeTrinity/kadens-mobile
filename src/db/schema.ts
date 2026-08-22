@@ -1,5 +1,13 @@
 import { sql } from 'drizzle-orm';
-import { check, index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  check,
+  index,
+  integer,
+  primaryKey,
+  real,
+  sqliteTable,
+  text,
+} from 'drizzle-orm/sqlite-core';
 
 import type {
   ActivityType,
@@ -227,6 +235,57 @@ export const loggedSet = sqliteTable(
   (t) => [index('idx_logged_set_exercise').on(t.loggedExerciseId, t.position)],
 );
 
+/**
+ * L'**ordre d'exécution local** d'une séance : le rang où chaque exercice est
+ * réellement mené, et l'enchaînement auquel il appartient (KL-52).
+ *
+ * ## Pourquoi une table, alors que « on dévie, on ne recompose pas »
+ *
+ * La règle tient toujours, et cette table la respecte : **rien de ce qu'elle
+ * contient ne part au serveur**. Le prescrit reste ce que le coach a écrit, dans
+ * l'ordre où il l'a écrit ; `prescribed_snapshot` n'est pas touché, le document
+ * poussé continue de se trier sur `logged_exercise.position`, donc sur l'ordre
+ * du programme. Ce qui se range ici est autre chose : l'ordre dans lequel la
+ * séance **se déroule** ce jour-là, parce que la machine était prise ou qu'on a
+ * mené le superset autrement. C'est de l'exécution, pas de la programmation.
+ *
+ * C'est aussi pour ça qu'elle ne peut pas vivre dans `prescribed_snapshot` : ce
+ * document est **remplacé en entier à chaque pull**, un ordre écrit dedans
+ * s'effacerait au premier cycle de synchronisation.
+ *
+ * ## Ce que la clé désigne, et sa limite
+ *
+ * `exercise_key` est la clé de déroulé de `session/program.ts` : `e{prescribedId}`
+ * pour une ligne du programme, `x{loggedExerciseId}` pour un exercice hors
+ * programme. La première est **stable** — elle vient du serveur. La seconde ne
+ * l'est que tant que le pull ne réécrit pas le réalisé de cette séance, ce qu'il
+ * ne fait jamais tant qu'une mutation l'attend (`sync/pull.ts`) — donc jamais
+ * pendant qu'on la fait. Conséquence assumée : un exercice hors programme peut
+ * retrouver son rang de programme après un aller-retour serveur complet, une
+ * fois la séance close. À ce moment-là l'ordre d'exécution n'a plus d'usage.
+ *
+ * `chain` est l'identifiant d'un enchaînement **local**. Deux exercices voisins
+ * qui le partagent forment un superset, exactement comme deux `groupLabel` de
+ * même préfixe côté serveur : la contiguïté fait partie de la règle, et c'est ce
+ * qui permet à un exercice sorti du groupe de s'en détacher sans réécriture.
+ * `null` = mené seul.
+ */
+export const sessionLayout = sqliteTable(
+  'session_layout',
+  {
+    scheduledUuid: text('scheduled_uuid')
+      .notNull()
+      .references(() => scheduledWorkout.uuid, { onDelete: 'cascade' }),
+    /** `e{prescribedId}` ou `x{loggedExerciseId}` — la clé de `SessionExercise`. */
+    exerciseKey: text('exercise_key').notNull(),
+    /** Rang d'exécution dans la séance entière. Les rangs des blocs ne s'entremêlent pas. */
+    position: integer('position').notNull(),
+    /** L'enchaînement local, ou `null` si l'exercice est mené seul. */
+    chain: integer('chain'),
+  },
+  (t) => [primaryKey({ columns: [t.scheduledUuid, t.exerciseKey] })],
+);
+
 // --- La synchronisation ------------------------------------------------------
 
 /**
@@ -393,6 +452,7 @@ export type ExerciseHistoryRow = typeof exerciseHistory.$inferSelect;
 export type ScheduledWorkoutRow = typeof scheduledWorkout.$inferSelect;
 export type ScheduledWorkoutInsert = typeof scheduledWorkout.$inferInsert;
 export type PrescribedSnapshotRow = typeof prescribedSnapshot.$inferSelect;
+export type SessionLayoutRow = typeof sessionLayout.$inferSelect;
 export type LoggedExerciseRow = typeof loggedExercise.$inferSelect;
 export type LoggedExerciseInsert = typeof loggedExercise.$inferInsert;
 export type LoggedSetRow = typeof loggedSet.$inferSelect;

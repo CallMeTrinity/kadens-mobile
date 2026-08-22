@@ -25,18 +25,22 @@ import {
   beginWorkout,
   blockRoleLabel,
   canReplaceExercise,
+  chainExercise,
   checkSet,
   dayOffset,
   deleteSet,
   exerciseIdOf,
   findExercise,
   findSetLine,
+  groupExercises,
   isClosed,
   isRunning,
   longDate,
+  moveExercise,
   nextTarget,
   removeExercise,
   replaceExercise,
+  resetExecutionOrder,
   REST_STEP,
   setCardioDone,
   setDeviates,
@@ -47,6 +51,7 @@ import {
   targetAreaLabel,
   startRestAfterSet,
   stopRest,
+  unchainExercise,
   uncheckSet,
   updateSet,
   useExerciseLibrary,
@@ -65,6 +70,7 @@ import {
   type SessionBlock,
   type SessionExercise,
   type SessionGroup,
+  type SessionProgram,
   type SessionSetLine,
   type SessionTarget,
 } from '@/session';
@@ -207,6 +213,10 @@ export default function SessionScreen() {
   const [openSet, setOpenSet] = useState<string | null>(null);
   const [openExercise, setOpenExercise] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
+  // Le mode « ranger le déroulé » (KL-52). Il vit dans l'écran et nulle part
+  // ailleurs : ce n'est pas un état de la séance, c'est une façon de la regarder,
+  // et le quitter ne défait rien de ce qu'on y a fait.
+  const [reordering, setReordering] = useState(false);
   // Mesurée, pas devinée : c'est ce qui dégage le bas de la page (voir plus bas).
   const [dockHeight, setDockHeight] = useState(0);
   const insets = useSafeAreaInsets();
@@ -218,7 +228,18 @@ export default function SessionScreen() {
   const preferences = usePreferences();
   // Ce que la séance attend maintenant. C'est ce que la barre basse propose, et
   // ce que le déroulé garde en vue.
-  const target = running ? nextTarget(program) : null;
+  // Pas de cible pendant qu'on range : la barre basse porte alors la sortie du
+  // mode, et le déroulé ne doit pas se recaler sous le doigt au moment précis où
+  // on déplace une ligne (`useRevealTarget`).
+  const target = running && !reordering ? nextTarget(program) : null;
+  // Où chaque exercice se trouve dans sa file : de quoi griser « monter » en tête
+  // et « descendre » en queue plutôt que de laisser l'appui ne rien faire.
+  const arrangement = useMemo(() => arrangementOf(program), [program]);
+  // Les hors-programme se regroupent comme les exercices d'un bloc : sans ordre
+  // local chacun est son propre groupe, avec un enchaînement improvisé ils
+  // partagent un rail. Mémoïsé comme le reste du déroulé — il se reconstruit à
+  // chaque écriture, pas à chaque rendu.
+  const extraGroups = useMemo(() => groupExercises(program.extras), [program.extras]);
   const { scrollRef, frameRef, targetRef, onScroll } = useRevealTarget(
     target?.exercise.key ?? null,
     { bottomInset: dockHeight },
@@ -296,6 +317,29 @@ export default function SessionScreen() {
       }
     },
     [uuid, dropDraft],
+  );
+
+  // Ranger le déroulé (KL-52). Un seul point d'entrée pour les quatre gestes :
+  // ils écrivent la même chose — l'ordre entier — et ne diffèrent que par la
+  // modification qu'ils y appliquent (`@/session`, `order.ts`).
+  const onArrange = useCallback(
+    (exerciseKey: string, action: ArrangeAction) => {
+      switch (action) {
+        case 'up':
+          moveExercise(uuid, program, exerciseKey, -1);
+          break;
+        case 'down':
+          moveExercise(uuid, program, exerciseKey, 1);
+          break;
+        case 'chain':
+          chainExercise(uuid, program, exerciseKey);
+          break;
+        case 'unchain':
+          unchainExercise(uuid, program, exerciseKey);
+          break;
+      }
+    },
+    [uuid, program],
   );
 
   // Le sélecteur rend **une liste** : garnir une séance vierge, c'est y poser
@@ -424,6 +468,27 @@ export default function SessionScreen() {
             </View>
           ) : null}
 
+          {/* Ranger le déroulé se dit, sinon la disparition des séries se lit
+              comme une panne — et la portée de ce qu'on fait doit être écrite :
+              rien de ce qui se range ici ne part au serveur. */}
+          {reordering ? (
+            <View style={styles.notice}>
+              <Text style={styles.body}>
+                Range la séance dans l’ordre où tu la mènes. Ça ne change pas le programme et ne
+                part pas au serveur : ça décide de ce que la barre du bas propose.
+              </Text>
+              {program.reordered ? (
+                <Button
+                  label="Rétablir l’ordre du programme"
+                  variant="ghost"
+                  block
+                  accessibilityHint="Le déroulé retrouve l’ordre prescrit. Rien de consigné n’est perdu"
+                  onPress={() => resetExecutionOrder(uuid)}
+                />
+              ) : null}
+            </View>
+          ) : null}
+
           {/* Sans ce mot, l'absence de bouton se lirait comme une panne : le
               programme est là, la séance est datée, et rien ne se coche. */}
           {closedElsewhere ? (
@@ -439,6 +504,8 @@ export default function SessionScreen() {
               key={block.key}
               block={block}
               editable={running}
+              reordering={reordering}
+              arrangement={arrangement}
               history={history}
               today={today}
               targetKey={target?.exercise.key ?? null}
@@ -449,6 +516,7 @@ export default function SessionScreen() {
               onAddSet={onAddSet}
               onDropSet={dropDraft}
               onOpenExercise={setOpenExercise}
+              onArrange={onArrange}
             />
           ))}
 
@@ -467,11 +535,17 @@ export default function SessionScreen() {
                   {workout.freeform && program.blocks.length === 0 ? 'Exercices' : 'Hors programme'}
                 </Text>
               </View>
-              {program.extras.map((exercise) => (
-                <ExerciseSection
-                  key={exercise.key}
-                  exercise={exercise}
+              {/* Par groupes et non un à un : une séance libre (KL-34) n'a **que**
+                  des hors-programme, et un superset improvisé s'y dessine au même
+                  rail que dans un bloc (KL-52). Sans ordre local, chacun est son
+                  propre groupe et le rendu est celui d'avant, à l'identique. */}
+              {extraGroups.map((group) => (
+                <GroupSection
+                  key={group.key}
+                  group={group}
                   editable={running}
+                  reordering={reordering}
+                  arrangement={arrangement}
                   history={history}
                   today={today}
                   targetKey={target?.exercise.key ?? null}
@@ -482,6 +556,7 @@ export default function SessionScreen() {
                   onAddSet={onAddSet}
                   onDropSet={dropDraft}
                   onOpenExercise={setOpenExercise}
+                  onArrange={onArrange}
                 />
               ))}
             </View>
@@ -498,12 +573,27 @@ export default function SessionScreen() {
             />
           ) : null}
 
-          {running ? (
+          {running && !reordering ? (
             <Button
               label="Ajouter un exercice"
               variant="secondary"
               block
               onPress={() => setPicker({ mode: 'add' })}
+            />
+          ) : null}
+
+          {/* La porte du rangement (KL-52), en fin de déroulé et **une seule** :
+              le même geste à deux endroits ferait douter qu'il fait la même
+              chose. Elle s'ouvre aussi avant le démarrage — on lit le programme,
+              on sait déjà que le rack sera pris — puisque rien de ce qu'elle
+              écrit n'est du réalisé. */}
+          {!closed && !reordering && exerciseCount(program) > 1 ? (
+            <Button
+              label="Réorganiser les exercices"
+              variant="ghost"
+              block
+              accessibilityHint="Changer l’ordre et les enchaînements, sur ce téléphone seulement"
+              onPress={() => setReordering(true)}
             />
           ) : null}
 
@@ -514,7 +604,7 @@ export default function SessionScreen() {
             En **secondaire** tant que la séance court : l'action primaire de
             l'écran est celle de la barre basse, et il n'y en a qu'une (KL-39).
             Ce bouton-ci reste le chemin de celui qui arrête plus tôt. */}
-          {running || (closed && !closedElsewhere) ? (
+          {!reordering && (running || (closed && !closedElsewhere)) ? (
             <Button
               label={closed ? 'Voir le résumé' : 'Terminer la séance'}
               variant="secondary"
@@ -530,7 +620,9 @@ export default function SessionScreen() {
         </ScrollView>
       </View>
 
-      {running || rest || startable ? (
+      {reordering ? (
+        <ArrangeDock onHeight={setDockHeight} onDone={() => setReordering(false)} />
+      ) : running || rest || startable ? (
         <SessionDock
           rest={rest}
           target={target}
@@ -939,6 +1031,13 @@ function useRevealTarget(targetKey: string | null, { bottomInset }: { bottomInse
 type SectionHandlers = {
   editable: boolean;
   /**
+   * Le déroulé est en cours de rangement (KL-52) : chaque exercice se réduit à
+   * son nom et à ses poignées de déplacement, séries comprises.
+   */
+  reordering: boolean;
+  /** Où chaque exercice se trouve dans sa file, pour griser ce qui n'a pas de sens. */
+  arrangement: Map<string, Arrangement>;
+  /**
    * La dernière performance et le record, indexés par identifiant d'exercice
    * (KL-32). Le déroulé entier en reçoit **une seule** copie : une lecture par
    * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
@@ -957,7 +1056,62 @@ type SectionHandlers = {
   /** Retire la série annoncée et pas encore faite. Prend la clé de l'exercice. */
   onDropSet: (exerciseKey: string) => void;
   onOpenExercise: (key: string) => void;
+  /** Déplacer, enchaîner, détacher. Prend la clé de l'exercice (KL-52). */
+  onArrange: (exerciseKey: string, action: ArrangeAction) => void;
 };
+
+/** Les quatre gestes du rangement. Ils écrivent tous l'ordre entier (`order.ts`). */
+type ArrangeAction = 'up' | 'down' | 'chain' | 'unchain';
+
+/** Ce qu'il faut savoir d'un exercice pour lui proposer les bons gestes. */
+type Arrangement = {
+  /** En tête de sa file : rien au-dessus, donc ni montée ni enchaînement possible. */
+  first: boolean;
+  /** En queue de sa file. */
+  last: boolean;
+  /** Membre d'un enchaînement — c'est exactement ce que porter un rang veut dire. */
+  chained: boolean;
+};
+
+/**
+ * La place de chaque exercice dans sa file, calculée une fois pour tout le
+ * déroulé.
+ *
+ * Les files sont celles de `order.ts` — un bloc, ou les hors-programme — et
+ * c'est la raison pour laquelle ce calcul ne peut pas vivre dans le composant du
+ * groupe : un groupe ne sait pas s'il est le premier de son bloc, et un bouton
+ * « monter » actif en tête de file serait un appui sans effet.
+ */
+function arrangementOf(program: SessionProgram): Map<string, Arrangement> {
+  const map = new Map<string, Arrangement>();
+  const pools = [
+    ...program.blocks.map((block) => block.groups.flatMap((group) => group.exercises)),
+    program.extras,
+  ];
+
+  for (const pool of pools) {
+    pool.forEach((exercise, index) => {
+      map.set(exercise.key, {
+        first: index === 0,
+        last: index === pool.length - 1,
+        chained: exercise.groupLabel !== null,
+      });
+    });
+  }
+
+  return map;
+}
+
+/** Combien d'exercices la séance porte, hors programme compris. */
+function exerciseCount(program: SessionProgram): number {
+  return (
+    program.blocks.reduce(
+      (sum, block) =>
+        sum + block.groups.reduce((count, group) => count + group.exercises.length, 0),
+      0,
+    ) + program.extras.length
+  );
+}
 
 /** Une section de la séance. Le bloc est une section, jamais un superset. */
 function BlockSection({ block, ...handlers }: { block: SessionBlock } & SectionHandlers) {
@@ -1015,6 +1169,8 @@ function GroupSection({ group, ...handlers }: { group: SessionGroup } & SectionH
 function ExerciseSection({
   exercise,
   editable,
+  reordering,
+  arrangement,
   history,
   today,
   targetKey,
@@ -1025,8 +1181,23 @@ function ExerciseSection({
   onAddSet,
   onDropSet,
   onOpenExercise,
+  onArrange,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const { prescribed, lines } = exercise;
+
+  // Ranger, c'est regarder la séance de haut : les séries, l'historique et les
+  // consignes disparaissent le temps du mode, parce qu'un déroulé complet ne
+  // tient pas à l'écran et qu'on ne peut pas déplacer ce qu'on ne voit pas.
+  if (reordering) {
+    return (
+      <ArrangeRow
+        exercise={exercise}
+        arrangement={arrangement.get(exercise.key) ?? null}
+        onArrange={onArrange}
+      />
+    );
+  }
+
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
@@ -1049,7 +1220,7 @@ function ExerciseSection({
     // n'a qu'une couleur, prise par l'action primaire (règle 2).
     <View ref={current ? targetRef : null} style={[styles.exercise, current && styles.exerciseNow]}>
       <View style={styles.exerciseHead}>
-        {prescribed?.groupLabel ? <Text style={styles.rank}>{prescribed.groupLabel}</Text> : null}
+        {exercise.groupLabel ? <Text style={styles.rank}>{exercise.groupLabel}</Text> : null}
         <Text style={styles.name}>{exercise.name}</Text>
         <View style={styles.spacer} />
         {exercise.skipped ? (
@@ -1128,6 +1299,138 @@ function ExerciseSection({
 
       {/* Ce que l'athlète a écrit à la salle. Rien à voir avec la consigne. */}
       {exercise.logged?.notes ? <Text style={styles.logNotes}>{exercise.logged.notes}</Text> : null}
+    </View>
+  );
+}
+
+/**
+ * Un exercice, réduit à ce qu'il faut pour le ranger (KL-52).
+ *
+ * ## Des boutons, pas un glisser-déposer
+ *
+ * Le glisser-déposer est le geste évident sur une liste, et c'est le mauvais ici.
+ * Il demande de viser une poignée, de maintenir, de suivre une cible qui défile,
+ * puis de relâcher au bon endroit — quatre exigences de précision dans le
+ * contexte que KL-39 décrit : debout, à bout de bras, écran gras, parfois dans le
+ * noir. Deux boutons au plancher tactile font le même travail en appuis discrets,
+ * chacun rattrapable, et ils s'annoncent à TalkBack. Ils évitent aussi une
+ * dépendance native de plus, donc une reconstruction du dev client.
+ *
+ * ## Ce que la ligne dit, et ce qu'elle tait
+ *
+ * Le nom, son rang d'enchaînement, et rien d'autre : ni séries, ni historique, ni
+ * consigne. Ranger est une vue de haut, et un déroulé complet ne tient pas à
+ * l'écran — on ne déplace pas ce qu'on ne voit pas. Un exercice **sauté** garde
+ * sa marque : il reste dans l'ordre, il est réglé, pas absent.
+ *
+ * Les deux gestes d'enchaînement sont **un seul bouton**, parce qu'ils sont un
+ * seul fait vu des deux côtés : ou l'exercice est lié à celui qui le précède, ou
+ * il ne l'est pas. Il porte donc le rang dans son libellé (« Détacher de A »),
+ * seule façon de savoir de quoi on se détache sans compter les rails à l'œil.
+ */
+function ArrangeRow({
+  exercise,
+  arrangement,
+  onArrange,
+}: {
+  exercise: SessionExercise;
+  arrangement: Arrangement | null;
+  onArrange: (exerciseKey: string, action: ArrangeAction) => void;
+}) {
+  // Sans place connue, aucun geste n'a de sens : la ligne se lit, elle ne se
+  // range pas. N'arrive pas dans l'app — le déroulé et l'index viennent du même
+  // objet — mais un bouton actif qui ne fait rien serait pire que son absence.
+  const first = arrangement?.first ?? true;
+  const last = arrangement?.last ?? true;
+  const chained = arrangement?.chained ?? false;
+  const previous = chained ? (exercise.groupLabel?.replace(/\d+$/, '') ?? null) : null;
+
+  return (
+    <View style={styles.arrange}>
+      <View style={styles.arrangeHead}>
+        {exercise.groupLabel ? <Text style={styles.rank}>{exercise.groupLabel}</Text> : null}
+        <Text style={styles.name} numberOfLines={2}>
+          {exercise.name}
+        </Text>
+        <View style={styles.spacer} />
+        {exercise.skipped ? <Chip label="Sauté" /> : null}
+      </View>
+
+      <View style={styles.arrangeActions}>
+        <Button
+          label="Monter"
+          variant="secondary"
+          size="sm"
+          disabled={first}
+          accessibilityLabel={`Monter ${exercise.name}`}
+          accessibilityHint={first ? 'Déjà en tête de son bloc' : undefined}
+          onPress={() => onArrange(exercise.key, 'up')}
+        />
+        <Button
+          label="Descendre"
+          variant="secondary"
+          size="sm"
+          disabled={last}
+          accessibilityLabel={`Descendre ${exercise.name}`}
+          accessibilityHint={last ? 'Déjà en fin de son bloc' : undefined}
+          onPress={() => onArrange(exercise.key, 'down')}
+        />
+        <View style={styles.spacer} />
+        <Button
+          label={chained ? `Détacher${previous ? ` de ${previous}` : ''}` : 'Enchaîner'}
+          variant="ghost"
+          size="sm"
+          disabled={!chained && first}
+          accessibilityLabel={
+            chained ? `Détacher ${exercise.name} de son enchaînement` : `Enchaîner ${exercise.name}`
+          }
+          accessibilityHint={
+            chained
+              ? 'Il se mènera seul, avec son repos'
+              : first
+                ? 'Rien ne le précède dans ce bloc'
+                : 'Il s’enchaîne sans repos avec l’exercice juste au-dessus'
+          }
+          onPress={() => onArrange(exercise.key, chained ? 'unchain' : 'chain')}
+        />
+      </View>
+    </View>
+  );
+}
+
+/**
+ * La barre basse du rangement (KL-52).
+ *
+ * Elle occupe la place de la validation, et c'est le point : la barre est le seul
+ * endroit de l'écran dont le pouce connaît la position (KL-39), et le mode dans
+ * lequel on est doit se lire là plutôt qu'en haut. Un seul geste, donc — sortir —
+ * et rien à valider : chaque déplacement est déjà écrit quand il s'affiche.
+ */
+function ArrangeDock({
+  onHeight,
+  onDone,
+}: {
+  onHeight: (height: number) => void;
+  onDone: () => void;
+}) {
+  const insets = useSafeAreaInsets();
+
+  useEffect(() => () => onHeight(0), [onHeight]);
+
+  return (
+    <View
+      onLayout={(event) => onHeight(event.nativeEvent.layout.height)}
+      style={[styles.dock, { paddingBottom: insets.bottom }]}
+    >
+      <View style={styles.dockAction}>
+        <Button
+          label="Terminer le rangement"
+          size="lg"
+          block
+          accessibilityHint="Revenir au déroulé. L’ordre est déjà enregistré"
+          onPress={onDone}
+        />
+      </View>
     </View>
   );
 }
@@ -1546,6 +1849,21 @@ function CardioRow({
  *
  * **Le type de série ne s'édite pas** : il décide de la file d'appariement, le
  * changer déplacerait le rang de toutes les suivantes (`deviations.ts`).
+ *
+ * **L'axe de saisie, si** (KL-52), et c'est une autre question. Répétitions ou
+ * durée n'est pas un rang, c'est ce que la série **compte** : un gainage se
+ * chronomètre, un développé se compte. Le prescrit tranche quand il y en a un —
+ * et il reste alors seul maître, sinon la valeur saisie ne se comparerait plus à
+ * rien. Un exercice **hors programme** n'a personne pour trancher : il naissait
+ * donc en répétitions et n'en sortait jamais, ce qui rendait la moitié de la
+ * bibliothèque insaisissable. La bascule est ici, sur la série, parce que c'est
+ * là qu'on s'en aperçoit ; la série suivante en hérite d'elle-même, le brouillon
+ * se pré-remplissant sur la dernière faite (`draftSetValues`).
+ *
+ * Les deux axes ne coexistent jamais : basculer **efface** l'autre. Une série qui
+ * porterait 10 répétitions *et* 45 secondes serait lue par les répétitions
+ * partout — ici, dans l'historique, dans le résumé (`setEffort`) — donc le chrono
+ * serait une valeur invisible qui voyagerait quand même jusqu'au serveur.
  */
 function SetSheet({
   scheduledUuid,
@@ -1571,13 +1889,27 @@ function SetSheet({
 
   // Reps ou durée : ce que la série porte, à défaut ce que le prescrit demandait.
   // Jamais les deux — un exercice se compte en répétitions ou en secondes.
-  const timed =
-    (logged?.durationSeconds ?? line.planned?.durationSeconds ?? null) !== null &&
-    (logged?.reps ?? line.planned?.reps ?? null) === null;
-
   const patch = (part: Partial<LoggedSetValues>) =>
     setValues((current) => ({ ...current, ...part }));
   const zeroToNull = (value: number) => (value > 0 ? value : null);
+
+  const [timed, setTimed] = useState(
+    () =>
+      (logged?.durationSeconds ?? line.planned?.durationSeconds ?? null) !== null &&
+      (logged?.reps ?? line.planned?.reps ?? null) === null,
+  );
+
+  // La bascule ne s'offre que là où personne n'a déjà tranché : une ligne du
+  // programme dit ce qu'elle demande, et saisir des secondes en face de « 8 reps »
+  // ne serait plus une déviation, ce serait une réponse à une autre question.
+  const switchable =
+    (line.planned?.reps ?? null) === null && (line.planned?.durationSeconds ?? null) === null;
+
+  // Basculer efface l'autre axe : les deux ne coexistent pas (§ en-tête).
+  const switchTo = (next: boolean) => {
+    setTimed(next);
+    patch(next ? { reps: null } : { durationSeconds: null });
+  };
 
   return (
     <Sheet
@@ -1613,6 +1945,26 @@ function SetSheet({
           ? `prévu ${plannedSummary(line, exercise)}`
           : 'série hors programme, rien à comparer'}
       </Text>
+
+      {/* Deux pilules de facette, pas un interrupteur : ce sont deux choix
+          exclusifs qui se nomment, et `FilterChip` est déjà le contrôle de ce
+          cas-là dans l'app (le sélecteur d'exercice). */}
+      {switchable ? (
+        <View style={styles.axis}>
+          <FilterChip
+            label="Répétitions"
+            selected={!timed}
+            accessibilityHint="Compter cette série en répétitions"
+            onPress={() => switchTo(false)}
+          />
+          <FilterChip
+            label="Durée"
+            selected={timed}
+            accessibilityHint="Chronométrer cette série. Les répétitions saisies sont effacées"
+            onPress={() => switchTo(true)}
+          />
+        </View>
+      ) : null}
 
       {timed ? (
         <NumberStepper
@@ -2137,6 +2489,21 @@ const styles = StyleSheet.create({
     paddingLeft: space[5],
   },
   groupHead: { ...text.eyebrow, color: colors.textSecondary, paddingVertical: space[3] },
+
+  // La ligne du rangement (KL-52). Elle a le rembourrage d'un exercice et son
+  // filet de séparation : c'est le même déroulé, vu de plus haut.
+  // L'axe de saisie d'une série hors programme (KL-52), au-dessus de son compteur.
+  axis: { flexDirection: 'row', gap: space[4] },
+
+  arrange: {
+    gap: space[4],
+    paddingHorizontal: space[7],
+    paddingVertical: space[6],
+    borderTopWidth: layout.hairline,
+    borderTopColor: colors.border,
+  },
+  arrangeHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
+  arrangeActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
 
   exercise: { paddingHorizontal: space[7], paddingVertical: space[6] },
   // L'exercice courant (KL-39). Le rail compense sa propre épaisseur en

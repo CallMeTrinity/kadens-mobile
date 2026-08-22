@@ -39,6 +39,7 @@ import {
   preference,
   prescribedSnapshot,
   scheduledWorkout,
+  sessionLayout,
   SYNC_STATE_ID,
   syncState,
   type ScheduledWorkoutRow,
@@ -256,6 +257,32 @@ export function loggedSetsOfWorkoutQuery(uuid: string) {
     .innerJoin(loggedExercise, eq(loggedSet.loggedExerciseId, loggedExercise.id))
     .where(eq(loggedExercise.scheduledUuid, uuid))
     .orderBy(asc(loggedSet.loggedExerciseId), asc(loggedSet.position));
+}
+
+/**
+ * L'ordre d'exécution local d'une séance (KL-52).
+ *
+ * Une lecture à part de `prescribedSnapshotQuery`, et pas une jointure : les
+ * deux ne changent pas pour les mêmes raisons — le programme quand un pull le
+ * corrige, l'ordre quand on déplace un exercice — et `useLiveQuery` n'écoute que
+ * la table du `from`. Jointes, une seule des deux aurait republié le déroulé.
+ *
+ * Sans `ORDER BY` : la projection trie sur `position` en mémoire, et elle doit
+ * de toute façon savoir traiter les clés que l'ordre ne connaît pas encore
+ * (`withExecutionOrder`).
+ *
+ * Écoute `session_layout` : déplacer un exercice repeint le déroulé, la barre
+ * basse comprise, sans que rien n'ait à prévenir l'écran.
+ */
+export function sessionLayoutQuery(uuid: string) {
+  return db
+    .select({
+      exerciseKey: sessionLayout.exerciseKey,
+      position: sessionLayout.position,
+      chain: sessionLayout.chain,
+    })
+    .from(sessionLayout)
+    .where(eq(sessionLayout.scheduledUuid, uuid));
 }
 
 /**

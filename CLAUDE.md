@@ -120,6 +120,16 @@ The local SQLite schema (`src/db/schema.ts`, extensively commented — read it b
 3. **Timestamps are ISO 8601 UTC text, always `…Z`**, never epoch integers — matches what the API sends/accepts and
    avoids timezone loss. The server misreads a non-null offset as if wall-clock time were UTC.
 
+A fourth table sits beside them and belongs to neither: `sessionLayout` (KL-52) holds the **local execution
+order** of a workout — the rank each exercise is actually led in, and the chain (superset) it belongs to. It is
+not prescribed data (nothing is written back into `prescribedSnapshot`, which a pull replaces wholesale) and not
+logged data (**it never reaches the server**; `loggedExercise.position` is untouched, so the pushed document still
+sorts in program order). It exists because `nextTarget()` alternates superset members, which only helps when you
+lead them in the announced order — see "Gym ergonomics" below. Its key is the session-flow key from
+`session/program.ts` (`e{prescribedId}`, `x{loggedExerciseId}`); the second is only stable as long as a pull
+doesn't rewrite that workout's log, which it never does while a mutation is pending — i.e. never while you're
+doing it.
+
 There's no "modified locally" flag on `scheduledWorkout` — that fact is already carried by `mutationQueue` (a
 pending workout has a row there). This is why push-before-pull is non-negotiable (see below): two sources for the
 same fact would eventually disagree.
@@ -215,6 +225,15 @@ none of them is cosmetic.
   fewest logged sets. No target left means the row becomes the close button, which is why the in-flow "Terminer
   la séance" button is `secondary` — one primary per screen. Set rows stay individually tappable; the dock is
   the short path, not a replacement for reading the table.
+- **The order the workout is led in is not the program** (KL-52, `session/order.ts`). A workout doesn't go as
+  planned — the rack is taken, the finisher goes first, a superset gets improvised with the machine next door —
+  and the dock's alternation then proposes the wrong thing every time. A "Réorganiser les exercices" mode lets an
+  exercise move within its block, chain to its neighbour, or detach; a chain is made of **contiguous** neighbours,
+  exactly like the server's `groupLabel` prefixes, which is why moving one out of a group detaches it with nothing
+  to write. Reordering is **local and never pushed** (see `sessionLayout` above): "on dévie, on ne recompose pas"
+  still holds — the program isn't rewritten, only the order it was led in. Buttons, not drag-and-drop: dragging
+  asks for four precise gestures (aim, hold, track a scrolling target, release) in the exact context this section
+  describes.
 - **The current set is never lost**: it's written in the dock, and the scroll view catches up to it via
   `useRevealTarget` when the current _exercise_ changes (never between two sets of the same one — a screen that
   re-centres under your thumb is worse than the problem). Measurement is `measureInWindow` on the target and on

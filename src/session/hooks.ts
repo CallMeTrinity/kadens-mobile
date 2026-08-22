@@ -39,7 +39,14 @@ import {
   type ExerciseOption,
 } from './library';
 import { exerciseNameBook, type ExerciseNameBook } from './naming';
-import { buildProgram, exerciseIdsOf, referencedExerciseIds, type SessionProgram } from './program';
+import {
+  buildProgram,
+  exerciseIdsOf,
+  referencedExerciseIds,
+  withExecutionOrder,
+  type ExecutionOrder,
+  type SessionProgram,
+} from './program';
 import { elapsedSeconds } from './summary';
 import {
   dayCountsQuery,
@@ -57,6 +64,7 @@ import {
   preferencesQuery,
   prescribedSnapshotQuery,
   runningWorkoutQuery,
+  sessionLayoutQuery,
   toDayWorkout,
   workoutQuery,
   workoutsOfDayQuery,
@@ -197,6 +205,13 @@ export function useExerciseNames(exerciseIds: number[]): ExerciseNameBook {
  * lui qui décide sous quelle langue la séance s'écrit, et il prime sur les noms
  * transportés par le programme, français par construction.
  *
+ * Cinquième lecture depuis KL-52 : l'**ordre d'exécution local**, qui n'est ni
+ * du prescrit ni du réalisé et vit donc dans sa propre table. Il est appliqué
+ * ici, en dernier, plutôt que dans l'écran : le déroulé rendu doit être le même
+ * partout — la barre basse le lit pour proposer sa cible, la clôture le lit pour
+ * résumer — et un ordre appliqué à l'affichage seul laisserait les deux en
+ * désaccord.
+ *
  * Le croisement est mémoïsé : il est pur (`buildProgram`), et le refaire à chaque
  * rendu de l'écran ferait retomber tout le déroulé sur des objets neufs.
  */
@@ -204,14 +219,31 @@ export function useSessionProgram(uuid: string): SessionProgram {
   const { data: snapshot } = useLiveQuery(prescribedSnapshotQuery(uuid), [uuid]);
   const { data: exercises } = useLiveQuery(loggedExercisesQuery(uuid), [uuid]);
   const { data: sets } = useLiveQuery(loggedSetsOfWorkoutQuery(uuid), [uuid]);
+  const order = useExecutionOrder(uuid);
 
   const blocks = useMemo(() => snapshot[0]?.blocks ?? [], [snapshot]);
   const ids = useMemo(() => referencedExerciseIds(blocks, exercises), [blocks, exercises]);
   const names = useExerciseNames(ids);
 
   return useMemo(
-    () => buildProgram(blocks, exercises, sets, names),
-    [blocks, exercises, sets, names],
+    () => withExecutionOrder(buildProgram(blocks, exercises, sets, names), order),
+    [blocks, exercises, sets, names, order],
+  );
+}
+
+/**
+ * L'ordre d'exécution local d'une séance, indexé par clé d'exercice (KL-52).
+ *
+ * Vide tant que rien n'a été déplacé, et c'est l'état nominal : `withExecutionOrder`
+ * rend alors le déroulé tel quel, sans copier quoi que ce soit.
+ */
+function useExecutionOrder(uuid: string): ExecutionOrder {
+  const { data } = useLiveQuery(sessionLayoutQuery(uuid), [uuid]);
+
+  return useMemo(
+    () =>
+      new Map(data.map((row) => [row.exerciseKey, { position: row.position, chain: row.chain }])),
+    [data],
   );
 }
 

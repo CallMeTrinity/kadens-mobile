@@ -24,7 +24,9 @@ import {
   loggedSetsOfWorkoutQuery,
   prescribedSnapshotQuery,
   referencedExerciseIds,
+  sessionLayoutQuery,
   withDraftSets,
+  withExecutionOrder,
   type SessionExercise,
   type SessionProgram,
   type SessionSetLine,
@@ -44,7 +46,19 @@ export function programOf(uuid: string): SessionProgram {
     language,
   );
 
-  return buildProgram(blocks, logged, loggedSetsOfWorkoutQuery(uuid).all(), names);
+  // L'ordre d'exécution local s'applique **par-dessus**, comme dans le hook
+  // (KL-52) : sans lui, un test lirait le déroulé du programme là où l'écran lit
+  // celui qu'on a rangé — donc une autre cible de barre basse.
+  const order = new Map(
+    sessionLayoutQuery(uuid)
+      .all()
+      .map((row) => [row.exerciseKey, { position: row.position, chain: row.chain }]),
+  );
+
+  return withExecutionOrder(
+    buildProgram(blocks, logged, loggedSetsOfWorkoutQuery(uuid).all(), names),
+    order,
+  );
 }
 
 /** Le n-ième exercice du déroulé, blocs puis hors programme. */

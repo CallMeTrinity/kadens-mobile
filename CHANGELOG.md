@@ -11,6 +11,17 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Ajouté
+
+- Réorganisation de la séance en cours : un mode « Réorganiser les exercices »
+  permet de déplacer un exercice dans son bloc, de l'enchaîner à son voisin en
+  superset ou de l'en détacher. L'ordre est **local au téléphone**, il ne modifie
+  pas le programme et ne part pas au serveur ; il décide de l'ordre d'affichage
+  et de ce que la barre du bas propose de valider.
+- Choix de l'axe de saisie d'une série hors programme, répétitions ou durée. Il
+  n'était jusqu'ici déductible que des valeurs, donc figé en répétitions pour un
+  exercice ajouté en séance ; les séries suivantes en héritent.
+
 ## [1.0.1] - 2026-08-07
 
 ### Corrigé

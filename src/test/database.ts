@@ -36,6 +36,7 @@ const TABLES = [
   'logged_set',
   'logged_exercise',
   'prescribed_snapshot',
+  'session_layout',
   'scheduled_workout',
   'exercise_history',
   'exercise',
