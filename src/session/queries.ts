@@ -280,6 +280,7 @@ export function sessionLayoutQuery(uuid: string) {
       exerciseKey: sessionLayout.exerciseKey,
       position: sessionLayout.position,
       chain: sessionLayout.chain,
+      lane: sessionLayout.lane,
     })
     .from(sessionLayout)
     .where(eq(sessionLayout.scheduledUuid, uuid));

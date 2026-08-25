@@ -15,6 +15,10 @@
  * **Un enchaînement est fait de voisins.** C'est la seule règle, et elle suffit :
  * sortir un exercice de son groupe l'en détache sans qu'aucune écriture ait à le
  * prévoir, et l'y ramener l'y remet.
+ *
+ * **Les files se traversent**. Un exercice se pose dans le bloc où il est
+ * mené, et l'y voir suffit rarement : ce qui compte est que le bloc le compte,
+ * que la barre basse le propose là, et que le serveur n'en sache toujours rien.
  */
 
 import {
@@ -29,6 +33,7 @@ import {
   nextTarget,
   resetExecutionOrder,
   unchainExercise,
+  withExecutionOrder,
 } from '@/session';
 import { readScheduleDocument } from '@/sync/document';
 import { resetDatabase } from '@/test/database';
@@ -42,6 +47,9 @@ import {
 import { exerciseAt, nextLine, programOf } from '@/test/program';
 
 const UUID = '01890000-0000-7000-8000-0000000000e1';
+
+/** La clé de file d'un bloc, telle que `buildProgram` la compose : `b{id}`. */
+const lane = (blockId: number): string => `b${blockId}`;
 
 /** Un bloc de trois exercices, dont les deux premiers forment le superset A. */
 function openSupersetWorkout(): void {
@@ -60,6 +68,42 @@ function openSupersetWorkout(): void {
     ],
   });
   beginWorkout(UUID);
+}
+
+/**
+ * Deux blocs : un échauffement de deux exercices, un entraînement de deux, dont
+ * les deux membres du superset A.
+ */
+function openTwoBlockWorkout(): void {
+  seedBootstrap({
+    exercises: [101, 102, 103, 104].map((id) => exercisePayload(id)),
+    schedule: [
+      scheduledWorkoutPayload(UUID, {
+        blocks: [
+          prescribedBlock(1, [prescribedExercise(1), prescribedExercise(2)], {
+            role: 'warmup',
+          }),
+          prescribedBlock(2, [
+            prescribedExercise(3, { groupLabel: 'A1' }),
+            prescribedExercise(4, { groupLabel: 'A2' }),
+          ]),
+        ],
+      }),
+    ],
+  });
+  beginWorkout(UUID);
+}
+
+/** Ce que chaque bloc contient, dans l'ordre : c'est ce que l'écran dessine. */
+function lanes(): string[][] {
+  const program = programOf(UUID);
+
+  return [
+    ...program.blocks.map((block) =>
+      block.groups.flatMap((group) => group.exercises.map((exercise) => exercise.name)),
+    ),
+    program.extras.map((exercise) => exercise.name),
+  ];
 }
 
 /** Les noms du déroulé, dans l'ordre affiché. */
@@ -123,9 +167,12 @@ describe('moveExercise', () => {
     expect(ranks()).toEqual(['—', '—', '—']);
   });
 
-  it('refuse de sortir un exercice de sa file', () => {
+  it('refuse de sortir un exercice de la séance : il n’y a pas d’au-delà', () => {
     openSupersetWorkout();
 
+    // Un seul bloc, donc aucune file voisine : les deux bords sont ceux de la
+    // séance entière. Avec un second bloc, ces deux appels traverseraient
+    // (« d'un bloc à l'autre » plus bas).
     expect(moveExercise(UUID, programOf(UUID), 'e1', -1)).toBe(false);
     expect(moveExercise(UUID, programOf(UUID), 'e3', 1)).toBe(false);
     expect(order()).toEqual(['Exercice 101', 'Exercice 102', 'Exercice 103']);
@@ -149,7 +196,7 @@ describe('moveExerciseTo', () => {
     openSupersetWorkout();
 
     // Ce que rend le relâchement d'un glisser-déposer : « celui-ci, en tête ».
-    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', 0)).toBe(true);
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', lane(1), 0)).toBe(true);
 
     expect(order()).toEqual(['Exercice 103', 'Exercice 101', 'Exercice 102']);
     expect(nextTarget(programOf(UUID))?.exercise.name).toBe('Exercice 103');
@@ -158,7 +205,7 @@ describe('moveExerciseTo', () => {
   it('coupe l’enchaînement qu’il traverse : on s’intercale au milieu', () => {
     openSupersetWorkout();
 
-    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', 1)).toBe(true);
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', lane(1), 1)).toBe(true);
 
     expect(order()).toEqual(['Exercice 101', 'Exercice 103', 'Exercice 102']);
     // Les deux membres du superset ne sont plus voisins : la contiguïté est la
@@ -169,7 +216,7 @@ describe('moveExerciseTo', () => {
   it('rend false quand la ligne est relâchée là où elle était', () => {
     openSupersetWorkout();
 
-    expect(moveExerciseTo(UUID, programOf(UUID), 'e2', 1)).toBe(false);
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e2', lane(1), 1)).toBe(false);
     // Pas d'ordre écrit du tout : un geste sans effet ne fige pas le programme
     // dans la table.
     expect(programOf(UUID).reordered).toBe(false);
@@ -178,7 +225,7 @@ describe('moveExerciseTo', () => {
   it('serre un rang hors bornes dans la file plutôt que de refuser', () => {
     openSupersetWorkout();
 
-    expect(moveExerciseTo(UUID, programOf(UUID), 'e1', 99)).toBe(true);
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e1', lane(1), 99)).toBe(true);
     expect(order()).toEqual(['Exercice 102', 'Exercice 103', 'Exercice 101']);
   });
 
@@ -188,7 +235,7 @@ describe('moveExerciseTo', () => {
 
     closeWorkout(UUID);
 
-    expect(moveExerciseTo(UUID, program, 'e3', 0)).toBe(false);
+    expect(moveExerciseTo(UUID, program, 'e3', lane(1), 0)).toBe(false);
     expect(order()).toEqual(['Exercice 101', 'Exercice 102', 'Exercice 103']);
   });
 });
@@ -254,6 +301,101 @@ describe('resetExecutionOrder', () => {
   });
 });
 
+describe('d’un bloc à l’autre', () => {
+  it('pose l’exercice dans la file où on l’a lâché, et le bloc le compte', () => {
+    openTwoBlockWorkout();
+
+    // Le second échauffement est mené dans l'entraînement, en tête.
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e2', lane(2), 0)).toBe(true);
+
+    expect(lanes()).toEqual([
+      ['Exercice 101'],
+      ['Exercice 102', 'Exercice 103', 'Exercice 104'],
+      [],
+    ]);
+
+    // Les compteurs suivent ce que le bloc contient maintenant, sinon l'en-tête
+    // annoncerait un total que personne ne peut plus atteindre.
+    const [warmup, main] = programOf(UUID).blocks;
+
+    expect(warmup.total).toBe(4);
+    expect(main.total).toBe(12);
+  });
+
+  it('détache l’exercice qui change de file : le superset ne traverse pas', () => {
+    openTwoBlockWorkout();
+
+    // A1 remonte dans l'échauffement : A2 reste seul là-bas, donc n'est plus un
+    // rang du tout — un enchaînement est fait de voisins.
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e3', lane(1), 2)).toBe(true);
+
+    expect(order()).toEqual(['Exercice 101', 'Exercice 102', 'Exercice 103', 'Exercice 104']);
+    expect(ranks()).toEqual(['—', '—', '—', '—']);
+  });
+
+  it('fait suivre la barre basse : elle propose ce qu’on mène en premier', () => {
+    openTwoBlockWorkout();
+
+    // Avant : l'échauffement d'abord, dans l'ordre du programme.
+    expect(nextTarget(programOf(UUID))?.exercise.name).toBe('Exercice 101');
+
+    // Le finisseur du bloc 2 passe devant tout le monde.
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e4', lane(1), 0)).toBe(true);
+
+    expect(nextTarget(programOf(UUID))?.exercise.name).toBe('Exercice 104');
+  });
+
+  it('traverse aussi d’un cran, le seul chemin qu’ait TalkBack', () => {
+    openTwoBlockWorkout();
+
+    // Depuis la dernière ligne de l'échauffement, « Descendre » entre en tête du
+    // bloc suivant plutôt que de ne rien faire.
+    expect(moveExercise(UUID, programOf(UUID), 'e2', 1)).toBe(true);
+    expect(lanes()).toEqual([
+      ['Exercice 101'],
+      ['Exercice 102', 'Exercice 103', 'Exercice 104'],
+      [],
+    ]);
+
+    // Et « Monter » depuis la première ligne d'un bloc revient en queue du
+    // précédent : le geste est réversible.
+    expect(moveExercise(UUID, programOf(UUID), 'e2', -1)).toBe(true);
+    expect(lanes()).toEqual([
+      ['Exercice 101', 'Exercice 102'],
+      ['Exercice 103', 'Exercice 104'],
+      [],
+    ]);
+  });
+
+  it('refuse une file que le déroulé ne connaît pas', () => {
+    openTwoBlockWorkout();
+
+    expect(moveExerciseTo(UUID, programOf(UUID), 'e1', 'b404', 0)).toBe(false);
+    expect(programOf(UUID).reordered).toBe(false);
+  });
+
+  it('rend l’exercice à son bloc quand la file où il était mené n’existe plus', () => {
+    openTwoBlockWorkout();
+
+    // Un pull a retiré le bloc où il était mené : sa file ne désigne plus rien.
+    // Il retombe dans la sienne plutôt que de disparaître de l'écran — du
+    // réalisé invisible serait pire qu'un rangement perdu.
+    const stranded = withExecutionOrder(
+      programOf(UUID),
+      new Map([['e2', { position: 9, chain: null, lane: 'b404' }]]),
+    );
+
+    expect(
+      stranded.blocks.map((block) =>
+        block.groups.flatMap((group) => group.exercises.map((exercise) => exercise.name)),
+      ),
+    ).toEqual([
+      ['Exercice 101', 'Exercice 102'],
+      ['Exercice 103', 'Exercice 104'],
+    ]);
+  });
+});
+
 describe('ce qui part au serveur', () => {
   it('reste dans l’ordre du programme, quoi qu’on ait rangé', () => {
     openSupersetWorkout();
@@ -280,6 +422,32 @@ describe('ce qui part au serveur', () => {
       'Exercice 101',
       'Exercice 102',
       'Exercice 103',
+    ]);
+  });
+
+  it('ignore le bloc où l’exercice a fini par être mené', () => {
+    openTwoBlockWorkout();
+
+    for (const index of [0, 1, 2, 3]) {
+      const exercise = exerciseAt(UUID, index);
+
+      checkSet(UUID, exercise, nextLine(exercise));
+    }
+
+    // Le second échauffement est mené dans l'entraînement…
+    moveExerciseTo(UUID, programOf(UUID), 'e2', lane(2), 2);
+
+    expect(order()[3]).toBe('Exercice 102');
+
+    // …et le document poussé n'en dit rien : ni l'ordre, ni le bloc. Le web lit
+    // la séance comme elle a été prescrite.
+    const document = readScheduleDocument(UUID);
+
+    expect(document?.log?.map((entry) => entry.name)).toEqual([
+      'Exercice 101',
+      'Exercice 102',
+      'Exercice 103',
+      'Exercice 104',
     ]);
   });
 });

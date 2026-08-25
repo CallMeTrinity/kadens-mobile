@@ -242,7 +242,12 @@ function useExecutionOrder(uuid: string): ExecutionOrder {
 
   return useMemo(
     () =>
-      new Map(data.map((row) => [row.exerciseKey, { position: row.position, chain: row.chain }])),
+      new Map(
+        data.map((row) => [
+          row.exerciseKey,
+          { position: row.position, chain: row.chain, lane: row.lane },
+        ]),
+      ),
     [data],
   );
 }

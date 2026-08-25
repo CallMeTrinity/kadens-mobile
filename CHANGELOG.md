@@ -11,6 +11,16 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Modifié
+
+- La réorganisation d'une séance n'est plus enfermée dans un bloc : un exercice
+  se tire **d'un bloc à l'autre**, échauffement compris, et se pose là où il est
+  réellement mené. Le bloc d'arrivée le compte dans son total, la barre du bas
+  suit, et un bloc vidé reste visible en mode réorganisation pour qu'on puisse y
+  revenir. Comme avant, l'ordre est **local au téléphone** : il ne modifie pas le
+  programme et ne part pas au serveur. Un exercice qui change de bloc quitte son
+  superset — il se ré-enchaîne au besoin.
+
 ## [1.1.0] - 2026-08-23
 
 ### Ajouté

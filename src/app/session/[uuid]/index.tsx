@@ -1,11 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import {
-  NestedReorderableList,
-  ScrollViewContainer,
-  useReorderableDrag,
-} from 'react-native-reorderable-list';
+import ReorderableList, { useReorderableDrag } from 'react-native-reorderable-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
@@ -36,6 +32,7 @@ import {
   dayOffset,
   deleteSet,
   exerciseIdOf,
+  EXTRAS_LANE,
   findExercise,
   findLine,
   groupExercises,
@@ -439,12 +436,13 @@ export default function SessionScreen() {
   // ils écrivent la même chose — l'ordre entier — et ne diffèrent que par la
   // modification qu'ils y appliquent (`@/session`, `order.ts`).
   // Le relâchement d'un glisser-déposer. Il ne dit pas « d'un cran », il dit
-  // « à cette place » — et les deux rangs qu'il donne sont ceux de la **file**
-  // qu'on traînait, c'est-à-dire exactement l'espace dans lequel `order.ts`
-  // range (un bloc, ou les hors-programme). Rien à traduire, donc.
+  // « dans cette file, à cette place » — la file étant un bloc ou les
+  // hors-programme, et pas forcément celle d'où l'exercice vient. `ArrangeBoard`
+  // a déjà relu l'index de liste en file et en rang (`dropTarget`), il n'y a
+  // rien à traduire de plus ici.
   const onReorder = useCallback(
-    (exerciseKey: string, to: number) => {
-      moveExerciseTo(uuid, program, exerciseKey, to);
+    (exerciseKey: string, lane: string, to: number) => {
+      moveExerciseTo(uuid, program, exerciseKey, lane, to);
     },
     [uuid, program],
   );
@@ -569,10 +567,10 @@ export default function SessionScreen() {
         prend en rembourrage — l'ajouter ici la compterait deux fois.
       */}
       {/* Ranger le déroulé remplace la page, il ne s'y glisse pas (KL-52) : les
-          séries disparaissent, les listes deviennent traînables, et la page
-          d'ordinaire simple devient un conteneur de listes imbriquées. Deux
-          arbres plutôt qu'un arbre à conditions — celui de la séance ne connaît
-          pas le rangement, et réciproquement. */}
+          séries disparaissent, la séance entière devient une seule liste
+          traînable où les titres de blocs sont des lignes. Deux arbres plutôt
+          qu'un arbre à conditions — celui de la séance ne connaît pas le
+          rangement, et réciproquement. */}
       {reordering ? (
         <ArrangeBoard
           program={program}
@@ -620,23 +618,30 @@ export default function SessionScreen() {
               </View>
             ) : null}
 
-            {program.blocks.map((block) => (
-              <BlockSection
-                key={block.key}
-                block={block}
-                editable={running}
-                history={history}
-                today={today}
-                targetKey={target?.exercise.key ?? null}
-                targetRef={targetRef}
-                onCheck={onCheck}
-                onCardio={onCardio}
-                onAdjustSet={setOpenSet}
-                onAddSet={onAddSet}
-                onDropSet={dropDraft}
-                onOpenExercise={setOpenExercise}
-              />
-            ))}
+            {/* Un bloc que le rangement a vidé ne se dessine plus : un titre
+              suivi de rien ne dit rien de la séance, et le mode rangement garde
+              le sien pour qu'on puisse toujours y revenir (`arrangeLanes`).
+              Un bloc vide au **programme** n'existe pas — le serveur n'en
+              descend pas. */}
+            {program.blocks
+              .filter((block) => block.groups.length > 0)
+              .map((block) => (
+                <BlockSection
+                  key={block.key}
+                  block={block}
+                  editable={running}
+                  history={history}
+                  today={today}
+                  targetKey={target?.exercise.key ?? null}
+                  targetRef={targetRef}
+                  onCheck={onCheck}
+                  onCardio={onCardio}
+                  onAdjustSet={setOpenSet}
+                  onAddSet={onAddSet}
+                  onDropSet={dropDraft}
+                  onOpenExercise={setOpenExercise}
+                />
+              ))}
 
             {/* Le réalisé qu'aucune ligne du programme ne réclame : ce que KL-30 y
             ajoute, et ce que le pull peut en descendre. Du réalisé invisible
@@ -1206,9 +1211,16 @@ type ArrangeAction = 'up' | 'down' | 'chain' | 'unchain';
  *
  * Une file par bloc, plus les hors-programme — **exactement** les files de
  * `order.ts` (`pools`), et ce n'est pas une coïncidence qu'il faut entretenir :
- * les deux rangs que le glisser-déposer rend au relâchement sont des rangs dans
- * cette liste-là, et `moveExerciseTo` les applique tels quels. Les composer
- * autrement ici ferait atterrir l'exercice ailleurs qu'où le doigt l'a lâché.
+ * la file et le rang que le glisser-déposer rend au relâchement désignent une
+ * place dans cette liste-là, et `moveExerciseTo` les applique tels quels. Les
+ * composer autrement ici ferait atterrir l'exercice ailleurs qu'où le doigt l'a
+ * lâché.
+ *
+ * Deux règles héritées de `pools`, pour la même raison : **un bloc vidé reste
+ * une file** — sinon un exercice qu'on en a sorti ne pourrait plus y revenir —
+ * et les hors-programme n'en font une que s'il y en a, « hors programme » étant
+ * un statut qu'on prend en étant ajouté à la main, pas une section où l'on se
+ * range.
  *
  * Le groupe (superset) n'est **pas** une file : il n'a pas de conteneur dans le
  * modèle, et un enchaînement se fait et se défait de voisins contigus. On aplatit
@@ -1234,7 +1246,7 @@ function arrangeLanes(program: SessionProgram, freeform: boolean): ArrangeLane[]
 
   if (program.extras.length > 0) {
     lanes.push({
-      key: 'extras',
+      key: EXTRAS_LANE,
       number: null,
       // Une séance libre n'a **que** ça : l'appeler « hors programme » ferait
       // lire la séance entière comme une longue déviation (même mot que la page).
@@ -1245,6 +1257,89 @@ function arrangeLanes(program: SessionProgram, freeform: boolean): ArrangeLane[]
   }
 
   return lanes;
+}
+
+/**
+ * Une ligne de la liste de rangement : un en-tête de file, ou un exercice.
+ *
+ * **Une seule liste pour toute la séance**, et c'est ce qui permet de traîner un
+ * exercice d'un bloc à l'autre : la bibliothèque ne sait réordonner qu'à
+ * l'intérieur d'une liste, donc tant qu'il y en avait une par bloc, aucun geste
+ * ne pouvait en sortir. Les en-têtes deviennent alors des **lignes**, et la
+ * frontière entre deux files n'est plus qu'un rang de plus à franchir.
+ *
+ * Un en-tête ne se traîne pas : rien en lui n'appelle `useReorderableDrag`, donc
+ * aucun geste ne démarre dessus. Il se fait pousser par ce qui passe, ce qui est
+ * exactement ce qu'on veut voir — l'exercice remonte au-dessus du titre, il
+ * change de bloc.
+ */
+type ArrangeItem =
+  | { type: 'lane'; key: string; lane: ArrangeLane }
+  | {
+      type: 'exercise';
+      key: string;
+      lane: string;
+      exercise: SessionExercise;
+      /** En tête de sa file : rien ne le précède **ici**, donc rien à enchaîner. */
+      first: boolean;
+      /** En queue de sa file : c'est lui qui referme le cadre du bloc. */
+      last: boolean;
+      /** Un cran plus haut existe — dans sa file, ou dans celle d'au-dessus. */
+      canUp: boolean;
+      canDown: boolean;
+    };
+
+/** Les files mises bout à bout : en-tête, contenu, en-tête, contenu. */
+function arrangeItems(lanes: ArrangeLane[]): ArrangeItem[] {
+  return lanes.flatMap((lane, laneIndex) => [
+    { type: 'lane' as const, key: `lane:${lane.key}`, lane },
+    ...lane.exercises.map((exercise, rank) => ({
+      type: 'exercise' as const,
+      key: exercise.key,
+      lane: lane.key,
+      exercise,
+      first: rank === 0,
+      last: rank === lane.exercises.length - 1,
+      // Les bornes sont celles de la **séance**, pas de la file : le cran
+      // suivant peut être dans le bloc d'à côté (`moveExercise`), et c'est le
+      // seul chemin qu'a TalkBack pour y aller.
+      canUp: rank > 0 || laneIndex > 0,
+      canDown: rank < lane.exercises.length - 1 || laneIndex < lanes.length - 1,
+    })),
+  ]);
+}
+
+/**
+ * Où l'exercice a été lâché : la file, et son rang dedans.
+ *
+ * La bibliothèque ne parle qu'en index de liste — `from` d'où il vient, `to` où
+ * il atterrit dans la liste **privée de lui**. On relit donc la liste vers le
+ * haut depuis ce point : le premier en-tête rencontré est la file, et ce qu'on a
+ * enjambé pour l'atteindre est le rang.
+ *
+ * Relâché au-dessus du tout premier en-tête, il n'y a pas de file à trouver : il
+ * entre en tête de la première, qui est la seule lecture possible d'un doigt
+ * remonté au-delà du haut de la séance.
+ */
+function dropTarget(
+  items: ArrangeItem[],
+  from: number,
+  to: number,
+): { lane: string; rank: number } {
+  const rest = items.filter((_, index) => index !== from);
+  let rank = 0;
+
+  for (let index = to - 1; index >= 0; index -= 1) {
+    const item = rest[index];
+
+    if (item?.type === 'lane') {
+      return { lane: item.lane.key, rank };
+    }
+
+    rank += 1;
+  }
+
+  return { lane: items[0]?.type === 'lane' ? items[0].lane.key : EXTRAS_LANE, rank: 0 };
 }
 
 /** Combien d'exercices la séance porte, hors programme compris. */
@@ -1452,18 +1547,26 @@ function ExerciseSection({
  * — la seule chose que l'app y gagne est une `GestureHandlerRootView` à la
  * racine, que rien ne montait jusqu'ici.
  *
- * Ce que le geste garde de l'ancien : on ne traîne que **dans sa file**, chaque
- * liste étant close sur son bloc (un bloc est une section de la séance, en
- * sortir un exercice le changerait de nature), et rien ne part au serveur.
+ * ## Une seule liste, parce que les files se traversent
  *
- * ## Une liste imbriquée par file, dans un conteneur qui défile
+ * Le montage d'origine était une liste imbriquée **par bloc**, dans un
+ * `ScrollViewContainer`. Il tenait tant qu'un exercice ne sortait pas de sa
+ * file, et il tombait dès qu'on voulait l'en sortir : la bibliothèque réordonne
+ * une liste, elle ne fait pas passer d'une liste à l'autre, et aucune option ne
+ * change ça. Or on mène le gainage d'échauffement entre deux séries de squat et
+ * le finisseur avant la fin — refuser le geste n'empêchait pas la séance, ça
+ * empêchait seulement de la dire à la barre basse.
  *
- * `ScrollViewContainer` remplace la `ScrollView` de la page, et chaque bloc porte
- * une `NestedReorderableList` non défilante (`scrollable={false}`, `scrollEnabled`
- * à `false`) : c'est le montage que la bibliothèque prévoit pour des listes dans
- * une page, et c'est aussi ce qui évite l'erreur de React Native sur les listes
- * virtualisées imbriquées — elle ne se déclenche que sur une liste **défilante**.
- * Les files font trois à six lignes, il n'y a rien à virtualiser.
+ * Donc **une liste plate pour la séance entière**, où les en-têtes de bloc sont
+ * des lignes comme les autres (`arrangeItems`). Ce que la bibliothèque rend au
+ * relâchement — un index de liste — se relit alors en file et en rang
+ * (`dropTarget`), et traverser un titre est un mouvement continu, sans zone
+ * morte entre deux blocs. Un en-tête ne se traîne pas lui-même : rien en lui
+ * n'appelle `useReorderableDrag`.
+ *
+ * Une file vide garde son en-tête et affiche une **zone d'accueil** : c'est là
+ * qu'on relâche pour y revenir, et un bloc qui disparaîtrait une fois vidé
+ * serait un bloc dont on ne pourrait plus jamais s'approcher.
  *
  * ## Ce qui est vrai est en base, ici aussi
  *
@@ -1487,73 +1590,93 @@ function ArrangeBoard({
   bottomInset: number;
   onReset: () => void;
   onArrange: (exerciseKey: string, action: ArrangeAction) => void;
-  onReorder: (exerciseKey: string, to: number) => void;
+  onReorder: (exerciseKey: string, lane: string, to: number) => void;
 }) {
   const lanes = useMemo(() => arrangeLanes(program, freeform), [program, freeform]);
+  const items = useMemo(() => arrangeItems(lanes), [lanes]);
   const reducedMotion = useReducedMotion();
 
   return (
-    <ScrollViewContainer contentContainerStyle={[styles.page, { paddingBottom: bottomInset }]}>
-      {/* Ranger le déroulé se dit, sinon la disparition des séries se lit comme
-          une panne — et la portée de ce qu'on fait doit être écrite : rien de ce
-          qui se range ici ne part au serveur. */}
-      <View style={styles.notice}>
-        <Text style={styles.body}>
-          Range la séance dans l’ordre où tu la mènes : tire un exercice par sa poignée. Ça ne
-          change pas le programme et ne part pas au serveur : ça décide de ce que la barre du bas
-          propose.
-        </Text>
-        {program.reordered ? (
-          <Button
-            label="Rétablir l’ordre du programme"
-            variant="ghost"
-            block
-            accessibilityHint="Le déroulé retrouve l’ordre prescrit. Rien de consigné n’est perdu"
-            onPress={onReset}
+    <ReorderableList
+      data={items}
+      keyExtractor={(item) => item.key}
+      contentContainerStyle={[styles.arrangePage, { paddingBottom: bottomInset }]}
+      // Le mouvement est le seul de cet écran qui ne passe pas par
+      // `useReducedMotion` sans qu'on lui dise : la bibliothèque anime le
+      // replacement des lignes, on lui coupe la durée.
+      animationDuration={reducedMotion ? 0 : undefined}
+      ListHeaderComponent={
+        /* Ranger le déroulé se dit, sinon la disparition des séries se lit comme
+           une panne — et la portée de ce qu'on fait doit être écrite : rien de ce
+           qui se range ici ne part au serveur. */
+        <View style={styles.notice}>
+          <Text style={styles.body}>
+            Range la séance dans l’ordre où tu la mènes : tire un exercice par sa poignée, d’un bloc
+            à l’autre si c’est là que tu le fais. Ça ne change pas le programme et ne part pas au
+            serveur : ça décide de ce que la barre du bas propose.
+          </Text>
+          {program.reordered ? (
+            <Button
+              label="Rétablir l’ordre du programme"
+              variant="ghost"
+              block
+              accessibilityHint="Le déroulé retrouve l’ordre prescrit. Rien de consigné n’est perdu"
+              onPress={onReset}
+            />
+          ) : null}
+        </View>
+      }
+      onReorder={({ from, to }) => {
+        const moved = items[from];
+
+        if (moved?.type !== 'exercise') {
+          return;
+        }
+
+        const { lane, rank } = dropTarget(items, from, to);
+
+        onReorder(moved.exercise.key, lane, rank);
+      }}
+      renderItem={({ item }) =>
+        item.type === 'lane' ? (
+          <ArrangeLaneHead lane={item.lane} />
+        ) : (
+          <ArrangeRow
+            exercise={item.exercise}
+            first={item.first}
+            last={item.last}
+            canUp={item.canUp}
+            canDown={item.canDown}
+            onArrange={onArrange}
           />
-        ) : null}
+        )
+      }
+    />
+  );
+}
+
+/**
+ * Le titre d'une file, en ligne de liste.
+ *
+ * Il porte la zone d'accueil des files vides, **dans le même item** plutôt que
+ * dans une ligne à lui : une ligne de plus décalerait tous les index que
+ * `dropTarget` relit, pour ne rien dire de plus que ce titre.
+ */
+function ArrangeLaneHead({ lane }: { lane: ArrangeLane }) {
+  return (
+    <View style={[styles.arrangeLane, lane.exercises.length === 0 && styles.arrangeLaneClosed]}>
+      <View style={styles.blockHead}>
+        {lane.number ? <Text style={styles.blockNumber}>{lane.number}</Text> : null}
+        <Text accessibilityRole="header" style={styles.blockRole}>
+          {lane.title}
+        </Text>
+        {lane.label ? <Text style={styles.blockLabel}>{lane.label}</Text> : null}
       </View>
 
-      {lanes.map((lane) => (
-        <View key={lane.key} style={styles.block}>
-          <View style={styles.blockHead}>
-            {lane.number ? <Text style={styles.blockNumber}>{lane.number}</Text> : null}
-            <Text accessibilityRole="header" style={styles.blockRole}>
-              {lane.title}
-            </Text>
-            {lane.label ? <Text style={styles.blockLabel}>{lane.label}</Text> : null}
-          </View>
-
-          <NestedReorderableList
-            data={lane.exercises}
-            keyExtractor={(exercise) => exercise.key}
-            // Non défilante : c'est la page qui défile, et c'est ce qui tait
-            // l'erreur des listes virtualisées imbriquées (voir l'en-tête).
-            scrollable={false}
-            scrollEnabled={false}
-            // Le mouvement est le seul de cet écran qui ne passe pas par
-            // `useReducedMotion` sans qu'on lui dise : la bibliothèque anime le
-            // replacement des lignes, on lui coupe la durée.
-            animationDuration={reducedMotion ? 0 : undefined}
-            onReorder={({ from, to }) => {
-              const moved = lane.exercises[from];
-
-              if (moved) {
-                onReorder(moved.key, to);
-              }
-            }}
-            renderItem={({ item, index }) => (
-              <ArrangeRow
-                exercise={item}
-                first={index === 0}
-                last={index === lane.exercises.length - 1}
-                onArrange={onArrange}
-              />
-            )}
-          />
-        </View>
-      ))}
-    </ScrollViewContainer>
+      {lane.exercises.length === 0 ? (
+        <Text style={styles.arrangeEmpty}>Relâche un exercice ici pour le mener dans ce bloc.</Text>
+      ) : null}
+    </View>
   );
 }
 
@@ -1593,13 +1716,18 @@ function ArrangeRow({
   exercise,
   first,
   last,
+  canUp,
+  canDown,
   onArrange,
 }: {
   exercise: SessionExercise;
-  /** En tête de sa file : rien ne le précède, donc rien à quoi l'enchaîner. */
+  /** En tête de sa file : rien ne le précède **ici**, donc rien à quoi l'enchaîner. */
   first: boolean;
-  /** En queue de sa file. Ne sert qu'à taire l'action « Descendre ». */
+  /** En queue de sa file : c'est lui qui referme le cadre du bloc. */
   last: boolean;
+  /** Un cran plus haut existe dans la séance — pas forcément dans cette file. */
+  canUp: boolean;
+  canDown: boolean;
   onArrange: (exerciseKey: string, action: ArrangeAction) => void;
 }) {
   const drag = useReorderableDrag();
@@ -1607,18 +1735,21 @@ function ArrangeRow({
   const previous = chained ? (exercise.groupLabel?.replace(/\d+$/, '') ?? null) : null;
 
   return (
-    <View style={styles.arrange}>
+    <View style={[styles.arrange, last && styles.arrangeLast]}>
       <View style={styles.arrangeHead}>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Déplacer ${exercise.name}`}
-          accessibilityHint="Tire pour changer sa place dans le bloc"
+          accessibilityHint="Tire pour changer sa place, dans ce bloc ou dans un autre"
           // Ce que TalkBack propose à la place du glissement, qu'il ne sait pas
           // faire. Les deux actions sont annoncées, jamais grisées : une action
-          // absente en tête de file est plus claire qu'une action inerte.
+          // absente au bord de la séance est plus claire qu'une action inerte.
+          // Le bord est celui de la **séance**, pas de la file : au bout d'un
+          // bloc, « Descendre » entre dans le suivant, et c'est le seul chemin
+          // qu'a le balayage vers un autre bloc.
           accessibilityActions={[
-            ...(first ? [] : [{ name: 'moveUp', label: 'Monter' }]),
-            ...(last ? [] : [{ name: 'moveDown', label: 'Descendre' }]),
+            ...(canUp ? [{ name: 'moveUp', label: 'Monter' }] : []),
+            ...(canDown ? [{ name: 'moveDown', label: 'Descendre' }] : []),
           ]}
           onAccessibilityAction={(event) => {
             if (event.nativeEvent.actionName === 'moveUp') {
@@ -2830,13 +2961,41 @@ const styles = StyleSheet.create({
   // L'axe de saisie d'une série hors programme (KL-52), au-dessus de son compteur.
   axis: { flexDirection: 'row', gap: space[4] },
 
+  // Le rangement est **une seule liste** pour la séance entière, donc les files
+  // n'ont plus de conteneur qui les encadre : le cadre est reconstitué ligne à
+  // ligne — côtés sur chacune, haut sur l'en-tête, bas sur la dernière.
+  // Le `gap` de `page` est absent d'ici pour la même raison : appliqué au
+  // conteneur d'une liste, il aurait écarté chaque ligne de sa voisine.
+  arrangePage: { padding: space[8], paddingBottom: space[13] },
+  arrangeLane: {
+    marginTop: space[8],
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: layout.hairline,
+    borderBottomWidth: 0,
+    borderColor: colors.border,
+  },
+  /** Une file vide n'a aucune ligne pour la refermer : elle se ferme elle-même. */
+  arrangeLaneClosed: { borderBottomWidth: layout.hairline },
+  arrangeEmpty: {
+    ...text.caption,
+    color: colors.textSecondary,
+    paddingHorizontal: space[7],
+    paddingVertical: space[6],
+  },
+
   arrange: {
     gap: space[4],
     paddingHorizontal: space[7],
     paddingVertical: space[6],
+    backgroundColor: colors.surfaceRaised,
     borderTopWidth: layout.hairline,
     borderTopColor: colors.border,
+    borderLeftWidth: layout.hairline,
+    borderRightWidth: layout.hairline,
+    borderLeftColor: colors.border,
+    borderRightColor: colors.border,
   },
+  arrangeLast: { borderBottomWidth: layout.hairline, borderBottomColor: colors.border },
   arrangeHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   arrangeActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   // La poignée. Elle prend le plancher tactile en entier (`touchTarget`) alors

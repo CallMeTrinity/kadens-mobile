@@ -710,6 +710,14 @@ export interface ExecutionSlot {
   position: number;
   /** L'enchaînement local. Deux **voisins** qui le partagent forment un superset. */
   chain: number | null;
+  /**
+   * La file où l'exercice est mené : la clé d'un bloc, ou `EXTRAS_LANE`.
+   *
+   * `null` = celle du programme. C'est le cas d'un exercice qu'on n'a jamais
+   * sorti de son bloc, et celui de tout ordre écrit avant que les files se
+   * traversent : les deux se lisent pareil, sans migration.
+   */
+  lane: string | null;
 }
 
 /** L'ordre d'exécution d'une séance entière. Vide = celui du programme. */
@@ -738,10 +746,11 @@ export type ExecutionOrder = ReadonlyMap<string, ExecutionSlot>;
  *
  * ## Trois règles, et elles se déduisent toutes de la contiguïté
  *
- * 1. **On ne réordonne qu'à l'intérieur d'une file** — un bloc, ou les exercices
- *    hors programme. Un bloc est une **section** de la séance (échauffement,
- *    principal, retour au calme) : en sortir un exercice ne le déplacerait pas,
- *    ça le changerait de nature.
+ * 1. **Une file est une destination, pas une frontière**. Un exercice se range
+ *    dans le bloc où il est mené, et ce bloc n'est pas forcément le sien : le
+ *    gainage d'échauffement qu'on fait après le squat s'affiche sous
+ *    « Entraînement », parce que c'est là qu'il a lieu. `slot.lane` porte cette
+ *    destination ; sans elle, l'exercice reste dans sa file de programme.
  * 2. **Un enchaînement est fait de voisins**, exactement comme les `groupLabel`
  *    du serveur. C'est ce qui permet à un exercice qu'on déplace hors de son
  *    groupe de s'en détacher tout seul, sans qu'aucune écriture ait à le prévoir.
@@ -754,11 +763,27 @@ export type ExecutionOrder = ReadonlyMap<string, ExecutionSlot>;
  * hors-programme posé après coup — retombe sur son rang de programme
  * (`exercise.position`), donc à sa place naturelle parmi ceux qui n'ont pas
  * bougé. Rien à réparer, rien à migrer.
+ *
+ * ## Ce que changer de bloc ne change pas
+ *
+ * Le rôle du bloc ne **classe** rien : il titre une section, et c'est tout ce
+ * qu'il fait ici comme ailleurs (`labels.ts`). Le volume se compte sur le type
+ * de chaque série (`summary.ts`, `areas.ts`), jamais sur la section qui la
+ * porte, donc un exercice posé sous « Échauffement » ne devient pas de
+ * l'échauffement — il est mené là, il compte pareil. Les compteurs du bloc, eux,
+ * suivent ce qu'il contient vraiment : ils sont recalculés ici.
+ *
+ * Une file que plus rien ne désigne — le coach a retiré le bloc entre deux
+ * pulls — rend ses exercices à leur file de programme plutôt que de les faire
+ * disparaître de l'écran : du réalisé invisible serait pire qu'un rangement
+ * perdu.
  */
 export function withExecutionOrder(program: SessionProgram, order: ExecutionOrder): SessionProgram {
   if (order.size === 0) {
     return program;
   }
+
+  const laneContents = byLane(program, order);
 
   const sorted = (exercises: SessionExercise[]): SessionExercise[] =>
     [...exercises].sort(
@@ -780,16 +805,68 @@ export function withExecutionOrder(program: SessionProgram, order: ExecutionOrde
       }));
     });
 
+  const contentsOf = (lane: string): SessionExercise[] =>
+    relabel(sorted(laneContents.get(lane) ?? []));
+
   return {
     ...program,
     reordered: true,
     blocks: program.blocks.map((block) => {
-      const exercises = relabel(sorted(block.groups.flatMap((group) => group.exercises)));
+      const exercises = contentsOf(block.key);
 
-      return { ...block, groups: groupExercises(exercises) };
+      return {
+        ...block,
+        groups: groupExercises(exercises),
+        // Recalculés, et pas repris du programme : le bloc compte ce qu'il
+        // contient maintenant, et il ne contient plus forcément les mêmes
+        // exercices (règle 1).
+        done: exercises.reduce((sum, exercise) => sum + exercise.done, 0),
+        total: exercises.reduce((sum, exercise) => sum + exercise.total, 0),
+      };
     }),
-    extras: relabel(sorted(program.extras)),
+    extras: contentsOf(EXTRAS_LANE),
   };
+}
+
+/** La file des hors-programme. Un bloc a sa clé, eux n'en ont pas — celle-ci en tient lieu. */
+export const EXTRAS_LANE = 'extras';
+
+/**
+ * Les exercices de la séance, rangés sous la file où ils sont **menés**.
+ *
+ * Le repli tient en une ligne et il compte : une file que l'ordre désigne mais
+ * qui n'existe plus rend ses exercices à leur file de programme. Sans lui, un
+ * bloc retiré par un pull emporterait avec lui du réalisé encore affichable.
+ */
+function byLane(program: SessionProgram, order: ExecutionOrder): Map<string, SessionExercise[]> {
+  const known = new Set<string>([...program.blocks.map((block) => block.key), EXTRAS_LANE]);
+  const contents = new Map<string, SessionExercise[]>();
+
+  const place = (exercise: SessionExercise, home: string): void => {
+    const wanted = order.get(exercise.key)?.lane ?? home;
+    const lane = known.has(wanted) ? wanted : home;
+    const list = contents.get(lane);
+
+    if (list === undefined) {
+      contents.set(lane, [exercise]);
+    } else {
+      list.push(exercise);
+    }
+  };
+
+  for (const block of program.blocks) {
+    for (const group of block.groups) {
+      for (const exercise of group.exercises) {
+        place(exercise, block.key);
+      }
+    }
+  }
+
+  for (const exercise of program.extras) {
+    place(exercise, EXTRAS_LANE);
+  }
+
+  return contents;
 }
 
 /** Les suites de voisins qui partagent un enchaînement. Un exercice seul fait une suite d'un. */

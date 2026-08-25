@@ -185,6 +185,7 @@ export {
   allExercises,
   buildProgram,
   draftSetValues,
+  EXTRAS_LANE,
   exerciseIdOf,
   exerciseIdsOf,
   findExercise,

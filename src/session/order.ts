@@ -46,20 +46,37 @@
  * s'écrit tant qu'elle n'a pas commencé. La seule chose qu'on refuse est une
  * séance **close** : elle raconte ce qui a eu lieu, son ordre est un fait.
  *
- * ## On ne réordonne qu'à l'intérieur d'une file
+ * ## Les files se traversent
  *
- * Un bloc, ou les exercices hors programme. Le bloc est une **section** de la
- * séance (échauffement, principal, retour au calme) : en sortir un exercice ne
- * le déplacerait pas, ça le changerait de nature. Le chemin honnête pour « je
- * fais ça maintenant, pas à la fin » existe déjà et il est ailleurs — sauter, et
- * ajouter hors programme.
+ * Un exercice se pose dans n'importe quelle file de la séance : un bloc, ou les
+ * hors-programme. La version d'origine l'interdisait, au motif qu'un bloc est
+ * une **section** et qu'en sortir un exercice le changerait de nature. C'était
+ * confondre le titre et le fait : le rôle d'un bloc ne classe rien — il titre
+ * une section, le volume se compte sur le type des séries (`summary.ts`) — et ce
+ * que ce fichier écrit n'est justement pas la composition de la séance, c'est
+ * l'ordre où elle est menée. Or cet ordre-là traverse les blocs tous les jours :
+ * le gainage d'échauffement se fait entre deux séries de squat, le finisseur
+ * passe avant le dernier exercice principal. Refuser le geste ne l'empêchait
+ * pas, ça obligeait juste à mentir à la barre basse — c'est-à-dire exactement le
+ * défaut que l'ordre local existe pour corriger.
+ *
+ * Ce qui suit un exercice qui change de file, et ce qui ne le suit pas :
+ *
+ * - **Son bloc suit** (`slot.lane`) : il s'affiche sous l'en-tête où on l'a
+ *   posé, et les compteurs de ce bloc le comptent (`withExecutionOrder`).
+ * - **Son enchaînement, non.** Changer de file, c'est quitter la section : le
+ *   superset qu'on y menait ne traverse pas avec. L'exercice arrive détaché, et
+ *   se ré-enchaîne au bouton s'il doit l'être.
+ * - **Le prescrit, jamais.** Comme le reste de ce fichier : rien ne part au
+ *   serveur, `logged_exercise.position` ne bouge pas, le web lit la séance dans
+ *   l'ordre du programme.
  */
 
 import { eq } from 'drizzle-orm';
 
 import { db, scheduledWorkout, sessionLayout, type Writer } from '@/db';
 
-import { groupExercises, type SessionExercise, type SessionProgram } from './program';
+import { EXTRAS_LANE, groupExercises, type SessionExercise, type SessionProgram } from './program';
 
 /** Une ligne d'ordre, telle qu'elle s'écrit. */
 interface Slot {
@@ -67,51 +84,76 @@ interface Slot {
   chain: number | null;
 }
 
+/** Une file du déroulé : sa clé, et ce qu'elle contient dans l'ordre. */
+interface Lane {
+  key: string;
+  slots: Slot[];
+}
+
 /**
  * Les files réordonnables du déroulé, dans l'ordre où elles s'affichent : un bloc
  * par file, puis les hors-programme.
  *
- * Les rangs sont **globaux** à la séance et non remis à zéro par file : comme on
- * ne déplace jamais un exercice d'une file à l'autre, ils restent contigus par
- * bloc, et une clé absente de la table (un exercice que le coach vient
- * d'ajouter) se compare alors à `exercise.position`, qui vit dans le même espace.
+ * **Un bloc vidé reste une file**, sinon un exercice qu'on en a sorti ne
+ * pourrait plus y revenir. Les hors-programme, eux, n'en font une que s'il y en
+ * a : « hors programme » n'est pas une section qu'on choisit, c'est ce qu'on
+ * devient en étant ajouté à la main — on n'y **déplace** donc rien tant que la
+ * séance n'en compte aucun. L'écran dessine exactement ces files-là, et c'est
+ * cette liste qui doit rester d'accord avec la sienne (`arrangeLanes`).
+ *
+ * Les rangs restent **globaux** à la séance et ne sont pas remis à zéro par
+ * file : ils sont ainsi comparables à `exercise.position` — ce sur quoi retombe
+ * une clé que la table ne connaît pas encore, un exercice que le coach vient
+ * d'ajouter — qui vit dans le même espace.
  */
-function pools(program: SessionProgram): SessionExercise[][] {
-  return [
-    ...program.blocks.map((block) => block.groups.flatMap((group) => group.exercises)),
-    program.extras,
-  ];
+function pools(program: SessionProgram): { key: string; exercises: SessionExercise[] }[] {
+  const lanes = program.blocks.map((block) => ({
+    key: block.key,
+    exercises: block.groups.flatMap((group) => group.exercises),
+  }));
+
+  if (program.extras.length > 0) {
+    lanes.push({ key: EXTRAS_LANE, exercises: program.extras });
+  }
+
+  return lanes;
 }
 
 /**
- * L'ordre courant, prêt à être modifié : une file de `Slot`, et l'index de
+ * L'ordre courant, prêt à être modifié : les files de `Slot`, et où se trouve
  * l'exercice visé dedans.
  *
  * Les enchaînements sont **relus sur les groupes déjà construits** plutôt que sur
  * la table : le déroulé passé en paramètre porte déjà l'ordre local s'il y en a
  * un, et il porte les groupes du serveur sinon. Une seule source, et la première
  * écriture fige naturellement ce qui était prescrit.
+ *
+ * Les identifiants d'enchaînement sont distribués sur la **séance entière** et
+ * non par file : deux files peuvent échanger un exercice, et deux groupes qui
+ * porteraient le même identifiant de part et d'autre se colleraient l'un à
+ * l'autre au premier passage.
  */
 function locate(
   program: SessionProgram,
   exerciseKey: string,
-): { lanes: Slot[][]; lane: Slot[]; index: number } | null {
+): { lanes: Lane[]; laneIndex: number; index: number } | null {
   let chain = 0;
-  const lanes = pools(program).map((exercises) =>
-    groupExercises(exercises).flatMap((group) => {
+  const lanes = pools(program).map(({ key, exercises }) => ({
+    key,
+    slots: groupExercises(exercises).flatMap((group) => {
       // Un groupe d'un seul membre n'est pas un enchaînement : lui donner un
       // identifiant le collerait au voisin qui viendrait s'y ranger.
       const id = group.exercises.length > 1 ? ++chain : null;
 
       return group.exercises.map((exercise) => ({ key: exercise.key, chain: id }));
     }),
-  );
+  }));
 
-  for (const lane of lanes) {
-    const index = lane.findIndex((slot) => slot.key === exerciseKey);
+  for (const [laneIndex, lane] of lanes.entries()) {
+    const index = lane.slots.findIndex((slot) => slot.key === exerciseKey);
 
     if (index !== -1) {
-      return { lanes, lane, index };
+      return { lanes, laneIndex, index };
     }
   }
 
@@ -119,16 +161,22 @@ function locate(
 }
 
 /** Écrit l'ordre entier, en remplaçant celui qui s'y trouvait. */
-function commit(tx: Writer, scheduledUuid: string, lanes: Slot[][]): void {
+function commit(tx: Writer, scheduledUuid: string, lanes: Lane[]): void {
   tx.delete(sessionLayout).where(eq(sessionLayout.scheduledUuid, scheduledUuid)).run();
 
   let position = 0;
-  const rows = lanes.flat().map((slot) => ({
-    scheduledUuid,
-    exerciseKey: slot.key,
-    position: position++,
-    chain: slot.chain,
-  }));
+  const rows = lanes.flatMap((lane) =>
+    lane.slots.map((slot) => ({
+      scheduledUuid,
+      exerciseKey: slot.key,
+      position: position++,
+      chain: slot.chain,
+      // Écrite pour **toutes** les lignes, pas seulement pour celle qui vient de
+      // changer de file : l'ordre entier se réécrit à chaque geste, et une file
+      // laissée à `null` retomberait sur celle du programme au prochain rendu.
+      lane: lane.key,
+    })),
+  );
 
   if (rows.length > 0) {
     tx.insert(sessionLayout).values(rows).run();
@@ -152,12 +200,18 @@ function isArrangeable(tx: Writer, scheduledUuid: string): boolean {
   return row !== undefined && row.endedAt === null;
 }
 
-/** Applique une modification sur la file de l'exercice visé, puis écrit tout. */
+/**
+ * Applique une modification sur le déroulé, autour de l'exercice visé, puis
+ * écrit tout.
+ *
+ * `change` reçoit **toutes** les files et non plus seulement celle de
+ * l'exercice : un geste peut le poser dans une autre.
+ */
 function arrange(
   scheduledUuid: string,
   program: SessionProgram,
   exerciseKey: string,
-  change: (lane: Slot[], index: number) => boolean,
+  change: (lanes: Lane[], laneIndex: number, index: number) => boolean,
 ): boolean {
   const found = locate(program, exerciseKey);
 
@@ -166,7 +220,7 @@ function arrange(
   }
 
   return db.transaction((tx) => {
-    if (!isArrangeable(tx, scheduledUuid) || !change(found.lane, found.index)) {
+    if (!isArrangeable(tx, scheduledUuid) || !change(found.lanes, found.laneIndex, found.index)) {
       return false;
     }
 
@@ -177,14 +231,37 @@ function arrange(
 }
 
 /**
- * Déplace un exercice d'un cran dans sa file.
+ * Sort un exercice de sa file et le pose dans une autre, à un rang donné.
  *
- * L'enchaînement **suit l'exercice** : deux membres d'un superset qu'on échange
- * restent un superset, celui qui en sort n'y est plus. C'est la contiguïté qui
- * décide, et personne n'a à l'écrire (`withExecutionOrder`).
+ * **Il arrive détaché.** Changer de file, c'est quitter la section : le superset
+ * qu'on menait là ne traverse pas, et celui qui reste derrière se retrouve seul
+ * dans son groupe — donc plus dans aucun (un enchaînement est fait de voisins,
+ * `withExecutionOrder`). Rien à nettoyer, la contiguïté s'en charge.
+ */
+function relocate(lanes: Lane[], from: number, index: number, to: number, rank: number): void {
+  const [moved] = lanes[from].slots.splice(index, 1);
+  const target = lanes[to].slots;
+
+  moved.chain = null;
+  target.splice(Math.min(Math.max(rank, 0), target.length), 0, moved);
+}
+
+/**
+ * Déplace un exercice d'un cran — et, en bout de file, dans la file voisine.
  *
- * Rend `false` en bout de file : il n'y a pas d'au-delà, et un bloc ne se
- * traverse pas (voir l'en-tête).
+ * C'est le chemin de TalkBack, qui n'a rien à traîner (`ArrangeRow`), donc c'est
+ * **le seul** qu'il ait pour changer de bloc : s'y arrêter au bord de la file
+ * rendrait le rangement inter-blocs inaccessible au balayage alors qu'il est à
+ * un glissement du doigt pour tout le monde. Descendre depuis la dernière ligne
+ * de l'échauffement pose donc l'exercice en tête du bloc suivant, et monter
+ * depuis la première le pose en queue du précédent.
+ *
+ * Dans la file, l'enchaînement **suit l'exercice** : deux membres d'un superset
+ * qu'on échange restent un superset, celui qui en sort n'y est plus. C'est la
+ * contiguïté qui décide, et personne n'a à l'écrire (`withExecutionOrder`). En
+ * changeant de file, il se détache (`relocate`).
+ *
+ * Rend `false` aux deux bouts de la séance : là, il n'y a pas d'au-delà.
  */
 export function moveExercise(
   scheduledUuid: string,
@@ -192,34 +269,49 @@ export function moveExercise(
   exerciseKey: string,
   delta: -1 | 1,
 ): boolean {
-  return arrange(scheduledUuid, program, exerciseKey, (lane, index) => {
+  return arrange(scheduledUuid, program, exerciseKey, (lanes, laneIndex, index) => {
+    const lane = lanes[laneIndex].slots;
     const target = index + delta;
 
-    if (target < 0 || target >= lane.length) {
+    if (target >= 0 && target < lane.length) {
+      [lane[index], lane[target]] = [lane[target], lane[index]];
+
+      return true;
+    }
+
+    const neighbour = laneIndex + delta;
+
+    if (neighbour < 0 || neighbour >= lanes.length) {
       return false;
     }
 
-    [lane[index], lane[target]] = [lane[target], lane[index]];
+    // On entre par le bord qu'on franchit : en queue de la file d'au-dessus, en
+    // tête de celle d'en dessous. C'est ce que « d'un cran » veut dire quand le
+    // cran suivant est dans un autre bloc.
+    relocate(lanes, laneIndex, index, neighbour, delta === -1 ? lanes[neighbour].slots.length : 0);
 
     return true;
   });
 }
 
 /**
- * Déplace un exercice **à une place donnée** de sa file : le geste du
+ * Déplace un exercice **dans une file, à une place donnée** : le geste du
  * glisser-déposer, qui ne connaît pas les crans.
  *
- * `to` est un rang **dans la file de l'exercice**, celui que la liste réordonnable
- * annonce au relâchement — donc déjà l'index d'arrivée dans un tableau dont
+ * `lane` est la clé de la file d'arrivée — celle d'un bloc, ou `EXTRAS_LANE` —
+ * et `to` un rang **dans cette file-là**, celui que la liste réordonnable annonce
+ * au relâchement, c'est-à-dire déjà l'index d'arrivée dans un tableau dont
  * l'élément déplacé a été retiré. On applique exactement ça : `splice` sortant,
  * `splice` entrant. Un rang hors bornes est serré dans la file plutôt que refusé :
  * la bibliothèque ne rend jamais mieux que le dernier rang, et un déplacement qui
- * ne ferait rien après un geste abouti se lirait comme un écran figé.
+ * ne ferait rien après un geste abouti se lirait comme un écran figé. Une file
+ * inconnue, elle, est bien un refus — le doigt n'a pas pu la désigner.
  *
- * L'enchaînement **suit l'exercice**, comme pour un déplacement d'un cran : ce
- * qu'on traîne emporte son rang, et c'est la contiguïté qui décide de ce qui
- * reste un superset (`withExecutionOrder`). Traverser un enchaînement le coupe
- * donc en deux, ce qui est la lecture juste — on vient de s'intercaler au milieu.
+ * Dans sa file, l'enchaînement **suit l'exercice** : ce qu'on traîne emporte son
+ * rang, et c'est la contiguïté qui décide de ce qui reste un superset
+ * (`withExecutionOrder`). Traverser un enchaînement le coupe donc en deux, ce qui
+ * est la lecture juste — on vient de s'intercaler au milieu. En **changeant** de
+ * file, il se détache (`relocate`).
  *
  * Rend `false` quand rien ne bouge : un exercice relâché là où il était n'a pas
  * d'ordre à réécrire.
@@ -228,18 +320,32 @@ export function moveExerciseTo(
   scheduledUuid: string,
   program: SessionProgram,
   exerciseKey: string,
+  lane: string,
   to: number,
 ): boolean {
-  return arrange(scheduledUuid, program, exerciseKey, (lane, index) => {
-    const target = Math.min(Math.max(to, 0), lane.length - 1);
+  return arrange(scheduledUuid, program, exerciseKey, (lanes, laneIndex, index) => {
+    const destination = lanes.findIndex((candidate) => candidate.key === lane);
+
+    if (destination === -1) {
+      return false;
+    }
+
+    if (destination !== laneIndex) {
+      relocate(lanes, laneIndex, index, destination, to);
+
+      return true;
+    }
+
+    const slots = lanes[laneIndex].slots;
+    const target = Math.min(Math.max(to, 0), slots.length - 1);
 
     if (target === index) {
       return false;
     }
 
-    const [moved] = lane.splice(index, 1);
+    const [moved] = slots.splice(index, 1);
 
-    lane.splice(target, 0, moved);
+    slots.splice(target, 0, moved);
 
     return true;
   });
@@ -259,23 +365,29 @@ export function chainExercise(
   program: SessionProgram,
   exerciseKey: string,
 ): boolean {
-  return arrange(scheduledUuid, program, exerciseKey, (lane, index) => {
+  return arrange(scheduledUuid, program, exerciseKey, (lanes, laneIndex, index) => {
     if (index === 0) {
       return false;
     }
 
-    const previous = lane[index - 1];
+    const slots = lanes[laneIndex].slots;
+    const previous = slots[index - 1];
 
     if (previous.chain === null) {
-      // Un identifiant libre **dans cette file**, et ça suffit : la contiguïté
-      // s'évalue file par file (`withExecutionOrder`), deux files ne peuvent pas
-      // se toucher, donc un même rang de part et d'autre ne colle rien.
-      const fresh = Math.max(0, ...lane.map((slot) => slot.chain ?? 0)) + 1;
+      // Libre dans la **séance entière**, et pas seulement dans cette file : un
+      // exercice peut passer d'un bloc à l'autre, et deux groupes qui
+      // porteraient le même identifiant de part et d'autre se colleraient au
+      // premier passage.
+      const fresh =
+        Math.max(
+          0,
+          ...lanes.flatMap((candidate) => candidate.slots.map((slot) => slot.chain ?? 0)),
+        ) + 1;
 
       previous.chain = fresh;
     }
 
-    lane[index].chain = previous.chain;
+    slots[index].chain = previous.chain;
 
     return true;
   });
@@ -295,12 +407,14 @@ export function unchainExercise(
   program: SessionProgram,
   exerciseKey: string,
 ): boolean {
-  return arrange(scheduledUuid, program, exerciseKey, (lane, index) => {
-    if (lane[index].chain === null) {
+  return arrange(scheduledUuid, program, exerciseKey, (lanes, laneIndex, index) => {
+    const slot = lanes[laneIndex].slots[index];
+
+    if (slot.chain === null) {
       return false;
     }
 
-    lane[index].chain = null;
+    slot.chain = null;
 
     return true;
   });

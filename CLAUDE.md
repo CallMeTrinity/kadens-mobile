@@ -121,7 +121,8 @@ The local SQLite schema (`src/db/schema.ts`, extensively commented — read it b
    avoids timezone loss. The server misreads a non-null offset as if wall-clock time were UTC.
 
 A fourth table sits beside them and belongs to neither: `sessionLayout` (KL-52) holds the **local execution
-order** of a workout — the rank each exercise is actually led in, and the chain (superset) it belongs to. It is
+order** of a workout — the rank each exercise is actually led in, the chain (superset) it belongs to, and the
+**lane** it is led in (`lane`: a block key, or `extras`; `null` means the program's own block). It is
 not prescribed data (nothing is written back into `prescribedSnapshot`, which a pull replaces wholesale) and not
 logged data (**it never reaches the server**; `loggedExercise.position` is untouched, so the pushed document still
 sorts in program order). It exists because `nextTarget()` alternates superset members, which only helps when you
@@ -233,18 +234,30 @@ none of them is cosmetic.
 - **The order the workout is led in is not the program** (KL-52, `session/order.ts`). A workout doesn't go as
   planned — the rack is taken, the finisher goes first, a superset gets improvised with the machine next door —
   and the dock's alternation then proposes the wrong thing every time. A "Réorganiser les exercices" mode lets an
-  exercise move within its block, chain to its neighbour, or detach; a chain is made of **contiguous** neighbours,
-  exactly like the server's `groupLabel` prefixes, which is why moving one out of a group detaches it with nothing
-  to write. Reordering is **local and never pushed** (see `sessionLayout` above): "on dévie, on ne recompose pas"
-  still holds — the program isn't rewritten, only the order it was led in. Moving is **drag-and-drop**
-  (`react-native-reorderable-list`, one non-scrolling `NestedReorderableList` per lane inside a
-  `ScrollViewContainer`): the button version it replaced cost four taps to move an exercise three places, each one
-  re-rendering the list under the finger — the very "track a moving target" the buttons were meant to avoid, four
-  times over. Chaining stays a button (a drag can't say "and this one runs with the previous"), and the drag handle
-  carries `accessibilityActions` for up/down, the only path TalkBack has. The library is **pure JS** over
-  Reanimated and Gesture Handler, both already installed, so it adds no native module and no dev-client rebuild —
-  only a `GestureHandlerRootView` at the root of `app/_layout.tsx`, which nothing mounted before (expo-router's
-  `Stack` is the native one).
+  exercise move **anywhere in the workout**, chain to its neighbour, or detach; a chain is made of **contiguous**
+  neighbours, exactly like the server's `groupLabel` prefixes, which is why moving one out of a group detaches it
+  with nothing to write. Reordering is **local and never pushed** (see `sessionLayout` above): "on dévie, on ne
+  recompose pas" still holds — the program isn't rewritten, only the order it was led in. Moving is
+  **drag-and-drop** (`react-native-reorderable-list`): the button version it replaced cost four taps to move an
+  exercise three places, each one re-rendering the list under the finger — the very "track a moving target" the
+  buttons were meant to avoid, four times over. Chaining stays a button (a drag can't say "and this one runs with
+  the previous"), and the drag handle carries `accessibilityActions` for up/down, the only path TalkBack has. The
+  library is **pure JS** over Reanimated and Gesture Handler, both already installed, so it adds no native module
+  and no dev-client rebuild — only a `GestureHandlerRootView` at the root of `app/_layout.tsx`, which nothing
+  mounted before (expo-router's `Stack` is the native one).
+- **Lanes are destinations, not fences**. The first version of the reorder mode kept an exercise inside
+  its block, on the grounds that a block is a _section_ and leaving it would change the exercise's nature. That
+  conflated the heading with the fact: a block role only titles a section (`labels.ts`), volume is counted from
+  each **set's** type (`summary.ts`, `areas.ts`), and what `order.ts` writes was never the composition of the
+  workout — only the order it is led in, which crosses blocks every single day (the warm-up plank done between
+  two squat sets, the finisher pulled forward). Consequences worth knowing before touching this code: the arrange
+  screen is **one flat `ReorderableList` for the whole workout**, with block headings as rows — the library
+  reorders within a list and cannot hand an item to another one, so one list per block made the gesture
+  impossible; `dropTarget()` reads a released row index back into (lane, rank); an emptied block **keeps its
+  heading** in arrange mode (so you can drop back into it) and is hidden from the normal flow; block counters are
+  recomputed in `withExecutionOrder`, not carried over from `buildProgram`; an exercise that changes lane arrives
+  **detached** (a superset doesn't cross a section); and a lane key that no longer matches any block falls back to
+  the exercise's own block rather than dropping it off screen.
 - **The current set is never lost**: it's written in the dock, and the scroll view catches up to it via
   `useRevealTarget` when the current _exercise_ changes (never between two sets of the same one — a screen that
   re-centres under your thumb is worse than the problem). Measurement is `measureInWindow` on the target and on
@@ -328,6 +341,8 @@ meaning, and the web uses `--color-status-missed` on `.kd-flash--error`.
 
 ### Ticket references
 
-Comments throughout the codebase reference ticket IDs (`KL-24`, `KL-27`, …) tied to
-`kadens/docs/feature-live-tracking.md`. When a comment cites one, that ticket is the authoritative spec for the
-behavior — the code comment is a summary, not the full rationale.
+The `KL-xx` IDs scattered through the comments (`KL-24`, `KL-27`, …) are **historical**: there is no ticket
+tracker any more, and the spec they pointed at (`kadens/docs/feature-live-tracking.md`) is gone. Read them as
+markers of when a decision was made, nothing more — the comment next to them is now the whole rationale, so a
+comment that only cites an ID and explains nothing is a comment to finish, not a reference to look up. New work
+doesn't get a new ID.

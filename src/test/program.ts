@@ -52,7 +52,10 @@ export function programOf(uuid: string): SessionProgram {
   const order = new Map(
     sessionLayoutQuery(uuid)
       .all()
-      .map((row) => [row.exerciseKey, { position: row.position, chain: row.chain }]),
+      .map((row) => [
+        row.exerciseKey,
+        { position: row.position, chain: row.chain, lane: row.lane },
+      ]),
   );
 
   return withExecutionOrder(

@@ -269,6 +269,26 @@ export const loggedSet = sqliteTable(
  * même préfixe côté serveur : la contiguïté fait partie de la règle, et c'est ce
  * qui permet à un exercice sorti du groupe de s'en détacher sans réécriture.
  * `null` = mené seul.
+ *
+ * ## `lane` : la file où l'exercice est mené, qui n'est plus forcément la sienne
+ *
+ * Le rangement traverse les blocs : on mène un gainage d'échauffement après le
+ * squat, on remonte le finisseur avant le dernier exercice principal.
+ * `lane` retient **où** l'exercice a été posé — la clé du bloc (`b{id}`) ou
+ * `extras` pour les hors-programme — et le déroulé l'affiche là, sous cet
+ * en-tête, avec le compteur du bloc qui suit.
+ *
+ * `null` veut dire « la file du programme », et c'est ce que valent toutes les
+ * lignes écrites avant cette colonne : un ordre déjà rangé bloc par bloc reste
+ * lu exactement comme il l'était, sans migration de données. C'est aussi ce que
+ * vaut un exercice que le rangement n'a jamais déplacé de file.
+ *
+ * Ce que `lane` ne change pas, c'est tout le reste : le prescrit ignore ce
+ * déplacement, `logged_exercise.position` aussi, et le rôle du bloc
+ * (échauffement, principal) ne sert qu'à titrer une section — le volume, lui,
+ * se compte sur le **type de série** (`labels.ts`, `summary.ts`). Un exercice
+ * passé sous « Échauffement » ne devient donc pas de l'échauffement : il est
+ * juste mené là.
  */
 export const sessionLayout = sqliteTable(
   'session_layout',
@@ -278,10 +298,12 @@ export const sessionLayout = sqliteTable(
       .references(() => scheduledWorkout.uuid, { onDelete: 'cascade' }),
     /** `e{prescribedId}` ou `x{loggedExerciseId}` — la clé de `SessionExercise`. */
     exerciseKey: text('exercise_key').notNull(),
-    /** Rang d'exécution dans la séance entière. Les rangs des blocs ne s'entremêlent pas. */
+    /** Rang d'exécution dans la séance entière, files comprises. */
     position: integer('position').notNull(),
     /** L'enchaînement local, ou `null` si l'exercice est mené seul. */
     chain: integer('chain'),
+    /** `b{id}` ou `extras` — la file où il est mené. `null` = celle du programme. */
+    lane: text('lane'),
   },
   (t) => [primaryKey({ columns: [t.scheduledUuid, t.exerciseKey] })],
 );
