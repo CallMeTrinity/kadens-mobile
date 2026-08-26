@@ -25,9 +25,11 @@
  *
  * ## Casse
  *
- * Le titre est un **libellé d'écran** : condensé capitales. Un nom saisi — nom
- * de séance, d'exercice — ne passe pas par là (règle 4) ; il se rend dans le
- * corps de l'écran, au rôle `name`, ou en `eyebrow` s'il sert de contexte.
+ * Le titre est par défaut un **libellé d'écran** : condensé capitales. Un nom
+ * saisi ne s'y écrase pas (règle 4) — il se rend au rôle `pageName`, et l'écran
+ * le **déclare** avec `titleRole="name"` plutôt que de composer son propre
+ * titre à côté. C'est ce que fait la séance en cours, dont le titre est le nom
+ * de la séance : « Séance » ne disait rien qu'on ne sache déjà en l'ouvrant.
  */
 
 import type { ReactNode } from 'react';
@@ -41,41 +43,91 @@ export type HeaderProps = {
   title: string;
   /** Sur-titre en mono capitales : la date, le plan, le contexte. */
   eyebrow?: string;
+  /**
+   * Ce que le titre **est**, pas la taille qu'il fait : un libellé que l'app
+   * écrit (défaut, condensé capitales) ou un nom qu'on a saisi (Barlow, casse
+   * normale). C'est la règle 4 rendue explicite plutôt que contournée — passer
+   * « Lower w/ renfo » en `label` en ferait « LOWER W/ RENFO ».
+   */
+  titleRole?: 'label' | 'name';
+  /**
+   * Rythme vertical resserré, et les actions de droite remontent sur la ligne
+   * du retour au lieu de flanquer le titre.
+   *
+   * C'est l'en-tête de la séance en cours : la hauteur y est la ressource rare
+   * — ce que la tête prend, elle le prend à la série qu'on est en train de
+   * faire, téléphone posé au sol. Le bouton de retour garde sa cible de 44 :
+   * resserrer un rythme n'est pas rétrécir une cible.
+   */
+  compact?: boolean;
   /** Rendu comme un retour arrière. Absent = écran de premier niveau. */
   onBack?: () => void;
-  /** Actions à droite du titre. */
+  /** Actions à droite du titre — ou de la ligne de retour, en `compact`. */
   right?: ReactNode;
   testID?: string;
 };
 
-export function Header({ title, eyebrow, onBack, right, testID }: HeaderProps) {
+export function Header({
+  title,
+  eyebrow,
+  titleRole = 'label',
+  compact = false,
+  onBack,
+  right,
+  testID,
+}: HeaderProps) {
   const insets = useSafeAreaInsets();
 
+  const back = onBack ? (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Retour"
+      onPress={onBack}
+      style={({ pressed }) => [styles.back, pressed && styles.backPressed]}
+    >
+      {/* La flèche est arrivée avec le jeu de glyphes de KL-37. Elle
+          **accompagne** le mot, elle ne le remplace pas : un chevron seul
+          serait une cible muette, et le libellé accessible du bouton est de
+          toute façon posé sur le `Pressable`. */}
+      <Icon name="arrow-left" size={17} color={colors.textSecondary} />
+      <Text style={styles.backLabel}>Retour</Text>
+    </Pressable>
+  ) : null;
+
+  const actions = right ? <View style={styles.right}>{right}</View> : null;
+
   return (
-    <View style={[styles.header, { paddingTop: insets.top + space[5] }]} testID={testID}>
-      {onBack ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Retour"
-          onPress={onBack}
-          style={({ pressed }) => [styles.back, pressed && styles.backPressed]}
-        >
-          {/* La flèche est arrivée avec le jeu de glyphes de KL-37. Elle
-              **accompagne** le mot, elle ne le remplace pas : un chevron seul
-              serait une cible muette, et le libellé accessible du bouton est de
-              toute façon posé sur le `Pressable`. */}
-          <Icon name="arrow-left" size={17} color={colors.textSecondary} />
-          <Text style={styles.backLabel}>Retour</Text>
-        </Pressable>
-      ) : null}
+    <View
+      style={[
+        styles.header,
+        compact && styles.headerCompact,
+        { paddingTop: insets.top + (compact ? space[2] : space[5]) },
+      ]}
+      testID={testID}
+    >
+      {/* En `compact`, les actions occupent le vide à droite du retour — cette
+          ligne fait déjà 44 de haut pour la cible, autant qu'elle porte les
+          pastilles plutôt qu'une seconde ligne les porte plus bas. */}
+      {compact ? (
+        <View style={styles.topRow}>
+          {back ?? <View />}
+          {actions}
+        </View>
+      ) : (
+        back
+      )}
 
       <View style={styles.titles}>
         {eyebrow ? <Text style={styles.eyebrow}>{eyebrow}</Text> : null}
         <View style={styles.titleRow}>
-          <Text accessibilityRole="header" numberOfLines={2} style={styles.title}>
+          <Text
+            accessibilityRole="header"
+            numberOfLines={2}
+            style={[styles.title, titleRole === 'name' ? styles.titleName : styles.titleLabel]}
+          >
             {title}
           </Text>
-          {right ? <View style={styles.right}>{right}</View> : null}
+          {compact ? null : actions}
         </View>
       </View>
     </View>
@@ -91,6 +143,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     gap: space[2],
   },
+  headerCompact: { paddingBottom: space[4], gap: space[1] },
   back: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -111,7 +164,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[4],
   },
+  topRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: space[4],
+  },
   eyebrow: { ...text.eyebrow, color: colors.textSecondary },
-  title: { ...text.pageTitle, color: colors.text, flexShrink: 1 },
+  title: { color: colors.text, flexShrink: 1 },
+  // Deux styles entiers plutôt qu'un style de base surchargé : `pageTitle`
+  // porte `textTransform` et un interlettrage que le rôle « nom » n'a pas, et
+  // qu'une fusion laisserait derrière lui.
+  titleLabel: text.pageTitle,
+  titleName: text.pageName,
   right: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
 });

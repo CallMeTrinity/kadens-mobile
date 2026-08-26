@@ -537,34 +537,44 @@ export default function SessionScreen() {
 
   return (
     <View style={styles.screen}>
+      {/* Le titre de l'écran **est** le nom de la séance : « SÉANCE » en pas de
+          30 nommait ce qu'on venait d'ouvrir, et le vrai nom se lisait plus bas,
+          plus petit, dans la bande. Deux étages pour une seule information, en
+          haut de l'écran où la place se paie en séries visibles — d'où aussi le
+          `compact`, qui remonte les pastilles sur la ligne du retour. L'état
+          (« En cours », « Terminée ») reste dit par la pastille, qui le disait
+          déjà. */}
       <Header
+        compact
         eyebrow={longDate(workout.date)}
-        title={closed ? 'Séance terminée' : 'Séance'}
+        title={workout.title ?? 'Séance libre'}
+        titleRole="name"
         onBack={() => router.back()}
         right={
-          closed ? (
-            <Chip label="Terminée" tone="done" dot />
-          ) : running ? (
-            <Chip label="En cours" tone="planned" dot />
-          ) : null
+          <>
+            {pendingSync ? <Chip label="À synchroniser" /> : null}
+            {closed ? (
+              <Chip label="Terminée" tone="done" dot />
+            ) : running ? (
+              <Chip label="En cours" tone="planned" dot />
+            ) : null}
+          </>
         }
       />
 
       {/* La bande de tête ne défile pas : la progression doit rester lisible au
-          milieu du douzième exercice, c'est tout l'intérêt de l'afficher. */}
-      <View style={styles.summary}>
-        <View style={styles.summaryHead}>
-          {/* Un nom saisi : Barlow, casse normale (règle 4). */}
-          <Text style={styles.name} numberOfLines={2}>
-            {workout.title ?? 'Séance libre'}
-          </Text>
-          {pendingSync ? <Chip label="À synchroniser" /> : null}
+          milieu du douzième exercice, c'est tout l'intérêt de l'afficher. Elle
+          ne porte plus que ce qui n'est pas déjà en tête, et disparaît quand il
+          ne lui reste rien — un liseré vide sous l'en-tête n'est pas une bande,
+          c'est une marge. */}
+      {workout.plan || program.total > 0 ? (
+        <View style={styles.summary}>
+          {workout.plan ? <Text style={styles.caption}>{workout.plan.title}</Text> : null}
+          {/* Rien à mesurer sur une séance sans programme : « 0 / 0 » n'est pas une
+              progression, c'est une case vide de plus. */}
+          {program.total > 0 ? <Progress done={program.done} total={program.total} /> : null}
         </View>
-        {workout.plan ? <Text style={styles.caption}>{workout.plan.title}</Text> : null}
-        {/* Rien à mesurer sur une séance sans programme : « 0 / 0 » n'est pas une
-            progression, c'est une case vide de plus. */}
-        {program.total > 0 ? <Progress done={program.done} total={program.total} /> : null}
-      </View>
+      ) : null}
 
       {/*
         Le dégagement sous la page est la hauteur **mesurée** de la barre basse,
@@ -3034,14 +3044,13 @@ const styles = StyleSheet.create({
   },
 
   summary: {
-    gap: space[3],
+    gap: space[2],
     paddingHorizontal: space[8],
-    paddingVertical: space[6],
+    paddingVertical: space[4],
     backgroundColor: colors.surfaceRaised,
     borderBottomWidth: layout.hairline,
     borderBottomColor: colors.border,
   },
-  summaryHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
 
   progress: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   progressTrack: { flex: 1, height: 4, backgroundColor: colors.track },

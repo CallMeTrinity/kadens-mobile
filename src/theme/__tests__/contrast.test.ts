@@ -54,6 +54,7 @@ type InkCase = {
  */
 const INK: InkCase[] = [
   // Le corps de texte, sur les trois fonds de l'identité.
+  { ink: 'text', on: 'surfaceRaised', role: 'pageName', where: 'nom de la séance, en tête' },
   { ink: 'text', on: 'surfaceRaised', role: 'name', where: "nom d'exercice" },
   { ink: 'text', on: 'surfaceRaised', role: 'numeric', where: 'charge et répétitions' },
   { ink: 'text', on: 'surfaceSubtle', role: 'numeric', where: "séries de l'exercice courant" },

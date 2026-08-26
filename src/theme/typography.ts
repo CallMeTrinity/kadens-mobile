@@ -12,10 +12,10 @@
  * - **Structure** (`hero`, `pageTitle`, `sectionTitle`, `blockRole`, `action`,
  *   `eyebrow`) : Barlow Condensed ou mono, capitales. Ce sont des libellés que
  *   l'app écrit elle-même.
- * - **Contenu** (`name`, `body`, `bodyStrong`, `caption`, `numeric`) : Barlow,
- *   casse normale. Tout ce qui a été **saisi** — nom d'exercice, de séance,
- *   note — passe par là. Barlow Condensed en capitales sur un nom propre
- *   devient illisible.
+ * - **Contenu** (`pageName`, `name`, `body`, `bodyStrong`, `caption`,
+ *   `numeric`) : Barlow, casse normale. Tout ce qui a été **saisi** — nom
+ *   d'exercice, de séance, note — passe par là. Barlow Condensed en capitales
+ *   sur un nom propre devient illisible.
  *
  * Un rôle ne porte jamais de couleur : elle vient de `colors`, au point
  * d'usage.
@@ -162,6 +162,15 @@ export const text = {
   kpi: role({ stack: 'display', weight: '800', size: 40, leading: 1, tabular: true }),
 
   /* --- Contenu ------------------------------------------------------------ */
+
+  /**
+   * Titre d'écran qui est un **nom saisi** : le nom de la séance, en tête de
+   * l'écran de séance. `pageTitle` en écrirait « LOWER W/ RENFO » — règle 4 :
+   * un nom propre en condensé capitales ne se lit plus. Un cran au-dessus de
+   * `name` parce qu'il tient le rôle de titre, un gros cran sous `pageTitle`
+   * parce qu'en séance la hauteur prise en tête est prise à la série en cours.
+   */
+  pageName: role({ stack: 'body', weight: '600', size: 22, leading: 1.15 }),
 
   /** Nom saisi : exercice, séance, plan, athlète. Jamais de capitales forcées. */
   name: role({ stack: 'body', weight: '600', size: 17, leading: 1.25 }),
