@@ -1,0 +1,13 @@
+# Les fins de ligne sont en LF partout, dans le dépôt **et** dans la copie de
+# travail — y compris sous Windows, où `core.autocrlf = true` checkout sinon en
+# CRLF. Prettier lit le fichier sur disque et son `endOfLine` vaut « lf » : sans
+# ce fichier, `npm run lint` remonte un « Delete ␍ » par ligne sur une machine
+# Windows, pendant que la CI (Linux) passe. Le désaccord était sur le disque,
+# pas dans le dépôt.
+* text=auto eol=lf
+
+# Binaires : jamais de conversion, `text=auto` les détecte mais autant le dire.
+*.png binary
+*.ttf binary
+*.jks binary
+*.keystore binary
