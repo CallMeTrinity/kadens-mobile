@@ -13,9 +13,9 @@
     }
   },
   "scripts": {
-    "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000 || echo 'adb reverse impossible, téléphone débranché ? Metro et le backend ne seront pas joignables depuis le mobile.'",
+    "adb:reverse": "adb reverse tcp:8081 tcp:8081 && adb reverse tcp:8000 tcp:8000 || echo adb reverse impossible, téléphone débranché : Metro et le backend ne seront pas joignables depuis le mobile.",
     "start": "npm run --silent adb:reverse && expo start --localhost",
-    "android": "npm run --silent adb:reverse && REACT_NATIVE_PACKAGER_HOSTNAME=localhost expo run:android",
+    "android": "npm run --silent adb:reverse && cross-env REACT_NATIVE_PACKAGER_HOSTNAME=localhost expo run:android",
     "web": "expo start --web",
     "db:generate": "drizzle-kit generate",
     "sync:tokens": "node tools/sync-tokens.mjs",
@@ -65,6 +65,7 @@
     "@types/jest": "29.5.14",
     "@types/react": "~19.2.2",
     "babel-plugin-inline-import": "^3.0.0",
+    "cross-env": "^10.1.0",
     "drizzle-kit": "^0.31.10",
     "eslint": "^9.39.5",
     "eslint-config-expo": "~57.0.1",
