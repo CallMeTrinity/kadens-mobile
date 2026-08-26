@@ -11,6 +11,16 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.1.1] - 2026-08-26
+
+### Ajouté
+
+- Le dépôt se travaille aussi sous Windows : les fins de ligne sont normalisées
+  en LF (`.gitattributes`) et les scripts npm passent par `cross-env`. Sans quoi
+  `npm run lint` remontait un « Delete ␍ » par ligne pendant que la CI passait,
+  et `npm run android` échouait hors shell POSIX. Rien ne bouge dans
+  l'application.
+
 ### Modifié
 
 - La réorganisation d'une séance n'est plus enfermée dans un bloc : un exercice
@@ -20,6 +30,24 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
   revenir. Comme avant, l'ordre est **local au téléphone** : il ne modifie pas le
   programme et ne part pas au serveur. Un exercice qui change de bloc quitte son
   superset — il se ré-enchaîne au besoin.
+- Le titre de l'écran de séance est le **nom de la séance** plutôt que le mot
+  « Séance » : le vrai nom se lisait un étage plus bas, plus petit, dans la
+  bande de tête, qui n'en garde plus que ce qui n'y est pas déjà — le plan et la
+  progression — et disparaît quand il ne lui reste rien. L'en-tête est resserré
+  et les pastilles (« En cours », « Terminée », « À synchroniser ») remontent
+  sur la ligne du retour : en séance, la hauteur prise en tête est prise à la
+  série en cours. Les cibles, elles, ne rétrécissent pas.
+
+### Corrigé
+
+- Une série corrigée ne déborde plus, à aucune largeur d'écran. Une ligne dont
+  la charge **et** les répétitions ont été corrigées écrivait quatre valeurs
+  avec leurs unités deux fois chacune ; sur un écran étroit elles passaient sous
+  la case à cocher, puis hors du filet, et Android coupait les mots au passage.
+  Le prévu s'écrit désormais **sous** le saisi, barré et sans son unité, et
+  l'unité s'écrit un pas plus petite que son nombre : une série corrigée demande
+  exactement la même largeur qu'une série qui va comme prévu. Vérifié de 420 à
+  260 dp.
 
 ## [1.1.0] - 2026-08-23
 
@@ -108,7 +136,8 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.0...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v0.0.3...v1.0.0
