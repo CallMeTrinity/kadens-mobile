@@ -182,6 +182,17 @@ export const text = {
   numeric: role({ stack: 'mono', weight: '500', size: 16, leading: 1.2, tabular: true }),
 
   /**
+   * Ce qui **accompagne** un nombre sans être le nombre : son unité (« reps »,
+   * « kg ») et la valeur qu'il remplace, barrée sous lui. Même filet mono que
+   * `numeric`, un pas en dessous — ce qu'on lit d'une série est le chiffre en
+   * cours ; l'unité dit de quoi il parle, la valeur barrée d'où il vient.
+   *
+   * Reste bien au-dessus du plancher de lecture (11, `eyebrow`) : plus petit,
+   * ça ne se lit plus le téléphone posé au sol entre deux séries.
+   */
+  numericMinor: role({ stack: 'mono', weight: '500', size: 13, leading: 1.2, tabular: true }),
+
+  /**
    * Valeur au centre d'un `NumberStepper`. Même famille que `numeric`, deux
    * pas au-dessus : elle se lit **à bout de bras**, barre en main, et c'est
    * elle qu'on vérifie avant de valider une série. Un rôle plutôt qu'une taille

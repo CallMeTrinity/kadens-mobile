@@ -30,4 +30,11 @@ export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
  * de ce qui est fait est du domaine, écrire « 82,5 kg » est du rendu — et le
  * rendu français des nombres vit déjà dans ce dossier.
  */
-export { duration, setEffort, weight } from './units';
+export {
+  duration,
+  setEffort,
+  setEffortParts,
+  weight,
+  weightParts,
+  type Measure,
+} from './units';

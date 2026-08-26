@@ -57,6 +57,11 @@ const INK: InkCase[] = [
   { ink: 'text', on: 'surfaceRaised', role: 'name', where: "nom d'exercice" },
   { ink: 'text', on: 'surfaceRaised', role: 'numeric', where: 'charge et répétitions' },
   { ink: 'text', on: 'surfaceSubtle', role: 'numeric', where: "séries de l'exercice courant" },
+  // L'unité écrite plus petite que son nombre. Elle hérite de l'encre de la
+  // ligne — donc des deux, celle qui écrit et celle qui attend — et rien de sa
+  // taille ne la fait sortir du corps courant : le seuil reste 4,5:1.
+  { ink: 'text', on: 'surfaceRaised', role: 'numericMinor', where: "l'unité d'une série" },
+  { ink: 'text', on: 'fill', role: 'numericMinor', where: "l'unité d'une série faite" },
   { ink: 'text', on: 'surfaceRaised', role: 'sectionTitle', where: 'titre de section' },
   { ink: 'text', on: 'surfaceRaised', role: 'inputValue', where: 'chrono de repos' },
   { ink: 'text', on: 'fill', role: 'blockRole', where: 'rôle de bloc' },
@@ -81,6 +86,12 @@ const INK: InkCase[] = [
   },
   { ink: 'textSecondary', on: 'fill', role: 'caption', where: "libellé d'un en-tête de bloc" },
   { ink: 'textSecondary', on: 'fill', role: 'numeric', where: 'rang de bloc' },
+  {
+    ink: 'textSecondary',
+    on: 'surfaceRaised',
+    role: 'numericMinor',
+    where: "l'unité d'une série pas encore cochable",
+  },
   { ink: 'textSecondary', on: 'fill', role: 'eyebrow', where: 'bandeau hors ligne' },
   { ink: 'textSecondary', on: 'track', role: 'caption', where: 'bandeau de mise à jour, pressé' },
   { ink: 'textSecondary', on: 'surfaceRaised', role: 'tabLabel', where: 'onglet au repos' },

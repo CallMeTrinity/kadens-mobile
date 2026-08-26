@@ -1,6 +1,15 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Alert,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type TextStyle,
+} from 'react-native';
 import ReorderableList, { useReorderableDrag } from 'react-native-reorderable-list';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,9 +24,12 @@ import {
   Icon,
   NumberStepper,
   setEffort,
+  setEffortParts,
   Sheet,
   weight,
+  weightParts,
   type ChipRank,
+  type Measure as MeasureParts,
 } from '@/components';
 import {
   activityLabel,
@@ -2071,6 +2083,48 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
  * d'avance sinon, le prescrit en dernier (`lineValues`) — et le prévu reste écrit
  * à côté dès que les deux divergent, avant comme après.
  *
+ * **Rien ne déborde et rien ne se coupe, à aucune largeur.** Une ligne dont les
+ * deux valeurs sont corrigées en porte quatre — « 17 reps 12 reps … 34 kg 40 kg »
+ * — et sur un écran étroit elles passaient sous la case à cocher, puis hors du
+ * filet.
+ *
+ * La cause tient en une ligne : **en React Native le `minWidth` par défaut vaut
+ * 0**, là où le web applique `min-width: auto`, c'est-à-dire la largeur minimale
+ * du contenu. Une boîte à qui l'on permet de se serrer peut donc descendre sous
+ * la largeur de son propre texte, et Android coupe alors le mot où il peut — le
+ * « rep / s » qu'aucun réglage de proportions ne rattrape. Tant qu'une boîte se
+ * serre, aucune largeur d'écran n'est sûre, et régler la répartition du manque
+ * de place entre deux boîtes ne fait que déplacer la coupure.
+ *
+ * Donc **aucun `flexShrink` dans les valeurs**. La seule élasticité est
+ * `flexGrow`, qui n'ajoute que du vide, et `flexWrap`, qui déplace des blocs
+ * mesurés à leur vraie largeur.
+ *
+ * Et surtout : **le prévu passe sous le saisi, barré et sans son unité**, au
+ * lieu de s'écrire à côté de lui.
+ *
+ * ```
+ * 01   10 reps      30 kg   ☐
+ *      1̶2̶           2̶5̶
+ * ```
+ *
+ * Ce que ça règle est la cause et non le symptôme. Une ligne corrigée ne
+ * demandait pas la largeur d'une ligne ordinaire mais le double, parce qu'elle
+ * écrivait « reps » et « kg » deux fois chacun pour des nombres qui se lisent
+ * l'un sous l'autre ; elle demande maintenant exactement la même largeur qu'une
+ * ligne qui va comme prévu, à toutes les tailles d'écran. La barre dit « c'était
+ * ça » mieux qu'un mot ne le dirait, et sans dépenser un caractère. Ce qui
+ * cède ensuite, s'il le faut vraiment, est la charge qui passe sous l'effort —
+ * puis, seulement en dessous de toute largeur de téléphone, l'unité qui passe
+ * sous son nombre.
+ *
+ * Mesuré sur émulateur, série corrigée sur les deux valeurs, de 420 à 260 dp.
+ *
+ * L'unité s'écrit enfin **un pas plus bas** (`Measure`, `text.numericMinor`) :
+ * ce qu'on lit d'une série est le nombre, « reps » se reconnaît sans se lire.
+ * La valeur barrée partage ce rôle — c'est un chiffre sous un chiffre, il
+ * s'aligne au caractère près, donc en mono comme lui.
+ *
  * **Pas de glyphe** : un « ✓ » dépendrait de ce que Barlow contient. Une case
  * pleine à l'encre dit la même chose et ne peut pas manquer.
  */
@@ -2087,6 +2141,9 @@ function SetRow({
 }) {
   const checked = line.logged !== null;
   const values = lineValues(line);
+  const effortParts = values ? setEffortParts(values.reps, values.durationSeconds) : null;
+  // La ligne se **peint** en deux morceaux, elle ne se **dit** pas en deux
+  // morceaux : les libellés lisent la phrase entière.
   const effort = values ? setEffort(values.reps, values.durationSeconds) : null;
   const load = values?.weightKg ?? null;
   const actionable = editable && (line.actionable || line.undoable);
@@ -2103,25 +2160,37 @@ function SetRow({
         <SetBadge type={line.type} />
       </View>
 
-      <Text style={[styles.setEffort, !checked && !actionable && styles.setFaint]}>
-        {effort ?? '—'}
-      </Text>
       {/* Le prévu reste à côté du saisi dès qu'ils divergent : c'est l'écart, et
-          c'est la seule chose que la ligne ne peut pas se permettre de taire. */}
-      {setDeviates(line, 'reps') || setDeviates(line, 'durationSeconds') ? (
-        <Text style={styles.setPlanned}>
-          {setEffort(line.planned?.reps ?? null, line.planned?.durationSeconds ?? null)}
-        </Text>
-      ) : null}
+          c'est la seule chose que la ligne ne peut pas se permettre de taire.
+          Chaque valeur et son prévu forment une paire, et les deux paires se
+          replient l'une sous l'autre plutôt que de se serrer (§ « rien ne
+          déborde »). Aucun `spacer` ici : ce sont les paires qui poussent, un
+          `spacer` en `flex: 1` disparaîtrait au moment du repli. */}
+      <View style={styles.setPairs}>
+        <View style={styles.setPair}>
+          <Measure
+            parts={effortParts}
+            style={[styles.setEffort, !checked && !actionable && styles.setFaint]}
+          />
+          {setDeviates(line, 'reps') || setDeviates(line, 'durationSeconds') ? (
+            <Text style={styles.setPlanned}>
+              {setEffortParts(line.planned?.reps ?? null, line.planned?.durationSeconds ?? null)
+                ?.value ?? ''}
+            </Text>
+          ) : null}
+        </View>
 
-      <View style={styles.spacer} />
-
-      <Text style={[styles.setLoad, !checked && !actionable && styles.setFaint]}>
-        {load !== null ? weight(load) : ''}
-      </Text>
-      {setDeviates(line, 'weightKg') ? (
-        <Text style={styles.setPlanned}>{weight(line.planned?.weightKg ?? 0)}</Text>
-      ) : null}
+        <View style={[styles.setPair, styles.setPairEnd]}>
+          <Measure
+            parts={load !== null ? weightParts(load) : null}
+            empty=""
+            style={[styles.setLoad, !checked && !actionable && styles.setFaint]}
+          />
+          {setDeviates(line, 'weightKg') ? (
+            <Text style={styles.setPlanned}>{weightParts(line.planned?.weightKg ?? 0).value}</Text>
+          ) : null}
+        </View>
+      </View>
     </>
   );
 
@@ -2180,6 +2249,49 @@ function SetRow({
   );
 }
 
+/**
+ * Une grandeur : le nombre, puis son unité **un pas plus petite**.
+ *
+ * « 17 » se lit, « reps » se reconnaît — et l'unité, qui se répète à chaque
+ * ligne, cesse de prendre la place du chiffre suivant. Sur une ligne dont les
+ * deux valeurs sont corrigées, ce sont quatre unités écrites sur une largeur qui
+ * en portait déjà trop.
+ *
+ * Deux `Text` imbriqués et non deux voisins : TalkBack lit l'ensemble comme une
+ * seule phrase (« dix-sept reps »), et la ligne de base reste commune — un
+ * `Text` frère alignerait deux tailles par leur milieu.
+ *
+ * **L'espace y est ordinaire, et c'est délibéré.** Une espace insécable a été
+ * essayée : elle fait exactement l'inverse de ce qu'on en attend. Elle ne
+ * protège rien tant que rien ne se serre — et le jour où la largeur manque pour
+ * de bon, elle transforme « 34,5 kg » en un seul mot que Android coupe alors où
+ * il peut, « 34,5 k / g ». Avec une espace ordinaire, la coupure tombe là où
+ * elle doit : « 34,5 » puis « kg ». C'est le dernier étage du repli, celui qui
+ * ne se produit qu'en dessous de toute largeur de téléphone, et il vaut mieux
+ * qu'il soit lisible que théoriquement interdit.
+ */
+function Measure({
+  parts,
+  empty = '—',
+  style,
+}: {
+  parts: MeasureParts | null;
+  /** Ce qui s'écrit quand il n'y a rien à écrire. */
+  empty?: string;
+  style: StyleProp<TextStyle>;
+}) {
+  if (parts === null) {
+    return <Text style={style}>{empty}</Text>;
+  }
+
+  return (
+    <Text style={style}>
+      {parts.value}
+      {parts.unit === null ? null : <Text style={styles.setUnit}>{` ${parts.unit}`}</Text>}
+    </Text>
+  );
+}
+
 /** Le sigle W / D / F / DS. Rien pour une série de travail ordinaire. */
 function SetBadge({ type }: { type: SetType }) {
   const letter = setTypeLetter(type);
@@ -2229,7 +2341,11 @@ function CardioRow({
         pressed && editable && styles.setRowPressed,
       ]}
     >
-      <Text style={[styles.setEffort, !checked && !editable && styles.setFaint]}>{summary}</Text>
+      {/* `summary` est une phrase, pas un nombre : elle passe à la ligne au lieu
+          de pousser « À faire » et la case hors de l'écran. */}
+      <Text style={[styles.setEffort, styles.setSummary, !checked && !editable && styles.setFaint]}>
+        {summary}
+      </Text>
       <View style={styles.spacer} />
       <Text style={styles.caption}>{checked ? 'Fait' : 'À faire'}</Text>
       <View style={[styles.box, checked && styles.boxChecked, !editable && styles.boxIdle]} />
@@ -2878,6 +2994,21 @@ function setRowLabel(line: SessionSetLine, effort: string | null, load: number |
     parts.push(weight(load));
   }
 
+  // L'écart, à la voix. À l'écran il se lit d'une barre sous le chiffre ; une
+  // barre ne s'entend pas, et le prévu a perdu son unité en passant dessous —
+  // « 12 » seul ne dirait plus rien. C'est pourtant la chose que la ligne ne
+  // peut pas taire, alors elle se dit ici en toutes lettres.
+  const missed = [
+    setDeviates(line, 'reps') || setDeviates(line, 'durationSeconds')
+      ? setEffort(line.planned?.reps ?? null, line.planned?.durationSeconds ?? null)
+      : null,
+    setDeviates(line, 'weightKg') ? weight(line.planned?.weightKg ?? 0) : null,
+  ].filter((value): value is string => value !== null);
+
+  if (missed.length > 0) {
+    parts.push(`au lieu de ${missed.join(' × ')}`);
+  }
+
   return parts.join(', ');
 }
 
@@ -3080,9 +3211,75 @@ const styles = StyleSheet.create({
   setEffort: { ...text.numeric, color: colors.text },
   setLoad: { ...text.numeric, color: colors.text },
   setFaint: { color: colors.textSecondary },
-  // Le prévu, à côté du saisi. Atténué et plus petit : il est le repère, pas la
-  // valeur — celle qui compte est ce qui a été fait.
-  setPlanned: { ...text.caption, color: colors.textSecondary },
+  // L'unité, dans le `Text` imbriqué du nombre : ni couleur ni graisse propres,
+  // elle hérite de l'encre de la ligne — c'est la même valeur, pas une mention.
+  //
+  // **Sans `lineHeight`** : sur Android il ne s'applique pas au fragment mais à
+  // la ligne qui le contient, et une hauteur calculée pour du 13 rognerait le
+  // nombre en 16 juste à côté. Le rôle en pose un, l'imbrication le retire.
+  setUnit: { ...text.numericMinor, lineHeight: undefined },
+  // La valeur remplacée, **barrée sous celle qui la remplace** et sans son
+  // unité : « kg » est déjà écrit au-dessus, à la même place, et une colonne de
+  // deux nombres se compare sans qu'on les nomme deux fois. La barre porte à
+  // elle seule le « c'était » — pas de mot, pas de couleur, et rien qui puisse
+  // se confondre avec la valeur en cours.
+  //
+  // En mono comme le nombre qu'elle double, pas en `caption` : c'est un chiffre
+  // sous un chiffre, il s'aligne au caractère près.
+  setPlanned: {
+    ...text.numericMinor,
+    color: colors.textSecondary,
+    textDecorationLine: 'line-through',
+  },
+  // Les valeurs de la ligne : deux colonnes (le saisi, la valeur qu'il remplace
+  // barrée dessous), côte à côte tant qu'elles tiennent.
+  //
+  // **Aucun `flexShrink` nulle part ici, et c'est la règle qui tient tout.** En
+  // React Native le `minWidth` par défaut vaut 0 — le web applique `min-width:
+  // auto`, soit la largeur minimale du contenu, React Native non. Une boîte qui
+  // se serre peut donc passer sous la largeur de son texte, et Android coupe
+  // alors le mot où il peut (« rep / s »). Tant qu'une boîte se serre, aucune
+  // largeur d'écran n'est sûre. Ici rien ne se serre : la seule élasticité est
+  // `flexGrow`, qui n'ajoute que du vide, et `flexWrap`, qui déplace des
+  // colonnes entières mesurées à leur vraie largeur.
+  //
+  // L'empilement fait le reste : une ligne corrigée ne demande plus que « 10
+  // reps » et « 30 kg » sur sa première ligne — ce que le prévu écrivait à côté
+  // est passé dessous, sans unité. La largeur d'une ligne corrigée est devenue
+  // celle d'une ligne ordinaire.
+  setPairs: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    // `flex-start` et non `baseline` : les deux paires commencent par un `Text`
+    // du même rôle, leurs lignes de base coïncident donc déjà, et une ligne de
+    // base demandée à une boîte qui se replie se lit de son premier enfant —
+    // une subtilité de plus pour un résultat identique.
+    alignItems: 'flex-start',
+    columnGap: space[4],
+    rowGap: space[1],
+  },
+  // Une colonne : la valeur, et sous elle celle qu'elle remplace. `flexGrow` et
+  // non un `spacer` : sur la ligne où les deux colonnes tiennent, le vide se
+  // partage entre elles et les pousse aux deux bords ; sur une ligne où l'une
+  // est seule, elle prend toute la largeur et son contenu s'aligne du bon côté.
+  // Un `spacer` en `flex: 1` aurait tenu le premier cas et pas le second.
+  //
+  // `alignItems` place la valeur barrée **sous** le chiffre qu'elle double, du
+  // côté où ce chiffre est écrit : à gauche pour l'effort, à droite pour la
+  // charge. Sans ça la barre pendrait au milieu de rien.
+  setPair: {
+    flexGrow: 1,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    rowGap: space[1],
+  },
+  setPairEnd: { alignItems: 'flex-end' },
+  // Le seul `flexShrink` de la ligne, et il ne contredit pas la règle : le
+  // résumé d'un cardio est une **phrase**, pleine d'espaces où passer à la
+  // ligne. Une valeur n'en a aucun — c'est toute la différence, et c'est
+  // pourquoi elle ne se serre pas et qu'une phrase le peut.
+  setSummary: { flexShrink: 1 },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
