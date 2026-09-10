@@ -11,6 +11,46 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.2.0] - 2026-09-10
+
+### Ajouté
+
+- **Thème sombre**, avec un réglage à trois états dans « Affichage » : Système,
+  Clair, Sombre. Par défaut l'app suit le téléphone ; le forcer ne change que cet
+  appareil, les séances et le compte n'en savent rien. Les deux papiers sortent de
+  la **même** source que le clair — la feuille de tokens du serveur, qui publie
+  désormais un second jeu que le site, lui, n'active pas. Rien n'est recopié, et
+  un token de couleur qui manquerait à l'un des deux fait échouer la publication
+  plutôt que d'arriver en salle avec la mauvaise valeur. Tous les couples
+  encre/fond de l'app sont vérifiés à AA dans les deux jeux.
+- **Le record se voit sur la série qui vient de le battre** : un losange rouge en
+  fin de ligne, dans une gouttière réservée pour que rien ne bouge au moment où
+  l'on coche. La règle est celle du serveur, sans rien y ajouter — charge maximale
+  brute, aucune estimation, échauffement et exercice sauté exclus, série chiffrée
+  obligatoire, et pas de record au poids du corps. Un exercice qu'on n'a jamais
+  chargé n'a rien à battre : sa première charge est une première. Un seul losange
+  par exercice, porté par la meilleure série, et le mot s'écrit à la clôture.
+
+### Corrigé
+
+- **« Dernière fois » ne parle plus de la séance en cours.** Elle se lit avant de
+  charger la barre : elle doit dire ce qui précède, jamais ce qu'on est en train
+  de faire. Un simple verrouillage d'écran entre deux séries suffisait pourtant à
+  déclencher une synchronisation, et l'historique redescendait alors en incluant
+  les séries qu'on venait de cocher — juste au-dessus d'elles. Ce repère est
+  maintenant gelé pour la durée de la séance ; il se remet à jour dès qu'elle est
+  terminée.
+
+### Modifié
+
+- **Moins de batterie, écran allumé.** Le minuteur de repos re-dessinait l'écran
+  de séance entier une fois par seconde, soit la moitié d'une séance d'une heure ;
+  il ne redessine plus que sa propre barre. Les onglets restaient vivants sous la
+  séance et recalculaient à chaque série cochée : ils sont maintenant suspendus
+  tant qu'elle est ouverte. Enfin, une rafale de « + 15 s » ne replanifie plus
+  quatre alarmes système, et la permission de notifier n'est plus relue à chaque
+  repos. Rien ne change à l'usage.
+
 ## [1.1.1] - 2026-08-26
 
 ### Ajouté
