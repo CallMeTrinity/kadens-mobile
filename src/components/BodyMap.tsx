@@ -102,9 +102,9 @@ const SIDES: readonly BodySide[] = ['front', 'back'];
 
 /** Le remplissage d'un muscle, par palier. Du plus clair au plus sombre. */
 const FILLS: Record<BodyLevel, string> = {
-  1: colors.bodymapLight,
-  2: colors.bodymapMedium,
-  3: colors.bodymapDark,
+  1: colors.bodymap1,
+  2: colors.bodymap2,
+  3: colors.bodymap3,
 };
 
 /** Le remplissage d'un muscle. Sans palier, il est au repos : gris de fond. */
