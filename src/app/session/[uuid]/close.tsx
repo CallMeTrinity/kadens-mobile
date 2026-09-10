@@ -24,10 +24,12 @@ import {
   isClosed,
   isRunning,
   longDate,
+  sessionRecords,
   targetAreaLabel,
   useElapsedSeconds,
   useExerciseAreas,
   usePreferences,
+  useSessionHistory,
   useSessionProgram,
   useWorkout,
   useWorkoutPendingSync,
@@ -117,6 +119,12 @@ export default function SessionCloseScreen() {
     [summary],
   );
 
+  // Les records de la séance, lus contre la même référence qu'en séance
+  // (`exercise_history`, gelé pour la durée de la séance par `replaceHistory`).
+  // C'est ici que le losange vu ligne après ligne reçoit son nom.
+  const history = useSessionHistory(program);
+  const records = useMemo(() => sessionRecords(program, history), [program, history]);
+
   // La carte musculaire (`areas.ts`) : les zones viennent de la bibliothèque
   // locale, que le prescrit ne fait que référencer. Le réglage de silhouette est
   // local, il n'appartient pas au compte — voir `preference.silhouette`.
@@ -194,6 +202,8 @@ export default function SessionCloseScreen() {
         </View>
 
         <Metrics summary={summary} startedAt={workout.startedAt} endedAt={workout.endedAt} />
+
+        <Records count={records.size} />
 
         <Muscles load={load} silhouette={silhouette} />
 
@@ -322,6 +332,33 @@ function Metrics({
           summary.skipped > 0 ? `${summary.skipped} sauté${summary.skipped > 1 ? 's' : ''}` : null
         }
       />
+    </View>
+  );
+}
+
+/**
+ * Le record, dit en toutes lettres — une fois.
+ *
+ * En séance il ne se peint qu'en losange, faute de place sur une ligne qui porte
+ * déjà quatre valeurs. Un symbole muet ne s'apprend nulle part : c'est ici, à
+ * l'endroit où l'on relit ce qu'on a fait, qu'il reçoit son nom. Le même losange,
+ * suivi du mot.
+ *
+ * Rien du tout quand il n'y en a pas. Un « 0 record » serait un cinquième chiffre
+ * dans une grille qui en a quatre, et il dirait un échec là où il n'y a qu'une
+ * séance ordinaire.
+ */
+function Records({ count }: { count: number }) {
+  if (count === 0) {
+    return null;
+  }
+
+  return (
+    <View accessibilityRole="text" style={styles.records}>
+      <View style={styles.recordMark} />
+      <Text style={styles.caption}>
+        Record battu sur {count} exercice{count > 1 ? 's' : ''}
+      </Text>
     </View>
   );
 }
@@ -576,6 +613,15 @@ const styles = StyleSheet.create({
   // Deux colonnes : quatre chiffres en ligne seraient illisibles à cette taille,
   // et la grille tient sans média-requête — l'app n'a qu'une largeur.
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: layout.hairline },
+  records: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  // Le losange de la ligne de série, à l'identique — c'est ce qui fait que la
+  // phrase nomme le symbole, et pas un autre.
+  recordMark: {
+    width: 8,
+    height: 8,
+    backgroundColor: colors.primary,
+    transform: [{ rotate: '45deg' }],
+  },
   metric: {
     flexGrow: 1,
     flexBasis: '45%',

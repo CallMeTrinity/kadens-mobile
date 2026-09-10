@@ -135,6 +135,11 @@ const SHAPES: { color: ColorToken; on: ColorToken; where: string }[] = [
   { color: 'statusPlanned', on: 'surfaceRaised', where: 'pastille de statut' },
   { color: 'statusMissed', on: 'surfaceRaised', where: "filet d'un champ en erreur" },
   { color: 'text', on: 'surfaceRaised', where: 'filet de la barre basse' },
+  // Le losange du record. Il ne se pose que sur une série **faite**, donc sur le
+  // fond appuyé — mais la ligne se peint claire tant qu'on ne l'a pas cochée, et
+  // une marque qui n'y tiendrait pas serait un piège au premier rendu.
+  { color: 'primary', on: 'fill', where: 'losange du record, sur une série faite' },
+  { color: 'primary', on: 'surfaceRaised', where: 'losange du record, ligne claire' },
 ];
 
 describe('les contrastes de texte', () => {

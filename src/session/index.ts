@@ -225,6 +225,8 @@ export {
 } from './rest';
 export type { RestState } from './rest';
 
+export { beatsBest, sessionRecords } from './records';
+
 export { buildSessionSummary, elapsedSeconds, exerciseOutcome, isMeasured } from './summary';
 export type {
   DeviationAxis,

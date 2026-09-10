@@ -60,6 +60,7 @@ import {
   replaceExercise,
   resetExecutionOrder,
   REST_STEP,
+  sessionRecords,
   setCardioDone,
   setDeviates,
   setExerciseState,
@@ -250,6 +251,10 @@ export default function SessionScreen() {
     [base, drafts, overrides],
   );
   const history = useSessionHistory(program);
+  // La série qui bat le record de son exercice, s'il y en a une. Calculé une
+  // fois pour tout le déroulé, comme l'historique dont il dérive — et mémoïsé
+  // comme lui : il se refait à chaque écriture, pas à chaque rendu.
+  const records = useMemo(() => sessionRecords(program, history), [program, history]);
   // Le repère des dates d'historique : le vrai jour, pas celui de la séance
   // affichée. Relire une séance d'il y a trois jours ne doit pas faire dire
   // « aujourd'hui » à une performance qui date d'il y a trois jours.
@@ -653,6 +658,7 @@ export default function SessionScreen() {
                   block={block}
                   editable={running}
                   history={history}
+                  records={records}
                   today={today}
                   targetKey={target?.exercise.key ?? null}
                   targetRef={targetRef}
@@ -692,6 +698,7 @@ export default function SessionScreen() {
                     group={group}
                     editable={running}
                     history={history}
+                    records={records}
                     today={today}
                     targetKey={target?.exercise.key ?? null}
                     targetRef={targetRef}
@@ -1203,6 +1210,12 @@ type SectionHandlers = {
    * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
    */
   history: Map<number, ExerciseHistoryRow>;
+  /**
+   * Les records battus dans cette séance : clé d'exercice → clé de la série qui
+   * les porte (`sessionRecords`). Descendue avec l'historique et pour la même
+   * raison — c'est une seule lecture pour tout le déroulé.
+   */
+  records: Map<string, string>;
   /** Le jour réel, repère des dates d'historique. */
   today: string;
   /** L'exercice que la barre basse propose. Il se marque, et il se garde en vue. */
@@ -1432,6 +1445,7 @@ function ExerciseSection({
   exercise,
   editable,
   history,
+  records,
   today,
   targetKey,
   targetRef,
@@ -1446,6 +1460,9 @@ function ExerciseSection({
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
+  // Au plus une par exercice : `sessionRecords` retient la meilleure série, pas
+  // toutes celles qui dépassent l'ancienne marque.
+  const recordKey = records.get(exercise.key) ?? null;
   // Une série annoncée attend d'être faite : le bouton devient sa reprise, pas un
   // second ajout. C'est aussi ce qui limite l'annonce à une ligne à la fois — on
   // n'annonce pas trois séries d'avance, on en fait une.
@@ -1518,6 +1535,7 @@ function ExerciseSection({
             key={line.key}
             line={line}
             editable={editable && !exercise.skipped}
+            record={line.key === recordKey}
             onToggle={() => onCheck(exercise, line)}
             onAdjust={() => onAdjustSet(lineKey(exercise, line))}
           />
@@ -2143,11 +2161,14 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
 function SetRow({
   line,
   editable,
+  record,
   onToggle,
   onAdjust,
 }: {
   line: SessionSetLine;
   editable: boolean;
+  /** Cette série bat le record de son exercice (`sessionRecords`). */
+  record: boolean;
   onToggle: () => void;
   onAdjust: () => void;
 }) {
@@ -2203,6 +2224,13 @@ function SetRow({
           ) : null}
         </View>
       </View>
+
+      {/* Le record, dans une gouttière **toujours réservée** : une marque qui
+          pousserait la ligne au moment où on la coche ferait bouger la cible
+          juste sous le pouce. Une forme dessinée et non un glyphe, pour la
+          raison du « ✓ » plus haut — un « ◆ » dépendrait de ce que Barlow
+          contient. Rouge parce que c'est de l'intensité, l'un de ses trois sens. */}
+      <View style={styles.setRecordSlot}>{record ? <View style={styles.setRecord} /> : null}</View>
     </>
   );
 
@@ -2215,7 +2243,7 @@ function SetRow({
     <View style={[styles.setRow, checked && styles.setRowChecked]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${setRowLabel(line, effort, load)}. ${
+        accessibilityLabel={`${setRowLabel(line, effort, load, record)}. ${
           checked ? 'Ajuster' : 'Corriger avant de la faire'
         }`}
         accessibilityHint={
@@ -2233,7 +2261,9 @@ function SetRow({
       <Pressable
         accessibilityRole="checkbox"
         accessibilityState={{ checked, disabled: !actionable }}
-        accessibilityLabel={checked ? 'Annuler cette série' : setRowLabel(line, effort, load)}
+        accessibilityLabel={
+          checked ? 'Annuler cette série' : setRowLabel(line, effort, load, record)
+        }
         accessibilityHint={
           actionable
             ? checked
@@ -2992,7 +3022,12 @@ function plannedSummary(line: SessionSetLine, exercise: SessionExercise): string
 }
 
 /** Ce que TalkBack annonce sur une ligne de série. Le rang d'abord : c'est le repère. */
-function setRowLabel(line: SessionSetLine, effort: string | null, load: number | null): string {
+function setRowLabel(
+  line: SessionSetLine,
+  effort: string | null,
+  load: number | null,
+  record = false,
+): string {
   const parts = [`Série ${line.index}`];
   const type = setTypeLabel(line.type);
 
@@ -3019,6 +3054,13 @@ function setRowLabel(line: SessionSetLine, effort: string | null, load: number |
 
   if (missed.length > 0) {
     parts.push(`au lieu de ${missed.join(' × ')}`);
+  }
+
+  // Le mot que le losange ne dit pas. À l'écran il se lit dans sa gouttière ;
+  // une forme ne s'entend pas, et c'est la seule chose de la ligne qui soit une
+  // nouvelle.
+  if (record) {
+    parts.push('record');
   }
 
   return parts.join(', ');
@@ -3293,6 +3335,21 @@ const styles = StyleSheet.create({
   setSummary: { flexShrink: 1 },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
+  // La gouttière du record, en fin de valeurs. **Toujours là**, vide la plupart
+  // du temps : elle se réserve une fois pour toutes plutôt que d'apparaître au
+  // moment où l'on coche, ce qui décalerait la ligne sous le pouce. Étroite,
+  // parce qu'elle prend sa place aux valeurs, qui n'en ont pas de trop
+  // (§ « rien ne déborde »).
+  setRecordSlot: { width: 12, alignItems: 'center' },
+  // Un losange dessiné, pas un caractère : un « ◆ » dépendrait de ce que Barlow
+  // contient, comme le « ✓ » de la case. Un carré tourné d'un huitième de tour,
+  // que toutes les polices du monde rendent pareil.
+  setRecord: {
+    width: 8,
+    height: 8,
+    backgroundColor: colors.primary,
+    transform: [{ rotate: '45deg' }],
+  },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
   setBadge: { borderWidth: layout.hairline, paddingHorizontal: space[1] },
   setBadgeText: { ...text.eyebrow },
