@@ -7,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { describeError, signInWithPairingCode, signInWithPairingQr } from '@/api';
 import { Button, Card, Field, Header, useKeyboardOverlap } from '@/components';
 import { patchSyncState } from '@/db';
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 /** Longueur du code de secours affiché sous le QR (`docs/api-mobile.md`). */
 const CODE_LENGTH = 8;
@@ -23,6 +23,7 @@ const CODE_LENGTH = 8;
  * serveur ne distingue pas leur origine.
  */
 export default function PairingScreen() {
+  const styles = useStyles(sheets);
   const router = useRouter();
   const [code, setCode] = useState('');
   const [pending, setPending] = useState(false);
@@ -184,19 +185,19 @@ export default function PairingScreen() {
   }
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
-  hint: { ...text.body, color: colors.textSecondary },
+  hint: { ...text.body, color: c.textSecondary },
   // Le rouge dit l'échec — un de ses trois emplois (règle 2 du design system).
-  error: { ...text.body, color: colors.primaryOnTint },
+  error: { ...text.body, color: c.primaryOnTint },
   cameraFrame: {
     aspectRatio: 1,
     width: '100%',
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
     overflow: 'hidden',
-    backgroundColor: colors.surfaceInk,
+    backgroundColor: c.surfaceInk,
   },
-});
+}));

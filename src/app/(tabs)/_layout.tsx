@@ -31,14 +31,15 @@
 
 import { TabList, Tabs, TabSlot, TabTrigger } from 'expo-router/ui';
 import type { ComponentProps } from 'react';
-import { Linking, Pressable, StyleSheet, Text } from 'react-native';
+import { Linking, Pressable, Text } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, OfflineBanner, UpdateBanner, type IconName } from '@/components';
 import { useAppVersion, useOfflineNotice } from '@/sync';
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, useColors } from '@/theme';
 
 export default function TabsLayout() {
+  const styles = useStyles(sheets);
   const insets = useSafeAreaInsets();
   const notice = useOfflineNotice();
   const version = useAppVersion();
@@ -122,6 +123,8 @@ function Tab({
   label: string;
   isFocused?: boolean;
 }) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const tint = isFocused ? colors.text : colors.textSecondary;
 
   return (
@@ -147,14 +150,14 @@ function Tab({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   bar: {
     flexDirection: 'row',
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     // Un filet d'**encre**, pas de bordure : c'est ce qui pose la barre comme un
     // bord de page dans l'identité Presse, exactement comme `.kd-nav` sous 560px.
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.text,
+    borderTopColor: c.text,
   },
   tab: {
     flex: 1,
@@ -169,7 +172,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 3,
     borderTopColor: 'transparent',
   },
-  tabActive: { borderTopColor: colors.text },
-  tabPressed: { backgroundColor: colors.fill },
+  tabActive: { borderTopColor: c.text },
+  tabPressed: { backgroundColor: c.fill },
   label: text.tabLabel,
-});
+}));

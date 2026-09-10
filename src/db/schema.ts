@@ -22,6 +22,7 @@ import type {
   ScheduledStatus,
   SetType,
   TargetArea,
+  ThemePreference,
 } from './types';
 
 /**
@@ -436,6 +437,18 @@ export const preference = sqliteTable(
      * de calcul : deux questions différentes, deux endroits différents.
      */
     silhouette: text('silhouette').$type<BodySilhouette>().notNull().default('male'),
+    /**
+     * Clair, sombre, ou ce que dit le téléphone.
+     *
+     * Local comme `silhouette`, et pour la même raison : c'est un réglage
+     * d'**affichage**, pas une donnée de compte. Le contrat mobile n'a nulle
+     * part où le mettre, le serveur n'en a aucun usage, et le site n'active
+     * jamais son propre jeu sombre — il l'exporte pour ici.
+     *
+     * `system` par défaut : le téléphone porte déjà la réponse, et forcer est
+     * l'exception — un vestiaire au néon, une préférence personnelle.
+     */
+    theme: text('theme').$type<ThemePreference>().notNull().default('system'),
   },
   (t) => [check('preference_singleton', sql`${t.id} = 1`)],
 );

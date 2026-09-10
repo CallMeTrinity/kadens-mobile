@@ -12,7 +12,6 @@
 
 import { useState, type Ref } from 'react';
 import {
-  StyleSheet,
   Text,
   TextInput,
   View,
@@ -21,7 +20,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, useColors } from '@/theme';
 
 export type FieldProps = Omit<TextInputProps, 'style'> & {
   /** Libellé du champ. Écrit par l'app : mono capitales (règle 4). */
@@ -35,6 +34,8 @@ export type FieldProps = Omit<TextInputProps, 'style'> & {
 };
 
 export function Field({ label, hint, error, ref, style, onFocus, onBlur, ...rest }: FieldProps) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const [focused, setFocused] = useState(false);
   const help = error ?? hint;
 
@@ -72,15 +73,15 @@ export function Field({ label, hint, error, ref, style, onFocus, onBlur, ...rest
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   field: { gap: space[3] },
-  label: { ...text.eyebrow, color: colors.textSecondary },
+  label: { ...text.eyebrow, color: c.textSecondary },
   input: {
     ...text.body,
-    color: colors.textStrong,
-    backgroundColor: colors.surfaceRaised,
+    color: c.textStrong,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.borderStrong,
+    borderColor: c.borderStrong,
     paddingVertical: space[4],
     paddingHorizontal: space[5],
     // Un champ se vise au doigt comme un bouton : même plancher.
@@ -89,13 +90,13 @@ const styles = StyleSheet.create({
   // `textAlignVertical` : sur Android, un champ multiligne centre son texte
   // verticalement par défaut — la première ligne flotte au milieu de la boîte.
   area: { minHeight: 96, textAlignVertical: 'top' },
-  inputFocused: { borderColor: colors.text },
-  inputError: { borderColor: colors.statusMissed },
+  inputFocused: { borderColor: c.text },
+  inputError: { borderColor: c.statusMissed },
   // Encre secondaire : l'aide se pose souvent sur le papier de la page, où
   // l'encre douce ne tient pas les 4,5:1 d'AA (KL-39).
-  help: { ...text.caption, color: colors.textSecondary },
+  help: { ...text.caption, color: c.textSecondary },
   // Le rouge **écrit** se dit `primaryOnTint` : l'accent plein tombe à 3,6:1 sur
   // le papier, sous AA (KL-39). Le filet du champ, lui, le garde — un objet
   // graphique se contente de 3:1.
-  helpError: { color: colors.primaryOnTint },
-});
+  helpError: { color: c.primaryOnTint },
+}));

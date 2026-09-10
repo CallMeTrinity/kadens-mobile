@@ -26,9 +26,9 @@
  * première s'attend. Les confondre ferait chercher la panne du mauvais côté.
  */
 
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 export type OfflineBannerProps = {
   /** `false` = du réseau, mais le serveur n'a pas répondu au dernier cycle. */
@@ -39,6 +39,7 @@ export type OfflineBannerProps = {
 };
 
 export function OfflineBanner({ disconnected, pending, testID }: OfflineBannerProps) {
+  const styles = useStyles(sheets);
   const label = disconnected ? 'Hors réseau' : 'Serveur injoignable';
   const detail =
     pending === 0
@@ -67,7 +68,7 @@ export function OfflineBanner({ disconnected, pending, testID }: OfflineBannerPr
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   banner: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -75,10 +76,10 @@ const styles = StyleSheet.create({
     gap: space[3],
     paddingVertical: space[3],
     paddingHorizontal: space[8],
-    backgroundColor: colors.fill,
+    backgroundColor: c.fill,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
-  label: { ...text.eyebrow, color: colors.textSecondary },
-  detail: { ...text.caption, color: colors.textSecondary, flexShrink: 1 },
-});
+  label: { ...text.eyebrow, color: c.textSecondary },
+  detail: { ...text.caption, color: c.textSecondary, flexShrink: 1 },
+}));

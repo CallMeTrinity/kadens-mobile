@@ -76,8 +76,11 @@
  *    `useSessionHistory` (KL-32) lit `exercise_history`, que le pull réécrit en
  *    entier ; rien n'est recalculé localement à partir du réalisé en cours. Deux
  *    conséquences : la lecture marche hors réseau, et « la dernière fois » ne
- *    devient jamais « à l'instant » — ce qui est en train d'être fait n'y entre
- *    qu'après avoir été poussé puis redescendu.
+ *    devient jamais « à l'instant » — le pull **gèle** cette table tant qu'une
+ *    séance court (`sync/pull.ts`), sans quoi une synchro déclenchée entre deux
+ *    séries y ferait entrer ce qu'on est justement en train de faire. C'est aussi
+ *    ce qui donne au record (`records.ts`) une référence qui ne bouge pas sous
+ *    les doigts.
  * 9. **Une séance vierge se garnit, elle ne se compose pas** (KL-34). Elle naît
  *    sans prescrit (`createFreeWorkout`) et s'emplit par le seul geste qui
  *    existe déjà, `addExercise` — le même que « ajouter un exercice hors
@@ -221,9 +224,12 @@ export {
   startRest,
   startRestAfterSet,
   stopRest,
+  useRestActive,
   useRestTimer,
 } from './rest';
 export type { RestState } from './rest';
+
+export { beatsBest, sessionRecords } from './records';
 
 export { buildSessionSummary, elapsedSeconds, exerciseOutcome, isMeasured } from './summary';
 export type {

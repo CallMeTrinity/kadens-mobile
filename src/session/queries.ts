@@ -302,17 +302,21 @@ const NO_EXERCISE = -1;
  * exactement pour être lisibles en séance sans réseau ; le réseau ne sert qu'à la
  * trajectoire complète (`GET /api/exercises/{id}/history`), qu'aucun écran de
  * l'app n'ouvre. Conséquence à connaître : ce qui s'affiche est ce que le
- * **serveur** avait confirmé au dernier pull. La séance en cours n'y est pas tant
- * qu'elle n'est pas poussée puis redescendue — et c'est ce qu'on veut, « la
- * dernière fois » n'est pas « à l'instant ». L'écran affiche la date en clair,
- * qui lève l'ambiguïté quand elle se pose.
+ * **serveur** avait confirmé au dernier pull **d'avant la séance**.
+ *
+ * La séance en cours n'y entre pas, et ce n'est pas le hasard qui l'en tient
+ * dehors : c'est une garde, côté pull. La supposition d'origine — « elle n'y est
+ * pas tant qu'elle n'est pas poussée puis redescendue » — était fausse, un
+ * verrouillage d'écran entre deux séries suffisant à déclencher un cycle complet.
+ * Le raisonnement, lui, tient toujours : « la dernière fois » n'est pas « à
+ * l'instant ». Le pourquoi et la portée du gel sont dans `replaceHistory()`.
  *
  * La liste ne peut pas partir vide : `inArray` rend mal un `IN ()`. Une séance
  * dont aucun exercice n'est rattaché à la bibliothèque interroge donc un
  * identifiant impossible plutôt que de faire monter la condition dans l'appelant.
  *
- * Écoute `exercise_history` : un pull qui arrive pendant la séance rafraîchit ce
- * qui s'affiche sans que rien n'ait à prévenir l'écran.
+ * Écoute quand même `exercise_history` : hors séance, un pull rafraîchit ce qui
+ * s'affiche sans que rien n'ait à prévenir l'écran.
  */
 export function exerciseHistoryQuery(exerciseIds: number[]) {
   return db

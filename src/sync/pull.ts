@@ -77,14 +77,15 @@ const BATCH = 100;
  */
 export function applyBootstrap(payload: BootstrapPayload): PullReport {
   return db.transaction((tx) => {
-    const guarded = protectedUuids(tx);
+    const running = runningUuids(tx);
+    const guarded = protectedUuids(tx, running);
 
     const exercises = upsertExercises(tx, payload);
     const removedExercises = removeExercises(tx, payload, guarded);
     const schedule = applySchedule(tx, payload, guarded);
     const removedSchedule = purgeSchedule(tx, payload, guarded);
 
-    replaceHistory(tx, payload);
+    replaceHistory(tx, payload, running.length > 0);
 
     // Dans la **même** transaction que les données : un état avancé sur une base
     // à moitié écrite ferait repartir la synchronisation suivante d'un `since`
@@ -133,20 +134,32 @@ export function applyBootstrap(payload: BootstrapPayload): PullReport {
  *    perdue ». Une séance ouverte dont rien n'a encore été coché n'a pas de
  *    mutation, et l'utilisateur la regarde.
  */
-function protectedUuids(tx: Transaction): Set<string> {
+function protectedUuids(tx: Transaction, running: string[]): Set<string> {
   const guarded = pendingUuids(tx);
 
-  const running = tx
-    .select({ uuid: scheduledWorkout.uuid })
-    .from(scheduledWorkout)
-    .where(sql`${scheduledWorkout.startedAt} is not null and ${scheduledWorkout.endedAt} is null`)
-    .all();
-
-  for (const row of running) {
-    guarded.add(row.uuid);
+  for (const uuid of running) {
+    guarded.add(uuid);
   }
 
   return guarded;
+}
+
+/**
+ * Les séances commencées ici et pas terminées.
+ *
+ * Le pendant, dans la transaction du pull, de `isRunning()`
+ * (`session/queries.ts`) : même prédicat, mêmes deux colonnes. Il a deux lecteurs,
+ * et ce n'est pas la même question — ce qu'un pull ne doit pas **écraser**
+ * (`protectedUuids`) et ce qu'il ne doit pas **rafraîchir** (`replaceHistory`).
+ * Lu une fois, en tête de transaction, pour que les deux répondent du même état.
+ */
+function runningUuids(tx: Transaction): string[] {
+  return tx
+    .select({ uuid: scheduledWorkout.uuid })
+    .from(scheduledWorkout)
+    .where(sql`${scheduledWorkout.startedAt} is not null and ${scheduledWorkout.endedAt} is null`)
+    .all()
+    .map((row) => row.uuid);
 }
 
 function upsertExercises(tx: Transaction, payload: BootstrapPayload): number {
@@ -437,9 +450,34 @@ function purgeSchedule(tx: Transaction, payload: BootstrapPayload, guarded: Set<
  * même tolérance appliquée à `logged_exercise` ne serait **pas** gratuite —
  * mettre `exercise_id` à null y ferait remonter un null au push suivant, et le
  * serveur perdrait sa propre référence (`document.ts`).
+ *
+ * ## Rien ne se rafraîchit pendant qu'une séance court
+ *
+ * « La dernière fois » et le record se lisent **avant** de charger la barre. Ils
+ * doivent donc parler de ce qui précède la séance en cours — jamais d'elle.
+ *
+ * Or le serveur, lui, ne filtre pas : « statut de la séance non filtré, le réalisé
+ * est un fait dès qu'il est écrit » (`docs/api-mobile.md` §6.6), et c'est juste de
+ * son côté. Le mobile ne peut pas rattraper le tir après coup : cette table porte
+ * une ligne par exercice et **aucune référence de séance**, il n'y a donc rien à
+ * défalquer. Ce n'était pas visible tant qu'on supposait qu'on ne pousse pas en
+ * séance ; un verrouillage d'écran entre deux séries suffit (`sync/triggers.ts`),
+ * le cycle pousse avant de tirer, et le bootstrap redescend un historique qui
+ * contient les séries qu'on est en train de faire.
+ *
+ * D'où la garde : tant qu'une séance est ouverte sur ce téléphone, ce cache **ne
+ * bouge pas**. Le reste du pull continue normalement — c'est le même partage que
+ * `protectedUuids`, un cran plus loin : là on protège ce que le serveur ne sait pas
+ * encore, ici on protège une lecture de ce qu'il sait déjà trop tôt.
+ *
+ * Deux conséquences assumées. Le figement dure ce que dure la séance, y compris
+ * une séance oubliée sans clôture — la table est un cache d'affichage, elle se
+ * rebâtit en entier au pull suivant. Et une séance du matin déjà faite et poussée
+ * reste bien « la dernière fois » de celle du soir : ce qui est gelé, c'est la
+ * mise à jour, pas la vérité d'hier.
  */
-function replaceHistory(tx: Transaction, payload: BootstrapPayload): void {
-  if (payload.history.length === 0) {
+function replaceHistory(tx: Transaction, payload: BootstrapPayload, workoutRunning: boolean): void {
+  if (workoutRunning || payload.history.length === 0) {
     return;
   }
 

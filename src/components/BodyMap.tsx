@@ -1,9 +1,9 @@
 import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import type { BodySilhouette, TargetArea } from '@/db';
-import { colors, space } from '@/theme';
+import { space, themed, useStyles, useColors, variants, type ColorSet } from '@/theme';
 
 import {
   BODY_PLATES,
@@ -100,16 +100,25 @@ export const AREA_TO_SLUG: Record<Exclude<TargetArea, 'full_body'>, MuscleSlug> 
 /** Les deux planches, dans l'ordre de lecture. */
 const SIDES: readonly BodySide[] = ['front', 'back'];
 
-/** Le remplissage d'un muscle, par palier. Du plus clair au plus sombre. */
-const FILLS: Record<BodyLevel, string> = {
-  1: colors.bodymapLight,
-  2: colors.bodymapMedium,
-  3: colors.bodymapDark,
-};
+/**
+ * Le remplissage d'un muscle, par palier. Du plus clair au plus sombre — et
+ * **l'échelle s'inverse de nuit** : le palier 1 y est le plus sombre, sans quoi
+ * « touchée » se lirait plus chargé que le muscle au repos.
+ *
+ * Exposée telle quelle plutôt que derrière une fonction : une légende dont les
+ * pastilles ne seraient pas exactement les teintes du dessin ne serait pas une
+ * légende, et l'écran de clôture la lit par `useStyles()` comme n'importe quelle
+ * autre paire.
+ */
+export const BODY_FILLS = variants<Record<BodyLevel, string>>((c) => ({
+  1: c.bodymap1,
+  2: c.bodymap2,
+  3: c.bodymap3,
+}));
 
 /** Le remplissage d'un muscle. Sans palier, il est au repos : gris de fond. */
-function fillOf(level: BodyLevel | undefined): string {
-  return level === undefined ? colors.fill : FILLS[level];
+function fillOf(level: BodyLevel | undefined, colors: ColorSet, fills: Record<BodyLevel, string>) {
+  return level === undefined ? colors.fill : fills[level];
 }
 
 /**
@@ -119,21 +128,12 @@ function fillOf(level: BodyLevel | undefined): string {
  * l'une ni l'autre le gris des muscles au repos : ce qui n'est pas une zone ne
  * doit pas pouvoir se lire comme une zone vide.
  */
-function inertFillOf(slug: InertSlug): string {
+function inertFillOf(slug: InertSlug, colors: ColorSet): string {
   return slug === 'hair' ? colors.textSecondary : colors.surfaceRaised;
 }
 
-/**
- * La teinte d'un palier, pour la légende qui accompagne la carte.
- *
- * Exposée plutôt que recopiée : une légende dont les pastilles ne seraient pas
- * exactement les teintes du dessin ne serait pas une légende.
- */
-export function bodyLevelColor(level: BodyLevel): string {
-  return FILLS[level];
-}
-
 export function BodyMap({ levels, silhouette, height = 240 }: BodyMapProps) {
+  const styles = useStyles(sheets);
   // Par muscle et non par zone : c'est l'index dont le dessin a besoin, et le
   // refaire pour chacune des vingt-deux formes des deux planches serait vingt-deux
   // parcours de la table pour la même réponse.
@@ -177,6 +177,8 @@ function Plate({
   levels: ReadonlyMap<MuscleSlug, BodyLevel>;
   height: number;
 }) {
+  const colors = useColors();
+  const fills = useStyles(BODY_FILLS);
   // La hauteur est imposée et la largeur suit, jamais l'inverse : les quatre
   // planches n'ont pas le même `viewBox` (le corps féminin de face est plus haut),
   // et deux silhouettes côte à côte doivent s'aligner sur les épaules.
@@ -192,7 +194,7 @@ function Plate({
           <Path
             key={`${shape.slug}-${index}`}
             d={d}
-            fill={inertFillOf(shape.slug)}
+            fill={inertFillOf(shape.slug, colors)}
             stroke={shape.slug === 'hair' ? 'none' : colors.borderStrong}
             strokeWidth={0.75}
             vectorEffect="non-scaling-stroke"
@@ -204,7 +206,7 @@ function Plate({
           <Path
             key={`${muscle.slug}-${index}`}
             d={d}
-            fill={fillOf(levels.get(muscle.slug))}
+            fill={fillOf(levels.get(muscle.slug), colors, fills)}
             stroke={colors.borderStrong}
             strokeWidth={0.75}
             // Sans ça, l'épaisseur suivrait l'échelle : le `viewBox` fait 1448
@@ -224,10 +226,10 @@ function Plate({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   row: {
     flexDirection: 'row',
     justifyContent: 'center',
     gap: space[8],
   },
-});
+}));

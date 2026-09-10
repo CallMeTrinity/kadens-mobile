@@ -18,6 +18,7 @@ import {
   prescribedSnapshot,
   scheduledWorkout,
 } from '@/db';
+import { beginWorkout, closeWorkout } from '@/session';
 import {
   bootstrapPayload,
   dayFromNow,
@@ -140,6 +141,27 @@ describe('la bibliothèque', () => {
 });
 
 describe("l'historique", () => {
+  /** Un record, dans la forme que le bootstrap descend. */
+  function best(weightKg: number) {
+    return {
+      date: dayFromNow(-7),
+      type: 'normal' as const,
+      reps: 8,
+      weightKg,
+      durationSeconds: null,
+    };
+  }
+
+  function storedBest(exerciseId: number) {
+    return (
+      db
+        .select()
+        .from(exerciseHistory)
+        .all()
+        .find((row) => row.exerciseId === exerciseId)?.best ?? null
+    );
+  }
+
   it("saute une entrée dont l'exercice n'est pas dans la base locale", () => {
     // Le cas réel : `?since` allège la bibliothèque, jamais l'historique. Sans
     // ce filtre, la clé étrangère ferait tomber la transaction entière — donc
@@ -161,6 +183,78 @@ describe("l'historique", () => {
         .all()
         .map((row) => row.exerciseId),
     ).toEqual([101]);
+  });
+
+  it("ne bouge pas tant qu'une séance court sur ce téléphone", () => {
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID)],
+      history: [{ exerciseId: 101, last: null, best: best(80) }],
+    });
+
+    beginWorkout(UUID);
+
+    // Le cas réel : on coche une série, on verrouille l'écran, le retour au
+    // premier plan déclenche un cycle complet. Le serveur ne filtre pas sur le
+    // statut de la séance (`api-mobile.md` §6.6), donc il renvoie un record qui
+    // vient de ce qu'on est en train de faire.
+    applyBootstrap(
+      bootstrapPayload({
+        schedule: [scheduledWorkoutPayload(UUID)],
+        history: [{ exerciseId: 101, last: null, best: best(85) }],
+      }),
+    );
+
+    // « La dernière fois » se lit avant de charger la barre : elle doit parler
+    // d'avant cette séance, jamais d'elle.
+    expect(storedBest(101)).toEqual(best(80));
+  });
+
+  it('gèle ce seul cache, pas le reste du pull', () => {
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID)],
+      history: [{ exerciseId: 101, last: null, best: best(80) }],
+    });
+
+    beginWorkout(UUID);
+
+    applyBootstrap(
+      bootstrapPayload({
+        exercises: [exercisePayload(101, { name: 'Rowing renommé' })],
+        schedule: [scheduledWorkoutPayload(UUID), scheduledWorkoutPayload(OTHER)],
+        history: [{ exerciseId: 101, last: null, best: best(85) }],
+      }),
+    );
+
+    expect(db.select().from(exercise).all()[0]?.name).toBe('Rowing renommé');
+    expect(
+      db
+        .select()
+        .from(scheduledWorkout)
+        .all()
+        .map((row) => row.uuid)
+        .sort(),
+    ).toEqual([UUID, OTHER].sort());
+  });
+
+  it('reprend au pull suivant une fois la séance close', () => {
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID)],
+      history: [{ exerciseId: 101, last: null, best: best(80) }],
+    });
+
+    beginWorkout(UUID);
+    closeWorkout(UUID);
+
+    applyBootstrap(
+      bootstrapPayload({
+        schedule: [scheduledWorkoutPayload(UUID)],
+        history: [{ exerciseId: 101, last: null, best: best(85) }],
+      }),
+    );
+
+    // Le gel dure ce que dure la séance : ce qui vient d'être fait est un fait
+    // dès qu'elle est terminée.
+    expect(storedBest(101)).toEqual(best(85));
   });
 });
 

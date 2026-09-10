@@ -22,9 +22,9 @@
  * cumuler.
  */
 
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, Text } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 export type FilterChipProps = {
   label: string;
@@ -41,6 +41,7 @@ export function FilterChip({
   accessibilityHint,
   testID,
 }: FilterChipProps) {
+  const styles = useStyles(sheets);
   return (
     <Pressable
       testID={testID}
@@ -62,18 +63,18 @@ export function FilterChip({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   chip: {
     justifyContent: 'center',
     // Le plancher tactile, qui est toute la raison d'être de ce composant.
     minHeight: layout.touchTarget,
     paddingHorizontal: space[5],
     borderWidth: layout.hairline,
-    borderColor: colors.borderPill,
-    backgroundColor: colors.surface,
+    borderColor: c.borderPill,
+    backgroundColor: c.surface,
   },
-  chipSelected: { borderColor: colors.text, backgroundColor: colors.surfaceInk },
-  chipPressed: { backgroundColor: colors.fill },
-  label: { ...text.eyebrow, color: colors.textSecondary },
-  labelSelected: { color: colors.onInk },
-});
+  chipSelected: { borderColor: c.text, backgroundColor: c.surfaceInk },
+  chipPressed: { backgroundColor: c.fill },
+  label: { ...text.eyebrow, color: c.textSecondary },
+  labelSelected: { color: c.onInk },
+}));

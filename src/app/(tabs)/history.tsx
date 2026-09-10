@@ -1,9 +1,9 @@
 import { router } from 'expo-router';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 
 import { Button, Card, Chip, EmptyState, Header } from '@/components';
 import { longDate, usePastWorkouts, workoutStateLabel, type DayWorkout } from '@/session';
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles } from '@/theme';
 
 /**
  * Écran « Historique » (KL-37) — la deuxième entrée de la barre basse.
@@ -34,6 +34,7 @@ import { colors, space, text } from '@/theme';
  * qu'on commence, et il refuserait de toute façon celle-ci.
  */
 export default function HistoryScreen() {
+  const styles = useStyles(sheets);
   const workouts = usePastWorkouts();
 
   return (
@@ -72,6 +73,7 @@ export default function HistoryScreen() {
  * est l'information qui distingue deux lignes, pas le plan.
  */
 function PastCard({ workout }: { workout: DayWorkout }) {
+  const styles = useStyles(sheets);
   const state = workoutStateLabel(workout);
   // La teinte se lit sur le **statut**, pas sur `state.done` : une séance que le
   // serveur donne pour faite mais qu'on vient de rouvrir ici s'annonce « En
@@ -109,15 +111,15 @@ function PastCard({ workout }: { workout: DayWorkout }) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   // Pas de dégagement pour la barre basse : `TabSlot` rend l'écran **au-dessus**
   // d'elle, elle ne le recouvre pas. C'est la différence avec le web, où la
   // barre est `fixed` et où `.kd-page` doit lui réserver sa hauteur.
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
   marks: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[3] },
-  name: { ...text.name, color: colors.text },
-  caption: { ...text.caption, color: colors.textSecondary },
-  reach: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
-});
+  name: { ...text.name, color: c.text },
+  caption: { ...text.caption, color: c.textSecondary },
+  reach: { ...text.caption, color: c.textSecondary, textAlign: 'center' },
+}));

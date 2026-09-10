@@ -1,9 +1,9 @@
 import Constants from 'expo-constants';
 import { useEffect, useState } from 'react';
-import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, ScrollView, Text, View } from 'react-native';
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
-import { Button, Card, Chip, Header, NumberStepper } from '@/components';
+import { Button, Card, Chip, FilterChip, Header, NumberStepper } from '@/components';
 import {
   clearDatabase,
   localDate,
@@ -11,6 +11,7 @@ import {
   seedDemo,
   type BodySilhouette,
   type ExerciseLanguage,
+  type ThemePreference,
 } from '@/db';
 import {
   dayOffset,
@@ -33,7 +34,7 @@ import {
   type QueuedMutation,
   type SyncPhase,
 } from '@/sync';
-import { colors, space, text } from '@/theme';
+import { setThemePreference, space, text, themed, useStyles } from '@/theme';
 
 /**
  * Écran « Réglages » (KL-35).
@@ -70,6 +71,7 @@ import { colors, space, text } from '@/theme';
  * dirait plus rien.
  */
 export default function SettingsScreen() {
+  const styles = useStyles(sheets);
   return (
     <View style={styles.screen}>
       {/*
@@ -84,7 +86,7 @@ export default function SettingsScreen() {
         <AccountCard />
         <SyncCard />
         <RestCard />
-        <SummaryCard />
+        <DisplayCard />
         <AppCard />
       </ScrollView>
     </View>
@@ -103,6 +105,7 @@ export default function SettingsScreen() {
  * `/profile/settings` le nomme, pour savoir lequel révoquer.
  */
 function AccountCard() {
+  const styles = useStyles(sheets);
   const session = useSession();
   const queue = useMutationQueue();
   const language = useExerciseLanguage();
@@ -197,6 +200,7 @@ function useCompletedIdentity(missing: boolean): void {
  * phase — et la dernière erreur.
  */
 function SyncCard() {
+  const styles = useStyles(sheets);
   const status = useSyncStatus();
   const state = useSyncState();
   const queue = useMutationQueue();
@@ -340,6 +344,7 @@ function SyncCard() {
  * avant abandon.
  */
 function QueueRow({ mutation, today }: { mutation: QueuedMutation; today: string }) {
+  const styles = useStyles(sheets);
   const name =
     mutation.title ?? (mutation.type === 'schedule.delete' ? 'Séance supprimée' : 'Séance libre');
   const day = mutation.date === null ? null : whenDay(mutation.date, today);
@@ -415,6 +420,7 @@ async function resync(): Promise<string> {
  * refusée. Le découvrir barre en main serait le découvrir trop tard.
  */
 function RestCard() {
+  const styles = useStyles(sheets);
   const preferences = usePreferences();
 
   return (
@@ -466,27 +472,65 @@ function RestCard() {
   );
 }
 
-/* --- Clôture --------------------------------------------------------------- */
+/* --- Affichage ------------------------------------------------------------- */
+
+/** Les trois états du thème, dans l'ordre où on les essaie. */
+const THEMES: { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'Système' },
+  { value: 'light', label: 'Clair' },
+  { value: 'dark', label: 'Sombre' },
+];
 
 /**
- * La silhouette de la carte musculaire de clôture.
+ * Ce qui ne change que le rendu, sur ce téléphone : le papier, puis la
+ * silhouette.
  *
- * **Un réglage d'affichage, pas une donnée de compte.** Le serveur porte bien un
- * sexe sur la fiche athlète, mais il sert au score de force normalisé, il n'est
- * pas dans le contrat mobile, et il accepte une valeur qui ne désigne aucun
- * dessin. Ce bouton-ci ne change qu'un tracé, sur ce téléphone.
+ * **Deux réglages d'affichage, pas des données de compte.** Le serveur porte
+ * bien un sexe sur la fiche athlète, mais il sert au score de force normalisé,
+ * il n'est pas dans le contrat mobile, et il accepte une valeur qui ne désigne
+ * aucun dessin. Le thème, lui, n'a nulle part où aller côté serveur — le site
+ * n'active jamais son propre jeu sombre, il l'exporte pour ici. L'en-tête de
+ * l'écran dit déjà « Cet appareil », les deux y sont chez eux.
  *
- * Une bascule à deux états plutôt qu'un choix ouvert : il n'y a que deux jeux de
- * tracés, et un sélecteur pour deux valeurs coûte un écran de plus pour la même
- * réponse.
+ * Le thème d'abord : il change toute l'app, la silhouette un seul écran.
+ *
+ * **Une rangée de pilules pour le thème, une bascule pour la silhouette**, et ce
+ * n'est pas une inconséquence : à deux valeurs, un bouton qui porte l'état
+ * courant se lit d'un mot ; à trois, il faudrait deviner l'ordre du cycle avant
+ * de savoir où l'on va.
  */
-function SummaryCard() {
+function DisplayCard() {
+  const styles = useStyles(sheets);
   const preferences = usePreferences();
   const other: BodySilhouette = preferences.silhouette === 'male' ? 'female' : 'male';
 
   return (
-    <Card title="Résumé de séance">
+    <Card title="Affichage">
       <View style={styles.stack}>
+        <Text style={styles.label}>Thème</Text>
+        <View style={styles.themes}>
+          {THEMES.map((option) => (
+            <FilterChip
+              key={option.value}
+              label={option.label}
+              selected={preferences.theme === option.value}
+              accessibilityHint={
+                option.value === 'system'
+                  ? 'Suivre le réglage clair ou sombre du téléphone'
+                  : `Forcer le thème ${option.label.toLowerCase()} sur cet appareil`
+              }
+              // `setThemePreference` et non `patchPreferences` : le magasin du
+              // thème doit être prévenu, sinon l'app garde son papier jusqu'au
+              // prochain lancement.
+              onPress={() => setThemePreference(option.value)}
+            />
+          ))}
+        </View>
+        <Text style={styles.caption}>
+          Par défaut, l’app suit le téléphone. Le forcer ne change que cet appareil : les séances et
+          le compte n’en savent rien.
+        </Text>
+
         <Button
           label={`Silhouette : ${silhouetteLabel(preferences.silhouette)}`}
           variant="secondary"
@@ -525,6 +569,7 @@ function silhouetteLabel(silhouette: BodySilhouette): string {
  * serveur), le bouton n'a donc rien à faire dans un APK distribué.
  */
 function AppCard() {
+  const styles = useStyles(sheets);
   const config = Constants.expoConfig;
   // Le verdict du contrôle de lancement (KL-43). Il est **lu**, jamais relancé :
   // le magasin est celui du layout racine, se monter ici ne redemande rien au
@@ -595,6 +640,7 @@ function buildLabel(): string {
 
 /** Une ligne « libellé / valeur », le motif de tout l'écran. */
 function Row({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  const styles = useStyles(sheets);
   return (
     <View accessible accessibilityLabel={`${label} : ${value}`} style={styles.row}>
       <Text style={styles.label}>{label}</Text>
@@ -649,9 +695,10 @@ function whenDay(date: string, today: string): string {
   }
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { padding: space[8], gap: space[8] },
+  themes: { flexDirection: 'row', flexWrap: 'wrap', gap: space[2] },
   stack: { gap: space[6] },
   spacer: { flex: 1 },
 
@@ -662,16 +709,16 @@ const styles = StyleSheet.create({
     gap: space[4],
   },
   rowValue: { flexShrink: 1, textAlign: 'right' },
-  label: { ...text.eyebrow, color: colors.textSecondary },
-  value: { ...text.numeric, color: colors.text },
-  name: { ...text.name, color: colors.text, flexShrink: 1 },
-  body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textSecondary },
+  label: { ...text.eyebrow, color: c.textSecondary },
+  value: { ...text.numeric, color: c.text },
+  name: { ...text.name, color: c.text, flexShrink: 1 },
+  body: { ...text.body, color: c.textSecondary },
+  caption: { ...text.caption, color: c.textSecondary },
   // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
   // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
   // deux ne veulent pas dire la même chose — l'un est l'accent d'une action,
   // l'autre l'échec. Ils partagent leur valeur aujourd'hui, pas leur sens.
-  fault: { ...text.body, color: colors.primaryOnTint },
+  fault: { ...text.body, color: c.primaryOnTint },
 
   queue: { gap: space[5] },
   // Un filet gauche, comme les écarts de la clôture : la ligne se détache sans
@@ -679,8 +726,8 @@ const styles = StyleSheet.create({
   queueRow: {
     gap: space[1],
     borderLeftWidth: 2,
-    borderLeftColor: colors.borderStrong,
+    borderLeftColor: c.borderStrong,
     paddingLeft: space[5],
   },
   queueHead: { flexDirection: 'row', alignItems: 'baseline', gap: space[4] },
-});
+}));

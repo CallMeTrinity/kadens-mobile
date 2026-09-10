@@ -316,8 +316,23 @@ Design identity comes from the server (`kadens/public`), not this repo. `src/the
 Native can't express (`color-mix()`, a font stack, a non-zero mixed radius) fails the sync command rather than
 being approximated. The type scale is _not_ part of the tokens (the web side expresses it with `clamp()`); it
 lives hand-written in `src/theme/typography.ts`, along with the casing rule: structural labels in Barlow Condensed
-caps, user-entered content in normal-case Barlow. There is no dark theme — the visual identity is paper-and-ink,
-so there's exactly one set of values and no `useColorScheme` anywhere in the app.
+caps, user-entered content in normal-case Barlow.
+
+**Two palettes, one source.** Paper and night both come out of the server's `tokens.css` — the dark set lives
+under a `[data-theme="dark"]` block the website never activates, and `app:tokens:export` refuses to publish a
+colour token that only one of the two declares. The generated file therefore exports `light`, `dark` and
+`palettes`, and **no component imports any of them**: it declares its styles with `themed()` and reads them with
+`useStyles()`, which makes them right in both sets without thinking about it. Tables of skins that aren't styles
+(`SKINS`, `TONES`, the set-type badges) use `variants()`, the same thing without `StyleSheet.create`. Colours read
+in JSX come from `useColors()`.
+
+The whole API is built around one constraint: **twice at module load, zero per render**. A `useMemo` rebuilding a
+sheet per render would have put an allocation back on the render path of a 3 400-line screen we had just cleared
+of a per-second re-render. The reasoning, the provider, and why the preference is read synchronously (no flash at
+mount) are in `src/theme/theme.tsx` — the barrel points there rather than repeating it.
+
+The preference is a three-state setting (system / light / dark) in Settings, stored locally in
+`preference.theme`. It never reaches the server, exactly like `silhouette`.
 
 The app's **visuals** (`assets/images/`) are generated the same way, by `tools/build-pwa-icons.php` in the
 server repo, and pulled in by `npm run sync:icons`. Their source is `assets/icons/kadens-red-black.png`, the

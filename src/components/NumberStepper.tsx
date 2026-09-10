@@ -49,9 +49,9 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, Text, TextInput, View } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, useColors } from '@/theme';
 
 export type NumberStepperProps = {
   /** Libellé du compteur. Écrit par l'app : mono capitales (règle 4). */
@@ -103,6 +103,8 @@ export function NumberStepper({
   disabled = false,
   testID,
 }: NumberStepperProps) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   // Brouillon de saisie : `null` tant que le champ n'est pas édité, auquel cas
   // c'est `value` qui s'affiche.
   const [draft, setDraft] = useState<string | null>(null);
@@ -271,10 +273,10 @@ export function NumberStepper({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   stepper: { gap: space[3] },
   row: { flexDirection: 'row', alignItems: 'stretch', gap: space[3] },
-  label: { ...text.eyebrow, color: colors.textSecondary },
+  label: { ...text.eyebrow, color: c.textSecondary },
   stepButton: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -282,14 +284,14 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     paddingHorizontal: space[8],
     borderWidth: layout.hairline,
-    borderColor: colors.text,
-    backgroundColor: colors.surfaceRaised,
+    borderColor: c.text,
+    backgroundColor: c.surfaceRaised,
   },
   // Même inversion que le bouton secondaire : le geste se voit sur l'aplat,
   // pas sur une ombre.
-  stepButtonPressed: { backgroundColor: colors.text },
-  stepGlyph: { ...text.blockRole, color: colors.text },
-  stepGlyphPressed: { color: colors.surfaceRaised },
+  stepButtonPressed: { backgroundColor: c.text },
+  stepGlyph: { ...text.blockRole, color: c.text },
+  stepGlyphPressed: { color: c.surfaceRaised },
   blocked: { opacity: 0.4 },
   valueBox: {
     flex: 1,
@@ -300,17 +302,17 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     paddingHorizontal: space[4],
     borderWidth: layout.hairline,
-    borderColor: colors.borderStrong,
-    backgroundColor: colors.surfaceRaised,
+    borderColor: c.borderStrong,
+    backgroundColor: c.surfaceRaised,
   },
   // `padding: 0` : le rembourrage par défaut d'un TextInput Android décentre la
   // valeur dans sa boîte.
   value: {
     ...text.inputValue,
-    color: colors.textStrong,
+    color: c.textStrong,
     flexShrink: 1,
     textAlign: 'center',
     padding: 0,
   },
-  unit: { ...text.eyebrow, color: colors.textSoft },
-});
+  unit: { ...text.eyebrow, color: c.textSoft },
+}));

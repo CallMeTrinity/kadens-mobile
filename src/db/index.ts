@@ -87,4 +87,5 @@ export type {
   ScheduledStatus,
   SetType,
   TargetArea,
+  ThemePreference,
 } from './types';

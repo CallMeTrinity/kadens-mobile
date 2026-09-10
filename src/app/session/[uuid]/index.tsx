@@ -4,7 +4,6 @@ import {
   Alert,
   Pressable,
   ScrollView,
-  StyleSheet,
   Text,
   View,
   type StyleProp,
@@ -60,6 +59,7 @@ import {
   replaceExercise,
   resetExecutionOrder,
   REST_STEP,
+  sessionRecords,
   setCardioDone,
   setDeviates,
   setExerciseState,
@@ -75,6 +75,7 @@ import {
   useExerciseLibrary,
   useKeepScreenAwake,
   usePreferences,
+  useRestActive,
   useRestTimer,
   useSessionHistory,
   useSessionProgram,
@@ -85,7 +86,6 @@ import {
   withPlannedOverrides,
   type ExerciseRef,
   type LoggedSetValues,
-  type RestState,
   type SessionBlock,
   type SessionExercise,
   type SessionGroup,
@@ -94,7 +94,16 @@ import {
   type SessionTarget,
   type SetValues,
 } from '@/session';
-import { colors, layout, space, text, useReducedMotion } from '@/theme';
+import {
+  layout,
+  space,
+  text,
+  themed,
+  useReducedMotion,
+  useStyles,
+  useColors,
+  variants,
+} from '@/theme';
 import {
   patchPreferences,
   type ActivityType,
@@ -225,6 +234,7 @@ import {
  * dans `@/components` — le jour où KL-34 (séance vierge) l'emploiera à son tour.
  */
 export default function SessionScreen() {
+  const styles = useStyles(sheets);
   const { uuid } = useLocalSearchParams<{ uuid: string }>();
   const workout = useWorkout(uuid);
   const base = useSessionProgram(uuid);
@@ -250,6 +260,10 @@ export default function SessionScreen() {
     [base, drafts, overrides],
   );
   const history = useSessionHistory(program);
+  // La série qui bat le record de son exercice, s'il y en a une. Calculé une
+  // fois pour tout le déroulé, comme l'historique dont il dérive — et mémoïsé
+  // comme lui : il se refait à chaque écriture, pas à chaque rendu.
+  const records = useMemo(() => sessionRecords(program, history), [program, history]);
   // Le repère des dates d'historique : le vrai jour, pas celui de la séance
   // affichée. Relire une séance d'il y a trois jours ne doit pas faire dire
   // « aujourd'hui » à une performance qui date d'il y a trois jours.
@@ -270,7 +284,11 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
 
   const running = workout ? isRunning(workout) : false;
-  const rest = useRestTimer();
+  // **La présence d'un repos, pas son décompte.** Cet écran fait 3 400 lignes ;
+  // lire le minuteur ici le re-rendait une fois par seconde, écran allumé,
+  // pendant la moitié d'une séance d'une heure. `useRestActive` ne republie
+  // qu'aux transitions, et le décompte se lit là où il se peint (`RestStrip`).
+  const resting = useRestActive();
   // Lues en vif : la bascule de la barre basse et celle des réglages écrivent la
   // même ligne, et l'écran doit suivre l'une comme l'autre.
   const preferences = usePreferences();
@@ -653,6 +671,7 @@ export default function SessionScreen() {
                   block={block}
                   editable={running}
                   history={history}
+                  records={records}
                   today={today}
                   targetKey={target?.exercise.key ?? null}
                   targetRef={targetRef}
@@ -692,6 +711,7 @@ export default function SessionScreen() {
                     group={group}
                     editable={running}
                     history={history}
+                    records={records}
                     today={today}
                     targetKey={target?.exercise.key ?? null}
                     targetRef={targetRef}
@@ -786,9 +806,9 @@ export default function SessionScreen() {
 
       {reordering ? (
         <ArrangeDock onHeight={setDockHeight} onDone={() => setReordering(false)} />
-      ) : running || rest || startable ? (
+      ) : running || resting || startable ? (
         <SessionDock
-          rest={rest}
+          resting={resting}
           target={target}
           startable={startable}
           finishable={running}
@@ -849,6 +869,7 @@ type PickerTarget = { mode: 'add' } | { mode: 'replace'; exerciseKey: string };
  * programme** n'y entre pas non plus : il ne réclame rien.
  */
 function Progress({ done, total }: { done: number; total: number }) {
+  const styles = useStyles(sheets);
   const ratio = total > 0 ? done / total : 0;
 
   return (
@@ -892,7 +913,7 @@ function Progress({ done, total }: { done: number; total: number }) {
  * clôture serait une cible de plus pour rien.
  */
 function SessionDock({
-  rest,
+  resting,
   target,
   startable,
   finishable,
@@ -903,7 +924,8 @@ function SessionDock({
   onValidate,
   onFinish,
 }: {
-  rest: RestState | null;
+  /** Un repos court. Le décompte, lui, ne remonte pas jusqu'ici (`RestStrip`). */
+  resting: boolean;
   target: SessionTarget | null;
   /** La séance n'est pas commencée : la barre ne porte qu'un geste, l'ouvrir. */
   startable: boolean;
@@ -917,6 +939,7 @@ function SessionDock({
   onValidate: (target: SessionTarget) => void;
   onFinish: () => void;
 }) {
+  const styles = useStyles(sheets);
   // La zone sûre du bas en **rembourrage** (KL-37) : la barre peint sous la
   // barre gestuelle Android au lieu de s'arrêter au-dessus, et ses cibles
   // remontent d'autant.
@@ -934,7 +957,7 @@ function SessionDock({
       // mesure la contient, donc le dégagement de la page suit tout seul.
       style={[styles.dock, { paddingBottom: insets.bottom }]}
     >
-      {rest ? <RestStrip rest={rest} /> : null}
+      {resting ? <RestStrip /> : null}
 
       {/* Une séance pas encore commencée n'a qu'un geste, et il est au même
           endroit que la validation qui lui succédera : le pouce ne se rééduque
@@ -1008,6 +1031,8 @@ function SessionDock({
  * cette barre — une cible de plus y prend forcément sur ce qui se lit.
  */
 function AutoRestToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   return (
     <Pressable
       accessibilityRole="switch"
@@ -1058,7 +1083,17 @@ function AutoRestToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () 
  * lecteur d'écran ; l'étage s'annonce une fois, à son apparition, et se relit à
  * la demande.
  */
-function RestStrip({ rest }: { rest: RestState }) {
+function RestStrip() {
+  const styles = useStyles(sheets);
+  // **Le seul composant de l'écran qui bat la seconde.** Le magasin republie à
+  // 1 Hz ; c'est ici que ça coûte le moins, et c'est ici que ça se voit. Le
+  // modèle est celui d'`Elapsed` sur l'écran de clôture, pour la même raison.
+  const rest = useRestTimer();
+
+  if (rest === null) {
+    return null;
+  }
+
   const over = rest.remaining === 0;
   const ratio = rest.totalSeconds > 0 ? rest.remaining / rest.totalSeconds : 0;
 
@@ -1203,6 +1238,12 @@ type SectionHandlers = {
    * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
    */
   history: Map<number, ExerciseHistoryRow>;
+  /**
+   * Les records battus dans cette séance : clé d'exercice → clé de la série qui
+   * les porte (`sessionRecords`). Descendue avec l'historique et pour la même
+   * raison — c'est une seule lecture pour tout le déroulé.
+   */
+  records: Map<string, string>;
   /** Le jour réel, repère des dates d'historique. */
   today: string;
   /** L'exercice que la barre basse propose. Il se marque, et il se garde en vue. */
@@ -1377,6 +1418,7 @@ function exerciseCount(program: SessionProgram): number {
 
 /** Une section de la séance. Le bloc est une section, jamais un superset. */
 function BlockSection({ block, ...handlers }: { block: SessionBlock } & SectionHandlers) {
+  const styles = useStyles(sheets);
   return (
     <View style={styles.block}>
       <View style={styles.blockHead}>
@@ -1411,6 +1453,7 @@ function BlockSection({ block, ...handlers }: { block: SessionBlock } & SectionH
  * est déjà dans les séries de chaque exercice.
  */
 function GroupSection({ group, ...handlers }: { group: SessionGroup } & SectionHandlers) {
+  const styles = useStyles(sheets);
   const body = group.exercises.map((exercise) => (
     <ExerciseSection key={exercise.key} exercise={exercise} {...handlers} />
   ));
@@ -1432,6 +1475,7 @@ function ExerciseSection({
   exercise,
   editable,
   history,
+  records,
   today,
   targetKey,
   targetRef,
@@ -1442,10 +1486,14 @@ function ExerciseSection({
   onDropSet,
   onOpenExercise,
 }: { exercise: SessionExercise } & SectionHandlers) {
+  const styles = useStyles(sheets);
   const { prescribed, lines } = exercise;
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
+  // Au plus une par exercice : `sessionRecords` retient la meilleure série, pas
+  // toutes celles qui dépassent l'ancienne marque.
+  const recordKey = records.get(exercise.key) ?? null;
   // Une série annoncée attend d'être faite : le bouton devient sa reprise, pas un
   // second ajout. C'est aussi ce qui limite l'annonce à une ligne à la fois — on
   // n'annonce pas trois séries d'avance, on en fait une.
@@ -1518,6 +1566,7 @@ function ExerciseSection({
             key={line.key}
             line={line}
             editable={editable && !exercise.skipped}
+            record={line.key === recordKey}
             onToggle={() => onCheck(exercise, line)}
             onAdjust={() => onAdjustSet(lineKey(exercise, line))}
           />
@@ -1614,6 +1663,7 @@ function ArrangeBoard({
   onArrange: (exerciseKey: string, action: ArrangeAction) => void;
   onReorder: (exerciseKey: string, lane: string, to: number) => void;
 }) {
+  const styles = useStyles(sheets);
   const lanes = useMemo(() => arrangeLanes(program, freeform), [program, freeform]);
   const items = useMemo(() => arrangeItems(lanes), [lanes]);
   const reducedMotion = useReducedMotion();
@@ -1685,6 +1735,7 @@ function ArrangeBoard({
  * `dropTarget` relit, pour ne rien dire de plus que ce titre.
  */
 function ArrangeLaneHead({ lane }: { lane: ArrangeLane }) {
+  const styles = useStyles(sheets);
   return (
     <View style={[styles.arrangeLane, lane.exercises.length === 0 && styles.arrangeLaneClosed]}>
       <View style={styles.blockHead}>
@@ -1752,6 +1803,8 @@ function ArrangeRow({
   canDown: boolean;
   onArrange: (exerciseKey: string, action: ArrangeAction) => void;
 }) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const drag = useReorderableDrag();
   const chained = exercise.groupLabel !== null;
   const previous = chained ? (exercise.groupLabel?.replace(/\d+$/, '') ?? null) : null;
@@ -1832,6 +1885,7 @@ function ArrangeDock({
   onHeight: (height: number) => void;
   onDone: () => void;
 }) {
+  const styles = useStyles(sheets);
   const insets = useSafeAreaInsets();
 
   useEffect(() => () => onHeight(0), [onHeight]);
@@ -1881,6 +1935,7 @@ function ArrangeDock({
  * nuance vit sur la fiche d'exercice, quand KL-50 la posera.
  */
 function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: string }) {
+  const styles = useStyles(sheets);
   const { last, best } = entry;
 
   // Une ligne d'historique sans dernière performance ni record ne devrait pas
@@ -1934,6 +1989,7 @@ function HistoryTable({
   rows: HistoryLine[];
   summary: string;
 }) {
+  const styles = useStyles(sheets);
   return (
     <View
       accessible
@@ -2042,10 +2098,12 @@ function bestSummary(best: PerformanceBest): string {
 /**
  * La date d'un point d'historique, relative aux deux jours qui comptent.
  *
- * « Aujourd'hui » lève l'ambiguïté du seul cas trompeur : une séance poussée puis
- * redescendue dans la journée fait de « la dernière fois » ce qu'on vient de
- * faire. Au-delà d'hier, le quantième est plus parlant qu'un décompte de jours —
- * on se souvient d'un jeudi, pas d'un « il y a 9 jours ».
+ * « Aujourd'hui » reste utile et ne rattrape plus rien : ce n'est plus la séance
+ * en cours qu'il désignait — `replaceHistory()` la tient hors de cette table —
+ * mais une **autre** séance du jour, faite et poussée le matin, qui est bien la
+ * dernière fois qu'on a touché cet exercice. Au-delà d'hier, le quantième est plus
+ * parlant qu'un décompte de jours : on se souvient d'un jeudi, pas d'un « il y a
+ * 9 jours ».
  */
 function performanceDate(date: string, today: string): string {
   switch (dayOffset(date, today)) {
@@ -2066,13 +2124,13 @@ function performanceDate(date: string, today: string): string {
  * une série de travail ordinaire est la référence, la marquer reviendrait à
  * marquer tout le tableau.
  */
-const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
-  warmup: { ink: colors.setWarmup, tint: colors.setWarmupTint },
-  normal: { ink: colors.text, tint: 'transparent' },
-  degressive: { ink: colors.setDegressive, tint: colors.setDegressiveTint },
-  to_failure: { ink: colors.setFailure, tint: colors.setFailureTint },
-  drop_set: { ink: colors.setDropset, tint: colors.setDropsetTint },
-};
+const SET_BADGES = variants<Record<SetType, { ink: string; tint: string }>>((c) => ({
+  warmup: { ink: c.setWarmup, tint: c.setWarmupTint },
+  normal: { ink: c.text, tint: 'transparent' },
+  degressive: { ink: c.setDegressive, tint: c.setDegressiveTint },
+  to_failure: { ink: c.setFailure, tint: c.setFailureTint },
+  drop_set: { ink: c.setDropset, tint: c.setDropsetTint },
+}));
 
 /**
  * Une série : une ligne, deux cibles.
@@ -2141,14 +2199,18 @@ const SET_BADGES: Record<SetType, { ink: string; tint: string }> = {
 function SetRow({
   line,
   editable,
+  record,
   onToggle,
   onAdjust,
 }: {
   line: SessionSetLine;
   editable: boolean;
+  /** Cette série bat le record de son exercice (`sessionRecords`). */
+  record: boolean;
   onToggle: () => void;
   onAdjust: () => void;
 }) {
+  const styles = useStyles(sheets);
   const checked = line.logged !== null;
   const values = lineValues(line);
   const effortParts = values ? setEffortParts(values.reps, values.durationSeconds) : null;
@@ -2201,6 +2263,13 @@ function SetRow({
           ) : null}
         </View>
       </View>
+
+      {/* Le record, dans une gouttière **toujours réservée** : une marque qui
+          pousserait la ligne au moment où on la coche ferait bouger la cible
+          juste sous le pouce. Une forme dessinée et non un glyphe, pour la
+          raison du « ✓ » plus haut — un « ◆ » dépendrait de ce que Barlow
+          contient. Rouge parce que c'est de l'intensité, l'un de ses trois sens. */}
+      <View style={styles.setRecordSlot}>{record ? <View style={styles.setRecord} /> : null}</View>
     </>
   );
 
@@ -2213,7 +2282,7 @@ function SetRow({
     <View style={[styles.setRow, checked && styles.setRowChecked]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${setRowLabel(line, effort, load)}. ${
+        accessibilityLabel={`${setRowLabel(line, effort, load, record)}. ${
           checked ? 'Ajuster' : 'Corriger avant de la faire'
         }`}
         accessibilityHint={
@@ -2231,7 +2300,9 @@ function SetRow({
       <Pressable
         accessibilityRole="checkbox"
         accessibilityState={{ checked, disabled: !actionable }}
-        accessibilityLabel={checked ? 'Annuler cette série' : setRowLabel(line, effort, load)}
+        accessibilityLabel={
+          checked ? 'Annuler cette série' : setRowLabel(line, effort, load, record)
+        }
         accessibilityHint={
           actionable
             ? checked
@@ -2290,6 +2361,7 @@ function Measure({
   empty?: string;
   style: StyleProp<TextStyle>;
 }) {
+  const styles = useStyles(sheets);
   if (parts === null) {
     return <Text style={style}>{empty}</Text>;
   }
@@ -2304,8 +2376,9 @@ function Measure({
 
 /** Le sigle W / D / F / DS. Rien pour une série de travail ordinaire. */
 function SetBadge({ type }: { type: SetType }) {
+  const styles = useStyles(sheets);
   const letter = setTypeLetter(type);
-  const skin = SET_BADGES[type];
+  const skin = useStyles(SET_BADGES)[type];
 
   if (!letter) {
     return null;
@@ -2334,6 +2407,7 @@ function CardioRow({
   editable: boolean;
   onPress: () => void;
 }) {
+  const styles = useStyles(sheets);
   const checked = exercise.logged !== null;
   const summary = exercise.prescribed?.summary ?? exercise.name;
 
@@ -2426,6 +2500,7 @@ function SetSheet({
   onOverride: (values: SetValues | null) => void;
   onClose: () => void;
 }) {
+  const styles = useStyles(sheets);
   const logged = line.logged;
   // Une série **pas encore faite** : la feuille ne consigne rien, elle note ce
   // qu'on va y mettre (§ en-tête).
@@ -2617,6 +2692,7 @@ function ExerciseSheet({
   onClose: () => void;
   onReplace: (key: string) => void;
 }) {
+  const styles = useStyles(sheets);
   const [skipped, setSkipped] = useState(exercise.skipped);
   const [notes, setNotes] = useState(exercise.logged?.notes ?? '');
   const replaceable = canReplaceExercise(exercise);
@@ -2767,6 +2843,7 @@ function ExercisePicker({
   onPick: (references: ExerciseRef[]) => void;
   onClose: () => void;
 }) {
+  const styles = useStyles(sheets);
   const [term, setTerm] = useState('');
   const [activity, setActivity] = useState<ActivityType | null>(null);
   const [area, setArea] = useState<TargetArea | null>(null);
@@ -2957,6 +3034,7 @@ const ACTIVITY_RANKS: Record<ActivityType, ChipRank | undefined> = {
 
 /** Une rangée de facettes : son intitulé, et ses pilules qui défilent (KL-34). */
 function FacetRow({ label, children }: { label: string; children: ReactNode }) {
+  const styles = useStyles(sheets);
   return (
     <View style={styles.facets}>
       <Text style={styles.facetLabel}>{label}</Text>
@@ -2990,7 +3068,12 @@ function plannedSummary(line: SessionSetLine, exercise: SessionExercise): string
 }
 
 /** Ce que TalkBack annonce sur une ligne de série. Le rang d'abord : c'est le repère. */
-function setRowLabel(line: SessionSetLine, effort: string | null, load: number | null): string {
+function setRowLabel(
+  line: SessionSetLine,
+  effort: string | null,
+  load: number | null,
+  record = false,
+): string {
   const parts = [`Série ${line.index}`];
   const type = setTypeLabel(line.type);
 
@@ -3019,26 +3102,33 @@ function setRowLabel(line: SessionSetLine, effort: string | null, load: number |
     parts.push(`au lieu de ${missed.join(' × ')}`);
   }
 
+  // Le mot que le losange ne dit pas. À l'écran il se lit dans sa gouttière ;
+  // une forme ne s'entend pas, et c'est la seule chose de la ligne qui soit une
+  // nouvelle.
+  if (record) {
+    parts.push('record');
+  }
+
   return parts.join(', ');
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   frame: { flex: 1 },
   page: { padding: space[8], gap: space[8], paddingBottom: space[13] },
   spacer: { flex: 1 },
 
-  name: { ...text.name, color: colors.text, flexShrink: 1 },
-  body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textSecondary },
-  notes: { ...text.caption, color: colors.textSecondary, marginBottom: space[3] },
+  name: { ...text.name, color: c.text, flexShrink: 1 },
+  body: { ...text.body, color: c.textSecondary },
+  caption: { ...text.caption, color: c.textSecondary },
+  notes: { ...text.caption, color: c.textSecondary, marginBottom: space[3] },
   // La note de la salle se distingue de la consigne par un filet, pas par une
   // couleur : il n'y a qu'une couleur dans cette identité, et elle est prise.
   logNotes: {
     ...text.caption,
-    color: colors.textSecondary,
+    color: c.textSecondary,
     borderLeftWidth: 2,
-    borderLeftColor: colors.borderStrong,
+    borderLeftColor: c.borderStrong,
     paddingLeft: space[4],
     marginTop: space[4],
   },
@@ -3047,29 +3137,29 @@ const styles = StyleSheet.create({
     gap: space[2],
     paddingHorizontal: space[8],
     paddingVertical: space[4],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
 
   progress: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  progressTrack: { flex: 1, height: 4, backgroundColor: colors.track },
+  progressTrack: { flex: 1, height: 4, backgroundColor: c.track },
   // Encre et non rouge : le rouge dit l'action à faire et l'échec, pas l'avancement.
-  progressFill: { height: 4, backgroundColor: colors.text },
-  progressLabel: { ...text.numeric, color: colors.textSecondary },
+  progressFill: { height: 4, backgroundColor: c.text },
+  progressLabel: { ...text.numeric, color: c.textSecondary },
 
   notice: {
     gap: space[6],
     padding: space[8],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
 
   block: {
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
   blockHead: {
     flexDirection: 'row',
@@ -3077,24 +3167,24 @@ const styles = StyleSheet.create({
     gap: space[4],
     paddingHorizontal: space[7],
     paddingVertical: space[5],
-    backgroundColor: colors.fill,
+    backgroundColor: c.fill,
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
-  blockNumber: { ...text.numeric, color: colors.textSecondary },
-  blockRole: { ...text.sectionTitle, color: colors.text },
-  blockLabel: { ...text.caption, color: colors.textSecondary, flexShrink: 1 },
-  blockCount: { ...text.numeric, color: colors.textSecondary },
+  blockNumber: { ...text.numeric, color: c.textSecondary },
+  blockRole: { ...text.sectionTitle, color: c.text },
+  blockLabel: { ...text.caption, color: c.textSecondary, flexShrink: 1 },
+  blockCount: { ...text.numeric, color: c.textSecondary },
 
   // Le groupe se marque au rail, pas au conteneur : il n'en a pas dans le modèle.
   group: {
     borderLeftWidth: 3,
-    borderLeftColor: colors.cat1,
+    borderLeftColor: c.cat1,
     marginLeft: space[7],
     marginVertical: space[4],
     paddingLeft: space[5],
   },
-  groupHead: { ...text.eyebrow, color: colors.textSecondary, paddingVertical: space[3] },
+  groupHead: { ...text.eyebrow, color: c.textSecondary, paddingVertical: space[3] },
 
   // La ligne du rangement (KL-52). Elle a le rembourrage d'un exercice et son
   // filet de séparation : c'est le même déroulé, vu de plus haut.
@@ -3109,16 +3199,16 @@ const styles = StyleSheet.create({
   arrangePage: { padding: space[8], paddingBottom: space[13] },
   arrangeLane: {
     marginTop: space[8],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
     borderBottomWidth: 0,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
   /** Une file vide n'a aucune ligne pour la refermer : elle se ferme elle-même. */
   arrangeLaneClosed: { borderBottomWidth: layout.hairline },
   arrangeEmpty: {
     ...text.caption,
-    color: colors.textSecondary,
+    color: c.textSecondary,
     paddingHorizontal: space[7],
     paddingVertical: space[6],
   },
@@ -3127,15 +3217,15 @@ const styles = StyleSheet.create({
     gap: space[4],
     paddingHorizontal: space[7],
     paddingVertical: space[6],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
     borderLeftWidth: layout.hairline,
     borderRightWidth: layout.hairline,
-    borderLeftColor: colors.border,
-    borderRightColor: colors.border,
+    borderLeftColor: c.border,
+    borderRightColor: c.border,
   },
-  arrangeLast: { borderBottomWidth: layout.hairline, borderBottomColor: colors.border },
+  arrangeLast: { borderBottomWidth: layout.hairline, borderBottomColor: c.border },
   arrangeHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   arrangeActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   // La poignée. Elle prend le plancher tactile en entier (`touchTarget`) alors
@@ -3149,21 +3239,21 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     marginLeft: -space[5],
   },
-  gripPressed: { backgroundColor: colors.fill },
+  gripPressed: { backgroundColor: c.fill },
 
   exercise: { paddingHorizontal: space[7], paddingVertical: space[6] },
   // L'exercice courant (KL-39). Le rail compense sa propre épaisseur en
   // rembourrage, sinon le contenu sauterait de 3 points en devenant courant.
   exerciseNow: {
     borderLeftWidth: 3,
-    borderLeftColor: colors.text,
+    borderLeftColor: c.text,
     paddingLeft: space[7] - 3,
-    backgroundColor: colors.surfaceSubtle,
+    backgroundColor: c.surfaceSubtle,
   },
   exerciseHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  exerciseCount: { ...text.numeric, color: colors.textSecondary },
+  exerciseCount: { ...text.numeric, color: c.textSecondary },
   // Le rang dans le superset, en mono : il se compare, il ne se lit pas.
-  rank: { ...text.eyebrow, color: colors.text },
+  rank: { ...text.eyebrow, color: c.text },
   marks: { flexDirection: 'row', flexWrap: 'wrap', gap: space[4], marginTop: space[2] },
 
   // L'historique (KL-32, en tableau depuis KL-39). Pas de case, pas de fond : un
@@ -3172,22 +3262,22 @@ const styles = StyleSheet.create({
     gap: space[5],
     marginTop: space[5],
     borderLeftWidth: 2,
-    borderLeftColor: colors.border,
+    borderLeftColor: c.border,
     paddingLeft: space[5],
   },
   historyPart: { gap: space[1] },
   historyHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  historyLabel: { ...text.eyebrow, color: colors.textSecondary },
-  historyDate: { ...text.caption, color: colors.textSecondary },
+  historyLabel: { ...text.eyebrow, color: c.textSecondary },
+  historyDate: { ...text.caption, color: c.textSecondary },
   // `flex-start` et non `center` : une valeur qui passe à la ligne doit aligner
   // sa **première** ligne sur les autres colonnes, pas se centrer sur deux.
   historyRow: { flexDirection: 'row', alignItems: 'flex-start', gap: space[4] },
   // En mono comme les charges de la séance : c'est la même grandeur, lue au même
   // moment, et elle doit se comparer d'un coup d'œil à la ligne d'en dessous.
   // Trois colonnes de largeur tenue, sinon un tableau n'en est pas un.
-  historyCount: { ...text.numeric, color: colors.textSecondary, width: 34, textAlign: 'right' },
-  historyEffort: { ...text.numeric, color: colors.textSecondary, flex: 1 },
-  historyLoad: { ...text.numeric, color: colors.textSecondary, minWidth: 68, textAlign: 'right' },
+  historyCount: { ...text.numeric, color: c.textSecondary, width: 34, textAlign: 'right' },
+  historyEffort: { ...text.numeric, color: c.textSecondary, flex: 1 },
+  historyLoad: { ...text.numeric, color: c.textSecondary, minWidth: 68, textAlign: 'right' },
 
   setRow: {
     flexDirection: 'row',
@@ -3195,8 +3285,8 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     marginTop: space[3],
     borderWidth: layout.hairline,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: c.border,
+    backgroundColor: c.surface,
   },
   // Le cardio est une seule cible — fait ou pas fait, il n'y a rien à corriger —
   // donc le rembourrage est sur la ligne. Une série en porte deux, chacune avec
@@ -3204,8 +3294,8 @@ const styles = StyleSheet.create({
   setRowPadded: { gap: space[4], paddingHorizontal: space[4] },
   // Une série faite se pose sur un fond appuyé et garde son filet : elle ne
   // disparaît pas, elle se range.
-  setRowChecked: { backgroundColor: colors.fill, borderColor: colors.borderStrong },
-  setRowPressed: { backgroundColor: colors.surfaceHover },
+  setRowChecked: { backgroundColor: c.fill, borderColor: c.borderStrong },
+  setRowPressed: { backgroundColor: c.surfaceHover },
   setValues: {
     flex: 1,
     flexDirection: 'row',
@@ -3215,11 +3305,11 @@ const styles = StyleSheet.create({
     paddingLeft: space[4],
     paddingRight: space[3],
   },
-  setRank: { ...text.numeric, color: colors.textSecondary, width: 24 },
-  setRankChecked: { color: colors.textSecondary },
-  setEffort: { ...text.numeric, color: colors.text },
-  setLoad: { ...text.numeric, color: colors.text },
-  setFaint: { color: colors.textSecondary },
+  setRank: { ...text.numeric, color: c.textSecondary, width: 24 },
+  setRankChecked: { color: c.textSecondary },
+  setEffort: { ...text.numeric, color: c.text },
+  setLoad: { ...text.numeric, color: c.text },
+  setFaint: { color: c.textSecondary },
   // L'unité, dans le `Text` imbriqué du nombre : ni couleur ni graisse propres,
   // elle hérite de l'encre de la ligne — c'est la même valeur, pas une mention.
   //
@@ -3237,7 +3327,7 @@ const styles = StyleSheet.create({
   // sous un chiffre, il s'aligne au caractère près.
   setPlanned: {
     ...text.numericMinor,
-    color: colors.textSecondary,
+    color: c.textSecondary,
     textDecorationLine: 'line-through',
   },
   // Les valeurs de la ligne : deux colonnes (le saisi, la valeur qu'il remplace
@@ -3291,6 +3381,25 @@ const styles = StyleSheet.create({
   setSummary: { flexShrink: 1 },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
+  // La gouttière du record, en fin de valeurs. **Toujours là**, vide la plupart
+  // du temps : elle se réserve une fois pour toutes plutôt que d'apparaître au
+  // moment où l'on coche, ce qui décalerait la ligne sous le pouce. Étroite,
+  // parce qu'elle prend sa place aux valeurs, qui n'en ont pas de trop
+  // (§ « rien ne déborde »).
+  setRecordSlot: { width: 12, alignItems: 'center' },
+  // Un losange dessiné, pas un caractère : un « ◆ » dépendrait de ce que Barlow
+  // contient, comme le « ✓ » de la case. Un carré tourné d'un huitième de tour,
+  // que toutes les polices du monde rendent pareil.
+  setRecord: {
+    width: 8,
+    height: 8,
+    // `primaryOnTint` et non `primary` : c'est le rouge qui se pose **sur** une
+    // surface, par opposition à celui qui *est* la surface et porte du blanc.
+    // Le rouge plein tient ses 3:1 sur du papier et les perd sur une ligne
+    // sombre ; celui-ci les tient des deux côtés (`contrast.test.ts`).
+    backgroundColor: c.primaryOnTint,
+    transform: [{ rotate: '45deg' }],
+  },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
   setBadge: { borderWidth: layout.hairline, paddingHorizontal: space[1] },
   setBadgeText: { ...text.eyebrow },
@@ -3310,11 +3419,11 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderWidth: 2,
-    borderColor: colors.textSecondary,
+    borderColor: c.textSecondary,
     backgroundColor: 'transparent',
   },
-  boxChecked: { borderColor: colors.text, backgroundColor: colors.text },
-  boxIdle: { borderColor: colors.borderMuted },
+  boxChecked: { borderColor: c.text, backgroundColor: c.text },
+  boxIdle: { borderColor: c.borderMuted },
 
   // La barre basse : posée sur le bas de l'écran, filet en tête, fond appuyé.
   // Elle ne flotte pas (aucune ombre dans cette identité), elle s'ancre.
@@ -3323,9 +3432,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.text,
+    borderTopColor: c.text,
   },
   // L'étage de validation : le dernier, donc toujours à la même distance du bord.
   dockAction: {
@@ -3338,18 +3447,18 @@ const styles = StyleSheet.create({
     paddingVertical: space[6],
   },
   dockLabels: { flex: 1, gap: space[1] },
-  dockEyebrow: { ...text.eyebrow, color: colors.textSecondary },
-  dockName: { ...text.name, color: colors.text },
-  dockValues: { ...text.numeric, color: colors.text },
+  dockEyebrow: { ...text.eyebrow, color: c.textSecondary },
+  dockName: { ...text.name, color: c.text },
+  dockValues: { ...text.numeric, color: c.text },
 
   // L'étage du repos : une jauge et une ligne, empilées au-dessus de la
   // validation. Rien de plus — ce qui est au-dessus, c'est la séance.
   rest: {
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
-  restTrack: { height: 3, backgroundColor: colors.track },
-  restFill: { height: 3, backgroundColor: colors.text },
+  restTrack: { height: 3, backgroundColor: c.track },
+  restFill: { height: 3, backgroundColor: c.text },
   restBody: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -3359,12 +3468,12 @@ const styles = StyleSheet.create({
   // Le chrono tabulaire, deux crans sous l'ancien : il se lit encore à bout de
   // bras sans prendre l'étage entier. Le rembourrage horizontal l'écarte des
   // deux boutons qui l'encadrent, sinon « − 15 s 1:23 + 15 s » se lit d'un bloc.
-  restClock: { ...text.inputValue, color: colors.text, paddingHorizontal: space[2] },
+  restClock: { ...text.inputValue, color: c.text, paddingHorizontal: space[2] },
   // Le rouge à l'échéance seulement, et c'est bien son emploi : ce n'est pas une
   // catégorie qu'on colore, c'est l'appel à reprendre la série (§5 règle 2).
   // `primaryOnTint` et non `primary` : à cette taille, le chrono n'est plus un
   // « grand texte » au sens WCAG, et le rouge plein y tomberait sous AA.
-  restClockOver: { color: colors.primaryOnTint },
+  restClockOver: { color: c.primaryOnTint },
 
   // La bascule du repos automatique, contre la validation. Carrée, de la hauteur
   // du bouton `lg` qu'elle jouxte : elle se tape sans regarder, elle aussi.
@@ -3374,18 +3483,18 @@ const styles = StyleSheet.create({
     width: 48,
     height: 56,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
+    borderColor: c.border,
+    backgroundColor: c.surface,
   },
-  autoRestOn: { borderColor: colors.text },
-  autoRestPressed: { backgroundColor: colors.fill },
+  autoRestOn: { borderColor: c.text },
+  autoRestPressed: { backgroundColor: c.fill },
 
   sheetActions: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
 
   // Les facettes du sélecteur (KL-34). Le `gap` de la feuille sépare déjà les
   // deux rangées : ici seulement l'intitulé et ses pilules.
   facets: { gap: space[2] },
-  facetLabel: { ...text.eyebrow, color: colors.textSecondary },
+  facetLabel: { ...text.eyebrow, color: c.textSecondary },
   // Sur le `contentContainerStyle` et non sur le `ScrollView` : un `gap` posé
   // sur le conteneur défilant lui-même ne s'applique pas à son contenu.
   facetRow: { flexDirection: 'row', gap: space[3], paddingRight: space[8] },
@@ -3397,11 +3506,11 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     paddingHorizontal: space[5],
     borderWidth: layout.hairline,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceRaised,
+    borderColor: c.border,
+    backgroundColor: c.surfaceRaised,
   },
-  optionPressed: { backgroundColor: colors.fill },
+  optionPressed: { backgroundColor: c.fill },
   // Un exercice retenu se pose sur le même fond appuyé qu'une série faite, et
   // gagne le filet encre : c'est le même vocabulaire, « ceci est acquis ».
-  optionSelected: { backgroundColor: colors.fill, borderColor: colors.borderStrong },
-});
+  optionSelected: { backgroundColor: c.fill, borderColor: c.borderStrong },
+}));

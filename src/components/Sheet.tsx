@@ -33,10 +33,10 @@
  */
 
 import type { ReactNode } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, layout, space, text, useReducedMotion } from '@/theme';
+import { layout, space, text, themed, useReducedMotion, useStyles } from '@/theme';
 
 import { useKeyboardOverlap } from './keyboard';
 
@@ -52,6 +52,7 @@ export type SheetProps = {
 };
 
 export function Sheet({ visible, onClose, title, children, footer, testID }: SheetProps) {
+  const styles = useStyles(sheets);
   const insets = useSafeAreaInsets();
   const keyboard = useKeyboardOverlap();
   const reducedMotion = useReducedMotion();
@@ -126,7 +127,7 @@ export function Sheet({ visible, onClose, title, children, footer, testID }: She
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   host: { flex: 1, justifyContent: 'flex-end' },
   scrim: {
     position: 'absolute',
@@ -134,17 +135,17 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    backgroundColor: colors.scrim,
+    backgroundColor: c.scrim,
   },
   sheet: {
     maxHeight: layout.sheetMaxHeight,
-    backgroundColor: colors.surface,
+    backgroundColor: c.surface,
     // Le bas est hors écran : un filet y ferait une ligne flottante au ras de
     // la barre gestuelle.
     borderTopWidth: layout.hairline,
     borderLeftWidth: layout.hairline,
     borderRightWidth: layout.hairline,
-    borderColor: colors.text,
+    borderColor: c.text,
   },
   head: {
     flexDirection: 'row',
@@ -154,9 +155,9 @@ const styles = StyleSheet.create({
     paddingVertical: space[5],
     paddingHorizontal: space[8],
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
-  title: { ...text.sectionTitle, color: colors.text, flexShrink: 1 },
+  title: { ...text.sectionTitle, color: c.text, flexShrink: 1 },
   close: {
     justifyContent: 'center',
     alignItems: 'center',
@@ -164,8 +165,8 @@ const styles = StyleSheet.create({
     minWidth: layout.touchTarget,
     paddingHorizontal: space[3],
   },
-  closePressed: { backgroundColor: colors.fill },
-  closeLabel: { ...text.action, color: colors.textSecondary },
+  closePressed: { backgroundColor: c.fill },
+  closeLabel: { ...text.action, color: c.textSecondary },
   // `flexShrink` et pas `flex: 1` : une feuille courte reste courte, elle ne
   // s'étire pas jusqu'aux 78 %.
   body: { flexShrink: 1 },
@@ -174,7 +175,7 @@ const styles = StyleSheet.create({
     paddingTop: space[6],
     paddingHorizontal: space[8],
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
     gap: space[4],
   },
-});
+}));
