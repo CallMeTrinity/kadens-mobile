@@ -138,6 +138,31 @@ export function useRestTimer(): RestState | null {
 }
 
 /**
+ * Y a-t-il un repos, oui ou non — sans le décompte.
+ *
+ * **La différence avec `useRestTimer` est une histoire de batterie.** Le magasin
+ * republie chaque seconde, et `useSyncExternalStore` re-rend son lecteur à chaque
+ * publication dont l'instantané a changé. Un instantané booléen ne change qu'aux
+ * **transitions** : le composant qui décide seulement de *monter* la barre de
+ * repos ne se réveille donc que deux fois par série, au lieu de soixante fois par
+ * minute. Le décompte, lui, se lit là où il se peint — dans `RestStrip`.
+ *
+ * Sans cette distinction, l'écran de séance entier se re-rendait à 1 Hz pendant
+ * la moitié d'une séance d'une heure, écran allumé.
+ *
+ * Le magasin n'a rien de particulier à faire pour ça : il notifie comme toujours,
+ * et c'est `useSyncExternalStore` qui compare l'instantané et ne re-rend que s'il
+ * a bougé. Un booléen ne bouge pas soixante fois par minute.
+ */
+export function useRestActive(): boolean {
+  return useSyncExternalStore(subscribe, isResting, isResting);
+}
+
+function isResting(): boolean {
+  return state !== null;
+}
+
+/**
  * Démarre le repos qui suit une série de cet exercice.
  *
  * **La ligne prescrite l'emporte sur le réglage.** `restSeconds` vient du
@@ -188,7 +213,7 @@ export function startRest(seconds: number, exerciseName: string | null = null): 
   });
 
   startTicking();
-  void scheduleRestNotification(total, exerciseName);
+  armRestNotification(exerciseName);
 
   return true;
 }
@@ -229,7 +254,7 @@ export function adjustRest(deltaSeconds: number): boolean {
   // Le tick a pu s'arrêter : « + 15 s » sur un repos **terminé** le relance, et
   // c'est le geste naturel quand on décide de souffler un peu plus.
   startTicking();
-  void scheduleRestNotification(remaining, state.exerciseName);
+  armRestNotification(state.exerciseName);
 
   return true;
 }
@@ -237,6 +262,7 @@ export function adjustRest(deltaSeconds: number): boolean {
 /** Termine le repos : « Passer », ou l'écran de séance qu'on quitte. Rien n'est averti. */
 export function stopRest(): void {
   stopTicking();
+  disarmRestNotification();
   void cancelRestNotification();
   publish(null);
 }
@@ -389,6 +415,50 @@ export async function initRestNotifications(): Promise<void> {
 }
 
 /**
+ * Le délai avant qu'un changement d'échéance parte au système.
+ *
+ * « + 15 s » se tape en rafale : quatre appuis pour une minute de plus, c'est un
+ * geste normal et c'étaient quatre annulations plus quatre programmations
+ * d'alarme, chacune un aller-retour dans le pont natif puis un réveil planifié
+ * chez `AlarmManager`. Une seule suffit — celle qui reste après le dernier appui.
+ *
+ * Une demi-seconde ne se voit nulle part sur une échéance qui se compte en
+ * minutes, et l'affichage, lui, n'attend pas : la barre suit le doigt, c'est le
+ * magasin qui la peint.
+ */
+const NOTIFICATION_DEBOUNCE_MS = 500;
+
+let armed: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Demande que l'avertissement soit (re)programmé sur l'échéance **courante**.
+ *
+ * Ne lit pas de durée : il lit `state.endsAt` au moment de tirer, ce qui est la
+ * seule façon d'être juste après une attente. Une échéance déjà passée, ou un
+ * repos terminé entre-temps, ne programme rien.
+ */
+function armRestNotification(exerciseName: string | null): void {
+  disarmRestNotification();
+
+  armed = setTimeout(() => {
+    armed = null;
+
+    const remaining = state === null ? 0 : remainingOf(state.endsAt);
+
+    if (remaining > 0) {
+      void scheduleRestNotification(remaining, exerciseName);
+    }
+  }, NOTIFICATION_DEBOUNCE_MS);
+}
+
+function disarmRestNotification(): void {
+  if (armed !== null) {
+    clearTimeout(armed);
+    armed = null;
+  }
+}
+
+/**
  * Programme l'avertissement de fin de repos, et annule le précédent.
  *
  * La permission se demande **ici**, à la première programmation, et une seule
@@ -455,12 +525,35 @@ async function cancelRestNotification(): Promise<void> {
   }
 }
 
-/** La permission, demandée au plus une fois par lancement. */
+/**
+ * La permission, demandée au plus une fois par lancement — et **relue** au plus
+ * une fois aussi.
+ *
+ * `getPermissionsAsync()` est un aller-retour dans le pont natif, et il partait à
+ * chaque programmation : une par série, une par ajustement, soit bien plus de
+ * cent sur une séance d'une heure. Une permission accordée ne se retire pas toute
+ * seule, elle se retire dans les réglages du système — donc en quittant l'app.
+ *
+ * Le cas du retrait en cours de route n'est pas oublié, il est **absorbé** :
+ * `scheduleNotificationAsync` échouera, et son `catch` dit déjà quoi faire —
+ * l'avertissement est le confort, le décompte à l'écran est la fonction. Seul le
+ * verdict **positif** se met en cache : un refus doit rester interrogeable, sans
+ * quoi accorder la permission depuis les réglages système ne servirait à rien
+ * jusqu'au prochain lancement.
+ */
+let permissionGranted = false;
+
 async function allowedToNotify(): Promise<boolean> {
+  if (permissionGranted) {
+    return true;
+  }
+
   try {
     const current = await Notifications.getPermissionsAsync();
 
     if (current.granted) {
+      permissionGranted = true;
+
       return true;
     }
 
@@ -469,8 +562,9 @@ async function allowedToNotify(): Promise<boolean> {
     }
 
     permissionAsked = true;
+    permissionGranted = (await Notifications.requestPermissionsAsync()).granted;
 
-    return (await Notifications.requestPermissionsAsync()).granted;
+    return permissionGranted;
   } catch {
     return false;
   }

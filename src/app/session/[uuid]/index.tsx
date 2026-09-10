@@ -76,6 +76,7 @@ import {
   useExerciseLibrary,
   useKeepScreenAwake,
   usePreferences,
+  useRestActive,
   useRestTimer,
   useSessionHistory,
   useSessionProgram,
@@ -86,7 +87,6 @@ import {
   withPlannedOverrides,
   type ExerciseRef,
   type LoggedSetValues,
-  type RestState,
   type SessionBlock,
   type SessionExercise,
   type SessionGroup,
@@ -275,7 +275,11 @@ export default function SessionScreen() {
   const insets = useSafeAreaInsets();
 
   const running = workout ? isRunning(workout) : false;
-  const rest = useRestTimer();
+  // **La présence d'un repos, pas son décompte.** Cet écran fait 3 400 lignes ;
+  // lire le minuteur ici le re-rendait une fois par seconde, écran allumé,
+  // pendant la moitié d'une séance d'une heure. `useRestActive` ne republie
+  // qu'aux transitions, et le décompte se lit là où il se peint (`RestStrip`).
+  const resting = useRestActive();
   // Lues en vif : la bascule de la barre basse et celle des réglages écrivent la
   // même ligne, et l'écran doit suivre l'une comme l'autre.
   const preferences = usePreferences();
@@ -793,9 +797,9 @@ export default function SessionScreen() {
 
       {reordering ? (
         <ArrangeDock onHeight={setDockHeight} onDone={() => setReordering(false)} />
-      ) : running || rest || startable ? (
+      ) : running || resting || startable ? (
         <SessionDock
-          rest={rest}
+          resting={resting}
           target={target}
           startable={startable}
           finishable={running}
@@ -899,7 +903,7 @@ function Progress({ done, total }: { done: number; total: number }) {
  * clôture serait une cible de plus pour rien.
  */
 function SessionDock({
-  rest,
+  resting,
   target,
   startable,
   finishable,
@@ -910,7 +914,8 @@ function SessionDock({
   onValidate,
   onFinish,
 }: {
-  rest: RestState | null;
+  /** Un repos court. Le décompte, lui, ne remonte pas jusqu'ici (`RestStrip`). */
+  resting: boolean;
   target: SessionTarget | null;
   /** La séance n'est pas commencée : la barre ne porte qu'un geste, l'ouvrir. */
   startable: boolean;
@@ -941,7 +946,7 @@ function SessionDock({
       // mesure la contient, donc le dégagement de la page suit tout seul.
       style={[styles.dock, { paddingBottom: insets.bottom }]}
     >
-      {rest ? <RestStrip rest={rest} /> : null}
+      {resting ? <RestStrip /> : null}
 
       {/* Une séance pas encore commencée n'a qu'un geste, et il est au même
           endroit que la validation qui lui succédera : le pouce ne se rééduque
@@ -1065,7 +1070,16 @@ function AutoRestToggle({ enabled, onToggle }: { enabled: boolean; onToggle: () 
  * lecteur d'écran ; l'étage s'annonce une fois, à son apparition, et se relit à
  * la demande.
  */
-function RestStrip({ rest }: { rest: RestState }) {
+function RestStrip() {
+  // **Le seul composant de l'écran qui bat la seconde.** Le magasin republie à
+  // 1 Hz ; c'est ici que ça coûte le moins, et c'est ici que ça se voit. Le
+  // modèle est celui d'`Elapsed` sur l'écran de clôture, pour la même raison.
+  const rest = useRestTimer();
+
+  if (rest === null) {
+    return null;
+  }
+
   const over = rest.remaining === 0;
   const ratio = rest.totalSeconds > 0 ? rest.remaining / rest.totalSeconds : 0;
 

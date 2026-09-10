@@ -153,6 +153,17 @@ export default function RootLayout() {
           screenOptions={{
             headerShown: false,
             contentStyle: { backgroundColor: colors.bg },
+            // Un écran recouvert cesse de se rendre. Ça vise une situation
+            // précise : une séance dure une heure, écran allumé, empilée
+            // **par-dessus** les onglets — qui restent montés sous elle et
+            // continuaient de recalculer et de se re-rendre à chaque série
+            // cochée. « Aujourd'hui » compte des séries qu'on ne regarde pas.
+            //
+            // Rien n'est démonté ni rechargé : l'arbre est conservé, le retour
+            // le retrouve tel quel. Ce qui tourne hors React continue aussi — le
+            // minuteur de repos vit dans un magasin de module, pas dans un
+            // écran, et c'est ce qui le rend insensible à ceci.
+            freezeOnBlur: true,
           }}
         >
           {/*
