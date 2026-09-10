@@ -1,11 +1,11 @@
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { describeError, getApiBaseUrl, signInWithPassword } from '@/api';
 import { Button, Card, Field, Header, useKeyboardOverlap } from '@/components';
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles } from '@/theme';
 
 /**
  * Le repli mot de passe (KL-26).
@@ -16,6 +16,7 @@ import { colors, space, text } from '@/theme';
  * contenu reprend tel quel la version KL-25 du champ, déplacée de `login.tsx`.
  */
 export default function LoginPasswordScreen() {
+  const styles = useStyles(sheets);
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -106,10 +107,10 @@ export default function LoginPasswordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
-  value: { ...text.numeric, color: colors.text },
-  hint: { ...text.caption, color: colors.textSecondary, marginTop: space[3] },
-});
+  value: { ...text.numeric, color: c.text },
+  hint: { ...text.caption, color: c.textSecondary, marginTop: space[3] },
+}));

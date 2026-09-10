@@ -13,7 +13,7 @@
  * pas par une assertion, il se regarde sur un téléphone.
  */
 
-import { AREA_TO_SLUG, bodyLevelColor, type BodyLevel } from '@/components/BodyMap';
+import { AREA_TO_SLUG, BODY_FILLS, type BodyLevel } from '@/components/BodyMap';
 import { BODY_PLATES, type MuscleSlug } from '@/components/bodyPaths';
 
 /** Tous les muscles réellement dessinés, les quatre planches confondues. */
@@ -93,7 +93,9 @@ describe('les planches', () => {
 describe('les paliers', () => {
   it('ont trois teintes distinctes', () => {
     const levels: BodyLevel[] = [1, 2, 3];
-    const fills = levels.map(bodyLevelColor);
+    // Les deux jeux : l'échelle s'inverse de nuit, elle doit rester lisible des
+    // deux côtés.
+    const fills = levels.map((level) => BODY_FILLS.light[level]);
 
     expect(new Set(fills).size).toBe(3);
   });

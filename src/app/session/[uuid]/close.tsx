@@ -1,11 +1,11 @@
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import {
+  BODY_FILLS,
   BodyMap,
-  bodyLevelColor,
   Button,
   Chip,
   duration,
@@ -39,7 +39,7 @@ import {
   type ExerciseOutcome,
   type SessionSummary,
 } from '@/session';
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 /**
  * Écran « Clôture de séance » (KL-33) — le dernier geste de la séance, et le
@@ -78,6 +78,7 @@ import { colors, layout, space, text } from '@/theme';
  * c'est aussi ce qui la rend vérifiable en mode avion.
  */
 export default function SessionCloseScreen() {
+  const styles = useStyles(sheets);
   const { uuid } = useLocalSearchParams<{ uuid: string }>();
   const workout = useWorkout(uuid);
   const program = useSessionProgram(uuid);
@@ -302,6 +303,7 @@ function Metrics({
   startedAt: string | null;
   endedAt: string | null;
 }) {
+  const styles = useStyles(sheets);
   const planned = summary.plannedWorkingSets;
   const blank = summary.unmeasuredSets;
   const legend = [
@@ -349,6 +351,7 @@ function Metrics({
  * séance ordinaire.
  */
 function Records({ count }: { count: number }) {
+  const styles = useStyles(sheets);
   if (count === 0) {
     return null;
   }
@@ -394,6 +397,7 @@ function Metric({
   value: string;
   legend?: string | null;
 }) {
+  const styles = useStyles(sheets);
   return (
     <View accessible accessibilityLabel={`${label} : ${value}`} style={styles.metric}>
       <Text style={styles.metricLabel}>{label}</Text>
@@ -428,6 +432,11 @@ function Metric({
  * (`areas.ts`), une zone inconnue non plus.
  */
 function Muscles({ load, silhouette }: { load: BodyLoad; silhouette: BodySilhouette }) {
+  const styles = useStyles(sheets);
+  // Les teintes du dessin, pas des pastilles à part : une légende dont les
+  // couleurs ne seraient pas exactement celles de la carte ne serait pas une
+  // légende. L'échelle s'inverse de nuit, les deux suivent ensemble.
+  const fills = useStyles(BODY_FILLS);
   const levels = useMemo(
     () => new Map<TargetArea, BodyLevel>(load.areas.map((area) => [area.area, area.level])),
     [load],
@@ -460,7 +469,7 @@ function Muscles({ load, silhouette }: { load: BodyLoad; silhouette: BodySilhoue
           accessibilityLabel={`${targetAreaLabel(area.area)} : ${sets(area.sets)}, ${area.percent} %`}
           style={styles.areaRow}
         >
-          <View style={[styles.areaDot, { backgroundColor: bodyLevelColor(area.level) }]} />
+          <View style={[styles.areaDot, { backgroundColor: fills[area.level] }]} />
           <Text style={styles.name} numberOfLines={1}>
             {targetAreaLabel(area.area)}
           </Text>
@@ -508,6 +517,7 @@ function Deviations({
   outcomes: ExerciseOutcome[];
   counts: Record<DeviationState, number>;
 }) {
+  const styles = useStyles(sheets);
   return (
     <View style={styles.section}>
       <Text accessibilityRole="header" style={styles.sectionTitle}>
@@ -545,6 +555,7 @@ function Deviations({
 
 /** Un exercice qui n'a pas fait ce qui était écrit : ce qui était prévu, ce qui a été fait. */
 function DeviationRow({ outcome }: { outcome: ExerciseOutcome }) {
+  const styles = useStyles(sheets);
   const detail =
     outcome.axis === null || outcome.planned === null || outcome.logged === null
       ? null
@@ -600,15 +611,15 @@ function SyncMark({ pending }: { pending: boolean }) {
   return pending ? <Chip label="À synchroniser" /> : <Chip label="Synchronisée" tone="done" />;
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { padding: space[8], gap: space[8] },
   spacer: { flex: 1 },
 
   head: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[4] },
-  name: { ...text.name, color: colors.text, flexShrink: 1 },
-  body: { ...text.body, color: colors.textSecondary },
-  caption: { ...text.caption, color: colors.textSecondary },
+  name: { ...text.name, color: c.text, flexShrink: 1 },
+  body: { ...text.body, color: c.textSecondary },
+  caption: { ...text.caption, color: c.textSecondary },
 
   // Deux colonnes : quatre chiffres en ligne seraient illisibles à cette taille,
   // et la grille tient sans média-requête — l'app n'a qu'une largeur.
@@ -619,7 +630,7 @@ const styles = StyleSheet.create({
   recordMark: {
     width: 8,
     height: 8,
-    backgroundColor: colors.primary,
+    backgroundColor: c.primaryOnTint,
     transform: [{ rotate: '45deg' }],
   },
   metric: {
@@ -628,24 +639,24 @@ const styles = StyleSheet.create({
     gap: space[1],
     paddingVertical: space[6],
     paddingHorizontal: space[7],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
-  metricLabel: { ...text.eyebrow, color: colors.textSecondary },
+  metricLabel: { ...text.eyebrow, color: c.textSecondary },
   // Le grand chiffre du design system. `adjustsFontSizeToFit` le protège du seul
   // cas qui déborde : un tonnage à cinq chiffres sur une petite largeur.
-  metricValue: { ...text.kpi, color: colors.text },
+  metricValue: { ...text.kpi, color: c.text },
 
   section: {
     gap: space[4],
     paddingVertical: space[7],
     paddingHorizontal: space[7],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
   },
-  sectionTitle: { ...text.sectionTitle, color: colors.text },
+  sectionTitle: { ...text.sectionTitle, color: c.text },
 
   // Une ligne de légende de la carte musculaire. La pastille reprend la teinte du
   // dessin ; elle est bordée, sinon le palier le plus clair s'effacerait sur le
@@ -655,22 +666,22 @@ const styles = StyleSheet.create({
     width: space[5],
     height: space[5],
     borderWidth: layout.hairline,
-    borderColor: colors.borderStrong,
+    borderColor: c.borderStrong,
   },
-  areaValue: { ...text.numeric, color: colors.text },
+  areaValue: { ...text.numeric, color: c.text },
   // Une part se lit en second : c'est le rang qui compte, pas le pourcent exact.
-  areaShare: { ...text.numeric, color: colors.textSecondary, minWidth: 44, textAlign: 'right' },
+  areaShare: { ...text.numeric, color: c.textSecondary, minWidth: 44, textAlign: 'right' },
 
   // Un filet gauche, pas un fond : l'écart se signale sans introduire de teinte,
   // et l'identité n'a qu'une couleur — elle est prise (règle 2).
   deviation: {
     gap: space[2],
     borderLeftWidth: 2,
-    borderLeftColor: colors.borderStrong,
+    borderLeftColor: c.borderStrong,
     paddingLeft: space[5],
   },
   deviationHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
-  deviationDetail: { ...text.numeric, color: colors.textSecondary },
+  deviationDetail: { ...text.numeric, color: c.textSecondary },
 
   // La barre d'action ne défile pas : clôturer doit être atteignable sans
   // remonter la liste des écarts, et c'est là que le pouce arrive.
@@ -679,8 +690,8 @@ const styles = StyleSheet.create({
     paddingTop: space[6],
     paddingBottom: space[6],
     paddingHorizontal: space[8],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
-});
+}));

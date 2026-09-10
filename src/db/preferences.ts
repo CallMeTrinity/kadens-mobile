@@ -36,6 +36,7 @@ export const DEFAULT_PREFERENCES: Omit<PreferenceRow, 'id'> = {
   vibrate: true,
   autoRest: true,
   silhouette: 'male',
+  theme: 'system',
 };
 
 /** Les réglages, ou leurs valeurs par défaut tant que rien n'a été touché. */
@@ -48,6 +49,7 @@ export function getPreferences(): Omit<PreferenceRow, 'id'> {
         vibrate: row.vibrate,
         autoRest: row.autoRest,
         silhouette: row.silhouette,
+        theme: row.theme,
       }
     : DEFAULT_PREFERENCES;
 }

@@ -4,7 +4,7 @@
     "slug": "kadens",
     "version": "1.1.1",
     "orientation": "portrait",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "icon": "./assets/images/icon.png",
     "scheme": "kadens",
     "web": {
@@ -29,7 +29,10 @@
         {
           "backgroundColor": "#ffffff",
           "image": "./assets/images/splash.png",
-          "imageWidth": 180
+          "imageWidth": 180,
+          "dark": {
+            "backgroundColor": "#101010"
+          }
         }
       ],
       "expo-sqlite",

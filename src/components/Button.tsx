@@ -13,9 +13,9 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, variants } from '@/theme';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'ghost';
 export type ButtonSize = 'lg' | 'md' | 'sm';
@@ -57,25 +57,31 @@ export type ButtonProps = {
 
 type Skin = { bg: string; border: string; label: string };
 
-/** Une variante = deux peaux, au repos et pressée. */
-const SKINS: Record<ButtonVariant, { idle: Skin; pressed: Skin }> = {
+/**
+ * Une variante = deux peaux, au repos et pressée — dans les deux jeux.
+ *
+ * `variants()` et non `themed()` : ce sont des chaînes lues en prop, pas des
+ * styles. Un `StyleSheet.create` sur `{ bg, border, label }` ne voudrait rien
+ * dire. Construites une fois par jeu au chargement, comme une feuille.
+ */
+const SKINS = variants<Record<ButtonVariant, { idle: Skin; pressed: Skin }>>((c) => ({
   primary: {
-    idle: { bg: colors.primary, border: colors.primary, label: colors.onPrimary },
+    idle: { bg: c.primary, border: c.primary, label: c.onPrimary },
     // Le rouge pressé **fonce** (KL-39). Il s'éclaircissait, ce qui ramenait le
     // blanc du libellé à 4,1:1 — sous AA, et sur le seul bouton qu'on tape sans
     // regarder. C'est aussi ce que dit le design system : `--color-primary-hover`
     // est plus sombre que l'accent, l'inversion était une invention native.
-    pressed: { bg: colors.primaryHover, border: colors.primaryHover, label: colors.onPrimary },
+    pressed: { bg: c.primaryHover, border: c.primaryHover, label: c.onPrimary },
   },
   secondary: {
-    idle: { bg: colors.surfaceRaised, border: colors.text, label: colors.text },
-    pressed: { bg: colors.text, border: colors.text, label: colors.surfaceRaised },
+    idle: { bg: c.surfaceRaised, border: c.text, label: c.text },
+    pressed: { bg: c.text, border: c.text, label: c.surfaceRaised },
   },
   ghost: {
-    idle: { bg: 'transparent', border: 'transparent', label: colors.textSecondary },
-    pressed: { bg: colors.fill, border: 'transparent', label: colors.text },
+    idle: { bg: 'transparent', border: 'transparent', label: c.textSecondary },
+    pressed: { bg: c.fill, border: 'transparent', label: c.text },
   },
-};
+}));
 
 export function Button({
   label,
@@ -90,7 +96,8 @@ export function Button({
   style,
   testID,
 }: ButtonProps) {
-  const skin = SKINS[variant];
+  const styles = useStyles(sheets);
+  const skin = useStyles(SKINS)[variant];
 
   return (
     <Pressable
@@ -131,7 +138,7 @@ export function Button({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   base: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -150,4 +157,4 @@ const styles = StyleSheet.create({
   disabled: { opacity: 0.4 },
   leading: { justifyContent: 'center' },
   label: { ...text.action },
-});
+}));

@@ -235,10 +235,10 @@ function literal(value) {
   return String(value).startsWith("'") ? String(value) : `'${value}'`;
 }
 
-function block(name, entries, comment) {
+function block(name, entries, comment, tail = 'as const') {
   const lines = [...entries].map(([key, value]) => `  ${key}: ${literal(value)},`);
 
-  return [comment, `export const ${name} = {`, ...lines, '} as const;', ''].join('\n');
+  return [comment, `export const ${name} = {`, ...lines, `} ${tail};`, ''].join('\n');
 }
 
 function render(groups) {
@@ -259,9 +259,26 @@ function render(groups) {
   return [
     head,
     block(
-      'colors',
+      'light',
       groups.get('colors'),
-      '/** Couleurs sémantiques. Le rouge porte du sens : primaire, intensité, échec. */',
+      `/**
+ * Couleurs sémantiques — jeu **clair**, celui du papier.
+ *
+ * C'est la forme de référence : \`ColorToken\` en dérive, et le jeu sombre est
+ * tenu de porter exactement les mêmes clés.
+ */`,
+    ),
+    block(
+      'dark',
+      groups.get('colorsDark'),
+      `/**
+ * Couleurs sémantiques — jeu **sombre**.
+ *
+ * \`satisfies ColorSet\` n'est pas décoratif : c'est le compilateur qui redit ici
+ * l'invariant que \`app:tokens:export\` tient déjà côté serveur. Une clé de trop ou
+ * en moins est une erreur de build, pas une couleur transparente sur un téléphone.
+ */`,
+      'as const satisfies ColorSet',
     ),
     block(
       'fontStacks',
@@ -284,7 +301,13 @@ function render(groups) {
       groups.get('tracking'),
       '/** Interlettrage en **em** : à convertir en points par `letterSpacing()`. */',
     ),
-    `export type ColorToken = keyof typeof colors;
+    `/** Les deux jeux, indexés par leur nom. \`contrast.test.ts\` les parcourt. */
+export const palettes = { light, dark } as const;
+
+export type ThemeName = keyof typeof palettes;
+export type ColorToken = keyof typeof light;
+/** Un jeu complet. Ce que reçoit une fabrique \`themed()\`. */
+export type ColorSet = Readonly<Record<ColorToken, string>>;
 export type SpaceToken = keyof typeof space;
 export type FontStack = keyof typeof fontStacks;
 export type Weight = (typeof weight)[keyof typeof weight];
@@ -306,6 +329,13 @@ async function main() {
     );
   }
 
+  if (!document.themes?.light || !document.themes?.dark) {
+    throw new Error(
+      'design-tokens.json ne porte pas les deux jeux attendus (themes.light / themes.dark) : ' +
+        'le serveur est-il à jour ?',
+    );
+  }
+
   const groups = new Map([
     ...classify(document.semantic, SEMANTIC, { strict: true }),
     ...classify(document.primitives, PRIMITIVE, { strict: false }),
@@ -317,10 +347,81 @@ async function main() {
     }
   }
 
+  groups.set('colorsDark', darkOf(document, groups.get('colors')));
+
   await writeFile(OUTPUT, render(groups), 'utf8');
 
-  const counts = [...groups].map(([name, entries]) => `${entries.size} ${name}`).join(', ');
-  console.log(`src/theme/tokens.ts régénéré depuis ${source.label} — ${counts}.`);
+  const counts = [...groups]
+    .filter(([name]) => name !== 'colorsDark')
+    .map(([name, entries]) => `${entries.size} ${name}`)
+    .join(', ');
+
+  console.log(`src/theme/tokens.ts régénéré depuis ${source.label} — ${counts} × 2 thèmes.`);
+}
+
+/**
+ * Le jeu sombre, converti et **aligné sur les clés du jeu clair**.
+ *
+ * L'ordre vient du clair et non du JSON sombre : le bloc `[data-theme="dark"]`
+ * du serveur groupe ses immobiles pour se relire comme une table de décisions,
+ * ce qui est un bon ordre de lecture et un mauvais ordre de diff. Deux blocs
+ * générés dans le même ordre se comparent ligne à ligne.
+ *
+ * Trois refus, dans l'esprit du fichier — le mobile ne fait jamais confiance à
+ * ce qu'il reçoit :
+ *
+ * 1. une clé qui manque d'un côté ou de l'autre (le serveur l'assère déjà, mais
+ *    un `design-tokens.json` peut arriver d'un serveur plus ancien) ;
+ * 2. un jeu clair qui ne dirait pas la même chose que la couche `semantic` — le
+ *    serveur publierait alors deux jeux clairs différents, et on ne saurait pas
+ *    lequel croire ;
+ * 3. deux jeux identiques, signe que le bloc sombre n'a pas été régénéré. Une
+ *    app livrée avec un mode sombre qui ne change rien est pire qu'aucun mode
+ *    sombre : personne ne saurait où chercher.
+ */
+function darkOf(document, light) {
+  const converted = new Map();
+
+  for (const [name, value] of Object.entries(document.themes.dark)) {
+    converted.set(camel(name.slice('--color-'.length)), toColor(name, value));
+  }
+
+  const lightOfTheme = new Map();
+
+  for (const [name, value] of Object.entries(document.themes.light)) {
+    lightOfTheme.set(camel(name.slice('--color-'.length)), toColor(name, value));
+  }
+
+  const dark = new Map();
+
+  for (const key of light.keys()) {
+    if (!converted.has(key)) {
+      throw new Error(`${key} n'existe pas dans le jeu sombre : le serveur est-il à jour ?`);
+    }
+
+    if (lightOfTheme.get(key) !== light.get(key)) {
+      throw new Error(
+        `${key} vaut ${light.get(key)} dans « semantic » et ${lightOfTheme.get(key)} dans ` +
+          '« themes.light » : le serveur publie deux jeux clairs différents.',
+      );
+    }
+
+    dark.set(key, converted.get(key));
+  }
+
+  const extra = [...converted.keys()].filter((key) => !dark.has(key));
+
+  if (extra.length > 0) {
+    throw new Error(
+      `Le jeu sombre déclare des couleurs que le clair ignore : ${extra.join(', ')}.`,
+    );
+  }
+
+  if ([...dark].every(([key, value]) => light.get(key) === value)) {
+    throw new Error('Les deux jeux sont identiques : le bloc sombre n’a pas été régénéré.');
+  }
+
+  return dark;
 }
 
 main().catch((error) => {

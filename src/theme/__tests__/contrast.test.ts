@@ -29,6 +29,14 @@
  * - **les contrôles inactifs** (`boxIdle`, un bouton désactivé) sont hors du
  *   champ de `§1.4.11`, et c'est heureux : leur pâleur **est** l'information.
  *
+ * **Les tokens à canal alpha n'y sont pas** — `scrim`, `onInkMuted`,
+ * `onInkFaint`, les deux filets sur encre. Deux raisons qui vont ensemble :
+ * `contrastRatio` n'accepte que `#rrggbb`, et surtout **rien dans l'app ne les
+ * pose**. Ils viennent du web, où l'aplat encre porte des mentions ; le mobile
+ * n'en a aucun. Le jour où l'un d'eux écrira quelque chose ici, il faudra le
+ * composer sur son fond avant de le comparer — et ce fond, le voile de modale ne
+ * l'aura jamais, puisque c'est du contenu de page.
+ *
  * Le rang catégoriel (`cat1..cat4`) n'y est pas non plus. Une échelle de gris qui
  * code cinq activités a forcément des membres pâles ; ils sont toujours doublés
  * du mot qu'ils qualifient (le libellé de la pilule), donc jamais seuls porteurs
@@ -36,7 +44,7 @@
  */
 
 import { AA_LARGE, AA_TEXT, contrastRatio, isLargeText } from '@/test/contrast';
-import { colors, text, type ColorToken, type TextRole } from '@/theme';
+import { palettes, text, type ColorToken, type TextRole } from '@/theme';
 
 type InkCase = {
   /** L'encre posée. */
@@ -138,33 +146,51 @@ const SHAPES: { color: ColorToken; on: ColorToken; where: string }[] = [
   // Le losange du record. Il ne se pose que sur une série **faite**, donc sur le
   // fond appuyé — mais la ligne se peint claire tant qu'on ne l'a pas cochée, et
   // une marque qui n'y tiendrait pas serait un piège au premier rendu.
-  { color: 'primary', on: 'fill', where: 'losange du record, sur une série faite' },
-  { color: 'primary', on: 'surfaceRaised', where: 'losange du record, ligne claire' },
+  { color: 'primaryOnTint', on: 'fill', where: 'losange du record, sur une série faite' },
+  { color: 'primaryOnTint', on: 'surfaceRaised', where: 'losange du record, ligne claire' },
 ];
 
-describe('les contrastes de texte', () => {
-  it.each(INK)('$ink sur $on — $where', ({ ink, on, role }) => {
-    const style = text[role];
-    const large = isLargeText(style.fontSize ?? 0, String(style.fontWeight ?? '400'));
-    const floor = large ? AA_LARGE : AA_TEXT;
+/**
+ * **Les deux jeux, la même table.** `INK` et `SHAPES` ne nomment que des
+ * `ColorToken` : elles décrivent la mise en page, pas une palette, et se
+ * réutilisent donc telles quelles sur le papier comme sur la nuit. C'est ce qui
+ * rend le mode sombre vérifiable au lieu d'être espéré.
+ */
+describe.each(Object.entries(palettes))('les contrastes — jeu « %s »', (_name, colors) => {
+  describe('de texte', () => {
+    it.each(INK)('$ink sur $on — $where', ({ ink, on, role }) => {
+      const style = text[role];
+      const large = isLargeText(style.fontSize ?? 0, String(style.fontWeight ?? '400'));
+      const floor = large ? AA_LARGE : AA_TEXT;
 
-    expect(contrastRatio(colors[ink], colors[on])).toBeGreaterThanOrEqual(floor);
+      expect(contrastRatio(colors[ink], colors[on])).toBeGreaterThanOrEqual(floor);
+    });
   });
-});
 
-describe('les contrastes de forme', () => {
-  it.each(SHAPES)('$color sur $on — $where', ({ color, on }) => {
-    expect(contrastRatio(colors[color], colors[on])).toBeGreaterThanOrEqual(AA_LARGE);
+  describe('de forme', () => {
+    it.each(SHAPES)('$color sur $on — $where', ({ color, on }) => {
+      expect(contrastRatio(colors[color], colors[on])).toBeGreaterThanOrEqual(AA_LARGE);
+    });
+  });
+
+  /**
+   * L'encre faible est **sous** le seuil, et c'est l'invariant.
+   *
+   * Elle passait sur du blanc et échouait sur le papier (3,4:1) comme sur un fond
+   * appuyé (4,2:1) : un token dont la validité dépend du fond où il tombe est un
+   * piège, et la vue qui le pose ne le sait pas. La version sombre est choisie
+   * pour échouer pareil — un token dont la validité dépendrait du *thème* serait
+   * un piège pire encore.
+   */
+  it("l'encre faible reste sous le seuil du corps courant", () => {
+    expect(contrastRatio(colors.textFaint, colors.bg)).toBeLessThan(AA_TEXT);
   });
 });
 
 describe("l'encre faible", () => {
-  it('ne porte plus de texte nulle part', () => {
-    // Elle passe sur du blanc et échoue sur le papier (3,4:1) comme sur un fond
-    // appuyé (4,2:1) : un token dont la validité dépend du fond où il tombe est
-    // un piège, et la vue qui le pose ne le sait pas. KL-39 l'a donc retiré
-    // partout au profit de `textSecondary`, et cette table le constate.
-    expect(contrastRatio(colors.textFaint, colors.bg)).toBeLessThan(AA_TEXT);
+  it('ne porte de texte dans aucune entrée de la table', () => {
+    // Une affirmation sur la **table**, pas sur un jeu : elle ne se répète pas
+    // d'un thème à l'autre.
     expect(INK.some((entry) => entry.ink === 'textFaint')).toBe(false);
   });
 });

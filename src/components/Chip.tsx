@@ -16,9 +16,9 @@
  *   deux.
  */
 
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, variants } from '@/theme';
 
 export type ChipTone = 'neutral' | 'done' | 'planned' | 'missed' | 'accent';
 /** Rang dans l'échelle catégorielle, du plus sombre au plus clair. */
@@ -45,48 +45,52 @@ export type ChipProps = {
  * que le libellé abandonne pour l'encre secondaire. Le sens ne bouge pas : c'est
  * la pastille qui porte le statut, le mot le nomme.
  */
-const TONES: Record<ChipTone, { label: string; dot: string; bg: string; border: string }> = {
-  neutral: {
-    label: colors.textSecondary,
-    dot: colors.textSecondary,
-    bg: 'transparent',
-    border: colors.borderPill,
-  },
-  done: {
-    label: colors.statusDone,
-    dot: colors.statusDone,
-    bg: 'transparent',
-    border: colors.borderPill,
-  },
-  planned: {
-    label: colors.textSecondary,
-    dot: colors.statusPlanned,
-    bg: 'transparent',
-    border: colors.borderPill,
-  },
-  missed: {
-    label: colors.primaryOnTint,
-    dot: colors.statusMissed,
-    bg: 'transparent',
-    border: colors.borderPill,
-  },
-  accent: {
-    label: colors.onPrimary,
-    dot: colors.onPrimary,
-    bg: colors.primary,
-    border: colors.primary,
-  },
-};
+const SKINS = variants((c) => ({
+  tones: {
+    neutral: {
+      label: c.textSecondary,
+      dot: c.textSecondary,
+      bg: 'transparent',
+      border: c.borderPill,
+    },
+    done: {
+      label: c.statusDone,
+      dot: c.statusDone,
+      bg: 'transparent',
+      border: c.borderPill,
+    },
+    planned: {
+      label: c.textSecondary,
+      dot: c.statusPlanned,
+      bg: 'transparent',
+      border: c.borderPill,
+    },
+    missed: {
+      label: c.primaryOnTint,
+      dot: c.statusMissed,
+      bg: 'transparent',
+      border: c.borderPill,
+    },
+    accent: {
+      label: c.onPrimary,
+      dot: c.onPrimary,
+      bg: c.primary,
+      border: c.primary,
+    },
+  } as Record<ChipTone, { label: string; dot: string; bg: string; border: string }>,
 
-const RANKS: Record<ChipRank, string> = {
-  1: colors.cat1,
-  2: colors.cat2,
-  3: colors.cat3,
-  4: colors.cat4,
-};
+  ranks: {
+    1: c.cat1,
+    2: c.cat2,
+    3: c.cat3,
+    4: c.cat4,
+  } as Record<ChipRank, string>,
+}));
 
 export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID }: ChipProps) {
-  const skin = TONES[tone];
+  const { tones, ranks } = useStyles(SKINS);
+  const styles = useStyles(sheets);
+  const skin = tones[tone];
 
   return (
     <View
@@ -94,7 +98,7 @@ export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID
       style={[
         styles.chip,
         { backgroundColor: skin.bg, borderColor: skin.border },
-        rank ? { borderLeftWidth: 3, borderLeftColor: RANKS[rank] } : null,
+        rank ? { borderLeftWidth: 3, borderLeftColor: ranks[rank] } : null,
         style,
       ]}
     >
@@ -106,7 +110,7 @@ export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   chip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -120,4 +124,4 @@ const styles = StyleSheet.create({
   // 6 points est un disque, pas un coin arrondi.
   dot: { width: 6, height: 6, borderRadius: 3 },
   label: { ...text.eyebrow },
-});
+}));

@@ -1,10 +1,10 @@
 import { useRouter } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useSession } from '@/api';
 import { Button, Header } from '@/components';
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles } from '@/theme';
 
 /**
  * L'écran d'accueil de connexion (KL-26).
@@ -21,6 +21,7 @@ import { colors, space, text } from '@/theme';
  * (`app:user:create`), il n'y a pas d'inscription publique.
  */
 export default function LoginScreen() {
+  const styles = useStyles(sheets);
   const router = useRouter();
   const session = useSession();
   const insets = useSafeAreaInsets();
@@ -59,9 +60,9 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { flex: 1, justifyContent: 'center', padding: space[8], gap: space[8] },
-  notice: { ...text.body, color: colors.textSecondary },
+  notice: { ...text.body, color: c.textSecondary },
   actions: { gap: space[4] },
-});
+}));

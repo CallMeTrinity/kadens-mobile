@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, Text, View } from 'react-native';
 
 import { Button, Card, Chip, EmptyState, Field, Header, Sheet } from '@/components';
 import {
@@ -18,7 +18,7 @@ import {
   workoutStateLabel,
   type DayWorkout,
 } from '@/session';
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 /**
  * Écran « Aujourd'hui » (KL-28) — la porte d'entrée de l'app.
@@ -51,6 +51,7 @@ import { colors, layout, space, text } from '@/theme';
  * séance datée et le réalisé savent déjà dire.
  */
 export default function TodayScreen() {
+  const styles = useStyles(sheets);
   const today = useToday();
   // La sélection est un **écart**, pas une date. C'est ce qui la garde juste
   // quand minuit passe pendant que l'app dort : `today` bouge (`useToday`), le
@@ -195,6 +196,7 @@ function DayStrip({
   selected: string;
   onSelect: (offset: number) => void;
 }) {
+  const styles = useStyles(sheets);
   return (
     <View style={styles.strip}>
       {cells.map((cell) => {
@@ -246,6 +248,7 @@ function ResumeBanner({
   offset: number;
   onResume: () => void;
 }) {
+  const styles = useStyles(sheets);
   return (
     <Card title="Séance en cours" right={<Chip label={day} tone="planned" dot />}>
       <View style={styles.stack}>
@@ -290,6 +293,7 @@ function WorkoutCard({
   onView: () => void;
   onStart: () => void;
 }) {
+  const styles = useStyles(sheets);
   const state = workoutStateLabel(workout);
 
   return (
@@ -373,6 +377,7 @@ function FreeWorkoutSheet({
   onClose: () => void;
   onStart: () => void;
 }) {
+  const styles = useStyles(sheets);
   return (
     <Sheet
       visible={visible}
@@ -409,8 +414,8 @@ function emptyTitle(selected: string, today: string): string {
   }
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { padding: space[8], gap: space[8] },
   stack: { gap: space[6] },
   marks: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space[3] },
@@ -419,15 +424,15 @@ const styles = StyleSheet.create({
   // la place disponible (grande police système) pousserait « Démarrer » hors de
   // la carte au lieu de se tronquer.
   grow: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
-  name: { ...text.name, color: colors.text },
-  caption: { ...text.caption, color: colors.textSecondary },
-  body: { ...text.body, color: colors.textSecondary },
+  name: { ...text.name, color: c.text },
+  caption: { ...text.caption, color: c.textSecondary },
+  body: { ...text.body, color: c.textSecondary },
 
   strip: {
     flexDirection: 'row',
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
   },
   day: {
     flex: 1,
@@ -437,25 +442,25 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget + space[5],
     paddingVertical: space[4],
     borderRightWidth: layout.hairline,
-    borderRightColor: colors.dividerSoft,
+    borderRightColor: c.dividerSoft,
   },
   // Le jour choisi s'inverse à l'encre, comme le bouton secondaire pressé : la
   // sélection se lit d'un coup d'œil sans introduire de teinte (règle 2).
-  dayActive: { backgroundColor: colors.surfaceInk },
-  dayPressed: { backgroundColor: colors.fill },
-  dayWeekday: { ...text.eyebrow, color: colors.textSecondary },
-  dayNumber: { ...text.numeric, color: colors.text },
-  dayLabelActive: { color: colors.onInk },
+  dayActive: { backgroundColor: c.surfaceInk },
+  dayPressed: { backgroundColor: c.fill },
+  dayWeekday: { ...text.eyebrow, color: c.textSecondary },
+  dayNumber: { ...text.numeric, color: c.text },
+  dayLabelActive: { color: c.onInk },
   dayDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: 'transparent' },
-  dayDotFilled: { backgroundColor: colors.text },
-  dayDotOnInk: { backgroundColor: colors.onInk },
+  dayDotFilled: { backgroundColor: c.text },
+  dayDotOnInk: { backgroundColor: c.onInk },
 
   actions: {
     paddingTop: space[6],
     paddingBottom: space[6],
     paddingHorizontal: space[8],
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
-});
+}));

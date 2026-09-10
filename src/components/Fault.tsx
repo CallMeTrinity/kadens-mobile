@@ -26,10 +26,10 @@
  * les deux partagent leur valeur, pas leur sens.
  */
 
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles } from '@/theme';
 import { Button, type ButtonProps } from './Button';
 
 export type FaultProps = {
@@ -47,6 +47,7 @@ export type FaultProps = {
 };
 
 export function Fault({ title, body, detail, action, secondary, testID }: FaultProps) {
+  const styles = useStyles(sheets);
   // Cet écran n'a pas d'en-tête : personne d'autre ne porte ses zones sûres, et
   // il n'a qu'un rendu — une page qui défile — donc il les prend en dégagement
   // de contenu, aux deux bouts (`components/Header.tsx`).
@@ -77,10 +78,10 @@ export function Fault({ title, body, detail, action, secondary, testID }: FaultP
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg },
   page: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: space[8], gap: space[6] },
-  title: { ...text.sectionTitle, color: colors.primaryOnTint },
-  body: { ...text.body, color: colors.textSecondary },
-  detail: { ...text.caption, color: colors.textSecondary },
-});
+  title: { ...text.sectionTitle, color: c.primaryOnTint },
+  body: { ...text.body, color: c.textSecondary },
+  detail: { ...text.caption, color: c.textSecondary },
+}));

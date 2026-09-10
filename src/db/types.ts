@@ -58,6 +58,16 @@ export type ExerciseLanguage = 'fr' | 'en';
  */
 export type BodySilhouette = 'male' | 'female';
 
+/**
+ * Le papier sur lequel l'app se peint : clair, sombre, ou ce que dit le
+ * téléphone.
+ *
+ * Ici pour la même raison que `BodySilhouette` : c'est une valeur **persistée**
+ * (`preference.theme`), et le schéma ne peut pas dépendre de `@/theme`. Le sens
+ * du mot « thème » vit là-bas ; ici il n'y a qu'une colonne de trois valeurs.
+ */
+export type ThemePreference = 'system' | 'light' | 'dark';
+
 export type TargetArea =
   | 'chest'
   | 'back'

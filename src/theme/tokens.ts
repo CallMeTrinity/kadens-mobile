@@ -11,8 +11,13 @@
  * la porte en `clamp()`) : elle vit dans `typography.ts`.
  */
 
-/** Couleurs sémantiques. Le rouge porte du sens : primaire, intensité, échec. */
-export const colors = {
+/**
+ * Couleurs sémantiques — jeu **clair**, celui du papier.
+ *
+ * C'est la forme de référence : `ColorToken` en dérive, et le jeu sombre est
+ * tenu de porter exactement les mêmes clés.
+ */
+export const light = {
   bg: '#dcdcd7',
   surface: '#f7f7f5',
   surfaceRaised: '#ffffff',
@@ -83,6 +88,84 @@ export const colors = {
   statusMissed: '#d8261e',
 } as const;
 
+/**
+ * Couleurs sémantiques — jeu **sombre**.
+ *
+ * `satisfies ColorSet` n'est pas décoratif : c'est le compilateur qui redit ici
+ * l'invariant que `app:tokens:export` tient déjà côté serveur. Une clé de trop ou
+ * en moins est une erreur de build, pas une couleur transparente sur un téléphone.
+ */
+export const dark = {
+  bg: '#101010',
+  surface: '#191918',
+  surfaceRaised: '#1f1f1e',
+  surfaceSubtle: '#1b1b1a',
+  surfaceHover: '#242423',
+  fill: '#292928',
+  track: '#333331',
+  scrim: 'rgba(0, 0, 0, 0.62)',
+  surfaceInk: '#ededea',
+  surfaceInkHover: '#dcdad6',
+  onInk: '#101010',
+  onInkMuted: 'rgba(0, 0, 0, 0.6)',
+  onInkFaint: 'rgba(0, 0, 0, 0.45)',
+  borderOnInk: 'rgba(0, 0, 0, 0.18)',
+  borderOnInkStrong: 'rgba(0, 0, 0, 0.35)',
+  text: '#ededea',
+  textStrong: '#dcdad6',
+  textSecondary: '#a3a19a',
+  textSoft: '#94928b',
+  textFaint: '#6f6f68',
+  textPlaceholder: '#8a887f',
+  border: '#2f2f2d',
+  borderStrong: '#4a4a46',
+  borderCell: '#2f2f2d',
+  borderPill: '#3a3a37',
+  borderMuted: '#3a3a37',
+  divider: '#2f2f2d',
+  dividerSoft: '#232322',
+  primary: '#d8261e',
+  primaryHover: '#a81a14',
+  primaryBright: '#f03127',
+  primaryOnInk: '#a81a14',
+  primaryTint: '#3a1310',
+  primaryTrack: '#4d1a16',
+  primaryOnTint: '#f0544c',
+  onPrimary: '#ffffff',
+  bodymap1: '#3a1310',
+  bodymap2: '#b2534d',
+  bodymap3: '#f0544c',
+  cat1: '#ededea',
+  cat2: '#b0aea8',
+  cat3: '#7a7a73',
+  cat4: '#4a4a46',
+  muscleLegs: '#5f97c9',
+  muscleChest: '#d79b5e',
+  muscleBack: '#64ab8a',
+  muscleArms: '#a97cad',
+  muscleOther: '#a3a19a',
+  activityRun: '#ededea',
+  activityRunTint: '#292928',
+  activityRunText: '#a3a19a',
+  activityGym: '#b0aea8',
+  activityGymTint: '#292928',
+  activityGymText: '#a3a19a',
+  activitySwim: '#7a7a73',
+  activityBike: '#7a7a73',
+  activityMobility: '#4a4a46',
+  setWarmup: '#ededea',
+  setWarmupTint: '#1f1f1e',
+  setDegressive: '#ededea',
+  setDegressiveTint: '#292928',
+  setFailure: '#d8261e',
+  setFailureTint: '#3a1310',
+  setDropset: '#d8261e',
+  setDropsetTint: '#1f1f1e',
+  statusDone: '#45a35a',
+  statusPlanned: '#8a8a82',
+  statusMissed: '#d8261e',
+} as const satisfies ColorSet;
+
 /** Familles de polices. La graisse se choisit par `fontFamily()`, cf. fonts.ts. */
 export const fontStacks = {
   display: 'Barlow Condensed',
@@ -136,7 +219,13 @@ export const tracking = {
   eyebrowXl: 0.16,
 } as const;
 
-export type ColorToken = keyof typeof colors;
+/** Les deux jeux, indexés par leur nom. `contrast.test.ts` les parcourt. */
+export const palettes = { light, dark } as const;
+
+export type ThemeName = keyof typeof palettes;
+export type ColorToken = keyof typeof light;
+/** Un jeu complet. Ce que reçoit une fabrique `themed()`. */
+export type ColorSet = Readonly<Record<ColorToken, string>>;
 export type SpaceToken = keyof typeof space;
 export type FontStack = keyof typeof fontStacks;
 export type Weight = (typeof weight)[keyof typeof weight];

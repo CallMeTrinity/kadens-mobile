@@ -361,6 +361,7 @@ export function usePreferences(): Omit<PreferenceRow, 'id'> {
             vibrate: row.vibrate,
             autoRest: row.autoRest,
             silhouette: row.silhouette,
+            theme: row.theme,
           }
         : DEFAULT_PREFERENCES,
     [row],

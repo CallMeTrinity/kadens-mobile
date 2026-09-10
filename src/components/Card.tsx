@@ -8,9 +8,9 @@
  */
 
 import type { ReactNode } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles } from '@/theme';
 
 export type CardProps = {
   /** Titre de section : libellé de l'app, donc condensé capitales (règle 4). */
@@ -23,6 +23,7 @@ export type CardProps = {
 };
 
 export function Card({ title, right, children, style, testID }: CardProps) {
+  const styles = useStyles(sheets);
   return (
     <View style={[styles.card, style]} testID={testID}>
       {title || right ? (
@@ -44,11 +45,11 @@ export function Card({ title, right, children, style, testID }: CardProps) {
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   card: {
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     borderWidth: layout.hairline,
-    borderColor: colors.border,
+    borderColor: c.border,
     paddingVertical: space[9],
     paddingHorizontal: space[10],
   },
@@ -60,9 +61,9 @@ const styles = StyleSheet.create({
     paddingBottom: space[6],
     marginBottom: space[6],
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.divider,
+    borderBottomColor: c.divider,
   },
   // `flexShrink` : sans lui, un titre long pousse l'action de droite hors de la
   // carte au lieu de passer à la ligne.
-  title: { ...text.sectionTitle, color: colors.text, flexShrink: 1 },
-});
+  title: { ...text.sectionTitle, color: c.text, flexShrink: 1 },
+}));

@@ -2,7 +2,7 @@ import { router, Stack, type ErrorBoundaryProps } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
-import { Linking, StyleSheet } from 'react-native';
+import { Linking } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
@@ -11,14 +11,54 @@ import { Fault } from '@/components';
 import { getSyncState, useDatabaseMigrations } from '@/db';
 import { initRestNotifications } from '@/session';
 import { useAppVersionCheck, useSyncTriggers } from '@/sync';
-import { colors, useKadensFonts } from '@/theme';
+import {
+  themed,
+  ThemeProvider,
+  useKadensFonts,
+  useStyles,
+  useSystemBackground,
+  useTheme,
+} from '@/theme';
 
 // L'écran de démarrage reste affiché tant que les polices ne sont pas prêtes.
 // Sans ça le premier rendu sort en police système puis bascule : la mise en
 // page saute, et un titre condensé change de largeur du tout au tout.
 SplashScreen.preventAutoHideAsync();
 
+/**
+ * La racine, et le seul endroit où le thème se décide.
+ *
+ * Le fournisseur enveloppe **les trois sorties** de l'écran — la panne de base,
+ * le plancher de version, l'app — et pas seulement la dernière : un écran de
+ * panne resté en papier sur un téléphone en nuit serait le premier que l'on voit
+ * et le seul à ne pas suivre.
+ */
 export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootScreens />
+    </ThemeProvider>
+  );
+}
+
+/**
+ * La barre de statut, dérivée du thème **résolu**.
+ *
+ * Pas `style="auto"` : il suit le schéma du **système**, pas celui de l'app, et
+ * se trompe donc exactement dans le cas qui a motivé le réglage — un téléphone
+ * en sombre et une app forcée en clair. Les glyphes doivent contraster avec ce
+ * que l'app peint, pas avec ce que le système préfère.
+ */
+function KadensStatusBar() {
+  return <StatusBar style={useTheme() === 'dark' ? 'light' : 'dark'} />;
+}
+
+function RootScreens() {
+  const styles = useStyles(sheets);
+  // Le fond de fenêtre, sous la vue React : la frame avant le premier rendu, une
+  // rotation, un débordement de défilement. Sans lui, une app sombre laisse
+  // apparaître une gouttière blanche à ces moments-là.
+  useSystemBackground();
   const [fontsLoaded, fontError] = useKadensFonts();
   // Les migrations locales (KL-24) : une fois par version de schéma, journal
   // tenu par Drizzle. Elles doivent avoir tourné avant qu'un écran lise quoi
@@ -94,7 +134,7 @@ export default function RootLayout() {
           body="Les migrations n’ont pas pu s’appliquer. Rien n’a été perdu : le réalisé déjà consigné reste dans le fichier."
           detail={dbError.message}
         />
-        <StatusBar style="dark" />
+        <KadensStatusBar />
       </SafeAreaProvider>
     );
   }
@@ -127,7 +167,7 @@ export default function RootLayout() {
                 }
           }
         />
-        <StatusBar style="dark" />
+        <KadensStatusBar />
       </SafeAreaProvider>
     );
   }
@@ -152,7 +192,9 @@ export default function RootLayout() {
         <Stack
           screenOptions={{
             headerShown: false,
-            contentStyle: { backgroundColor: colors.bg },
+            // Dans la feuille et non un objet littéral : les options de la pile se
+            // reconstruiraient à chaque rendu de la racine.
+            contentStyle: styles.stackContent,
             // Un écran recouvert cesse de se rendre. Ça vise une situation
             // précise : une séance dure une heure, écran allumé, empilée
             // **par-dessus** les onglets — qui restent montés sous elle et
@@ -205,7 +247,7 @@ export default function RootLayout() {
             <Stack.Screen name="login-password" />
           </Stack.Protected>
         </Stack>
-        <StatusBar style="dark" />
+        <KadensStatusBar />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -242,7 +284,7 @@ export function ErrorBoundary({ error, retry }: ErrorBoundaryProps) {
         action={{ label: 'Réessayer', onPress: () => void retry() }}
         secondary={{ label: 'Revenir à l’accueil', onPress: () => leaveToToday(retry) }}
       />
-      <StatusBar style="dark" />
+      <KadensStatusBar />
     </SafeAreaProvider>
   );
 }
@@ -311,6 +353,7 @@ function useRestoredSession(dbSettled: boolean, dbReady: boolean): boolean {
  * La racine des gestes occupe la fenêtre entière. Sans `flex: 1`, elle se
  * réduirait à la hauteur de son contenu et rognerait l'app à sa première mesure.
  */
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   root: { flex: 1 },
-});
+  stackContent: { backgroundColor: c.bg },
+}));

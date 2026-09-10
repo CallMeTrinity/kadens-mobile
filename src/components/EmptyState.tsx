@@ -15,9 +15,9 @@
  * diverger les deux au premier ajustement.
  */
 
-import { StyleSheet, View, Text, type StyleProp, type ViewStyle } from 'react-native';
+import { View, Text, type StyleProp, type ViewStyle } from 'react-native';
 
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles } from '@/theme';
 import { Button, type ButtonProps } from './Button';
 
 export type EmptyStateProps = {
@@ -41,6 +41,7 @@ export function EmptyState({
   style,
   testID,
 }: EmptyStateProps) {
+  const styles = useStyles(sheets);
   return (
     <View style={[styles.empty, compact && styles.compact, style]} testID={testID}>
       <Text style={styles.title}>{title}</Text>
@@ -50,7 +51,7 @@ export function EmptyState({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   empty: {
     alignItems: 'center',
     gap: space[4],
@@ -58,7 +59,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: space[8],
   },
   compact: { paddingVertical: space[6], paddingHorizontal: 0 },
-  title: { ...text.sectionTitle, color: colors.textSoft, textAlign: 'center' },
-  hint: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
+  title: { ...text.sectionTitle, color: c.textSoft, textAlign: 'center' },
+  hint: { ...text.caption, color: c.textSecondary, textAlign: 'center' },
   action: { marginTop: space[3] },
-});
+}));

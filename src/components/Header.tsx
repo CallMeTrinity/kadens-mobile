@@ -33,10 +33,10 @@
  */
 
 import type { ReactNode } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, useColors } from '@/theme';
 import { Icon } from './Icon';
 
 export type HeaderProps = {
@@ -76,6 +76,8 @@ export function Header({
   right,
   testID,
 }: HeaderProps) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const insets = useSafeAreaInsets();
 
   const back = onBack ? (
@@ -134,13 +136,13 @@ export function Header({
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   header: {
-    backgroundColor: colors.surfaceRaised,
+    backgroundColor: c.surfaceRaised,
     paddingBottom: space[6],
     paddingHorizontal: space[8],
     borderBottomWidth: layout.hairline,
-    borderBottomColor: colors.border,
+    borderBottomColor: c.border,
     gap: space[2],
   },
   headerCompact: { paddingBottom: space[4], gap: space[1] },
@@ -156,7 +158,7 @@ const styles = StyleSheet.create({
     paddingRight: space[3],
   },
   backPressed: { opacity: 0.6 },
-  backLabel: { ...text.action, color: colors.textSecondary },
+  backLabel: { ...text.action, color: c.textSecondary },
   titles: { gap: space[1] },
   titleRow: {
     flexDirection: 'row',
@@ -170,12 +172,12 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: space[4],
   },
-  eyebrow: { ...text.eyebrow, color: colors.textSecondary },
-  title: { color: colors.text, flexShrink: 1 },
+  eyebrow: { ...text.eyebrow, color: c.textSecondary },
+  title: { color: c.text, flexShrink: 1 },
   // Deux styles entiers plutôt qu'un style de base surchargé : `pageTitle`
   // porte `textTransform` et un interlettrage que le rôle « nom » n'a pas, et
   // qu'une fusion laisserait derrière lui.
   titleLabel: text.pageTitle,
   titleName: text.pageName,
   right: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-});
+}));

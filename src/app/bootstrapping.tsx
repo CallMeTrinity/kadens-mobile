@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { completeFirstSync } from '@/api';
 import { Button } from '@/components';
 import { syncNow } from '@/sync';
-import { colors, space, text } from '@/theme';
+import { space, text, themed, useStyles, useColors } from '@/theme';
 
 /**
  * L'écran de premier bootstrap (KL-26, complété par KL-27).
@@ -28,6 +28,8 @@ import { colors, space, text } from '@/theme';
  * pull, mais l'app reste utilisable.
  */
 export default function BootstrappingScreen() {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const [attempt, setAttempt] = useState(0);
   const insets = useSafeAreaInsets();
   const [pending, setPending] = useState(true);
@@ -102,14 +104,14 @@ export default function BootstrappingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: colors.bg, justifyContent: 'center' },
+const sheets = themed((c) => ({
+  screen: { flex: 1, backgroundColor: c.bg, justifyContent: 'center' },
   center: { alignItems: 'center', gap: space[4], paddingHorizontal: space[8] },
-  title: { ...text.sectionTitle, color: colors.text, textAlign: 'center' },
-  hint: { ...text.caption, color: colors.textSecondary, textAlign: 'center' },
+  title: { ...text.sectionTitle, color: c.text, textAlign: 'center' },
+  hint: { ...text.caption, color: c.textSecondary, textAlign: 'center' },
   // Le rouge dit l'échec, et rien d'autre (§5 règle 2). `statusMissed` et non
   // `primary` : c'est le token que le web pose sur `.kd-flash--error`, et les
   // deux ne veulent pas dire la même chose — l'un est l'accent, l'autre l'échec.
-  error: { ...text.body, color: colors.primaryOnTint, textAlign: 'center' },
+  error: { ...text.body, color: c.primaryOnTint, textAlign: 'center' },
   actions: { marginTop: space[4], gap: space[3], alignSelf: 'stretch' },
-});
+}));

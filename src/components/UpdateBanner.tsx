@@ -26,9 +26,9 @@
  * se disputent donc jamais la même ligne (`app/(tabs)/_layout.tsx`).
  */
 
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
-import { colors, layout, space, text } from '@/theme';
+import { layout, space, text, themed, useStyles, useColors } from '@/theme';
 
 import { Icon } from './Icon';
 
@@ -40,6 +40,8 @@ export type UpdateBannerProps = {
 };
 
 export function UpdateBanner({ versionName, onPress, testID }: UpdateBannerProps) {
+  const styles = useStyles(sheets);
+  const colors = useColors();
   const detail =
     versionName === null
       ? 'Une version plus récente est publiée.'
@@ -68,7 +70,7 @@ export function UpdateBanner({ versionName, onPress, testID }: UpdateBannerProps
   );
 }
 
-const styles = StyleSheet.create({
+const sheets = themed((c) => ({
   banner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -78,14 +80,14 @@ const styles = StyleSheet.create({
     minHeight: layout.touchTarget,
     paddingVertical: space[3],
     paddingHorizontal: space[8],
-    backgroundColor: colors.fill,
+    backgroundColor: c.fill,
     borderTopWidth: layout.hairline,
-    borderTopColor: colors.border,
+    borderTopColor: c.border,
   },
   // Pressé, la bande **fonce** au lieu de s'éclaircir : même correction qu'au
   // bouton primaire en KL-39, un appui doit s'enfoncer.
-  pressed: { backgroundColor: colors.track },
+  pressed: { backgroundColor: c.track },
   copy: { flex: 1, flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap', gap: space[3] },
-  label: { ...text.eyebrow, color: colors.text },
-  detail: { ...text.caption, color: colors.textSecondary, flexShrink: 1 },
-});
+  label: { ...text.eyebrow, color: c.text },
+  detail: { ...text.caption, color: c.textSecondary, flexShrink: 1 },
+}));

@@ -1,0 +1,1 @@
+ALTER TABLE `preference` ADD `theme` text DEFAULT 'system' NOT NULL;
