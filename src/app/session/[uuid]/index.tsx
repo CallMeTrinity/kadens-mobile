@@ -2042,10 +2042,12 @@ function bestSummary(best: PerformanceBest): string {
 /**
  * La date d'un point d'historique, relative aux deux jours qui comptent.
  *
- * « Aujourd'hui » lève l'ambiguïté du seul cas trompeur : une séance poussée puis
- * redescendue dans la journée fait de « la dernière fois » ce qu'on vient de
- * faire. Au-delà d'hier, le quantième est plus parlant qu'un décompte de jours —
- * on se souvient d'un jeudi, pas d'un « il y a 9 jours ».
+ * « Aujourd'hui » reste utile et ne rattrape plus rien : ce n'est plus la séance
+ * en cours qu'il désignait — `replaceHistory()` la tient hors de cette table —
+ * mais une **autre** séance du jour, faite et poussée le matin, qui est bien la
+ * dernière fois qu'on a touché cet exercice. Au-delà d'hier, le quantième est plus
+ * parlant qu'un décompte de jours : on se souvient d'un jeudi, pas d'un « il y a
+ * 9 jours ».
  */
 function performanceDate(date: string, today: string): string {
   switch (dayOffset(date, today)) {
