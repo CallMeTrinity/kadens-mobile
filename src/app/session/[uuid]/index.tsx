@@ -64,6 +64,7 @@ import {
   setCardioDone,
   setDeviates,
   setExerciseState,
+  setRestUpNext,
   setTypeLabel,
   setTypeLetter,
   shortDate,
@@ -303,7 +304,16 @@ export default function SessionScreen() {
   // Pas de cible pendant qu'on range : la barre basse porte alors la sortie du
   // mode, et le déroulé ne doit pas se recaler sous le doigt au moment précis où
   // on déplace une ligne (`useRevealTarget`).
-  const target = running && !reordering ? nextTarget(program) : null;
+  const upNext = running ? nextTarget(program) : null;
+  const target = reordering ? null : upNext;
+  // La notification de fin de repos annonce la **prochaine** série, et seul cet
+  // écran la connaît. Indépendante du rangement : on peut ranger le déroulé
+  // pendant un repos, la série qui suit ne change pas pour autant.
+  const upNextLabel = upNext ? `${upNext.exercise.name}, ${targetValues(upNext)}` : null;
+
+  useEffect(() => {
+    setRestUpNext(upNextLabel);
+  }, [upNextLabel]);
   // Les hors-programme se regroupent comme les exercices d'un bloc : sans ordre
   // local chacun est son propre groupe, avec un enchaînement improvisé ils
   // partagent un rail. Mémoïsé comme le reste du déroulé — il se reconstruit à

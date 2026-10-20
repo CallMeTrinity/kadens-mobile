@@ -224,6 +224,7 @@ export {
   getRest,
   initRestNotifications,
   REST_STEP,
+  setRestUpNext,
   startRest,
   startRestAfterSet,
   stopRest,
