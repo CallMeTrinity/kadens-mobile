@@ -40,6 +40,7 @@ export { isUuidv7, uuidv7 } from './uuid';
 export {
   exercise,
   exerciseHistory,
+  exerciseSetup,
   loggedExercise,
   loggedSet,
   mutationQueue,
@@ -56,6 +57,7 @@ export type {
   ExerciseHistoryRow,
   ExerciseInsert,
   ExerciseRow,
+  ExerciseSetupRow,
   LoggedExerciseInsert,
   LoggedExerciseRow,
   LoggedSetInsert,

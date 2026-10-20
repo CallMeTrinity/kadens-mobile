@@ -213,7 +213,7 @@ export function startRest(seconds: number, exerciseName: string | null = null): 
   });
 
   startTicking();
-  armRestNotification(exerciseName);
+  armRestNotification();
 
   return true;
 }
@@ -254,7 +254,7 @@ export function adjustRest(deltaSeconds: number): boolean {
   // Le tick a pu s'arrêter : « + 15 s » sur un repos **terminé** le relance, et
   // c'est le geste naturel quand on décide de souffler un peu plus.
   startTicking();
-  armRestNotification(state.exerciseName);
+  armRestNotification();
 
   return true;
 }
@@ -263,6 +263,9 @@ export function adjustRest(deltaSeconds: number): boolean {
 export function stopRest(): void {
   stopTicking();
   disarmRestNotification();
+  // Périme une programmation en vol : sans ça, un « Passer » pendant
+  // `scheduleNotificationAsync` laissait sonner la fin d'un repos abandonné.
+  epoch++;
   void cancelRestNotification();
   publish(null);
 }
@@ -363,6 +366,35 @@ let epoch = 0;
 let permissionAsked = false;
 
 /**
+ * Ce que la séance attend après ce repos, tel que la notification l'annonce.
+ *
+ * **Ce n'est pas l'exercice d'où vient le repos.** Après la dernière série d'un
+ * exercice, la suivante est celle de l'exercice d'après, et dans un superset
+ * c'est l'autre membre. La notification disait « Série suivante : » suivi de
+ * l'exercice qu'on venait de finir, ce qui était faux une fois sur deux.
+ *
+ * Ce module ne sait pas lire un déroulé, et ne doit pas l'apprendre : c'est
+ * l'écran de séance qui connaît la cible (`nextTarget`) et la pousse ici à chaque
+ * changement. Au moment de cocher, son déroulé décrit encore la séance **avant**
+ * la série : la bonne cible n'arrive qu'au rendu suivant, d'où la reprogrammation
+ * quand elle change pendant un repos.
+ */
+let upNext: string | null = null;
+
+/** Publie la cible suivante. `null` quand il n'y a plus rien à cocher. */
+export function setRestUpNext(label: string | null): void {
+  if (label === upNext) {
+    return;
+  }
+
+  upNext = label;
+
+  if (state !== null && remainingOf(state.endsAt) > 0) {
+    armRestNotification();
+  }
+}
+
+/**
  * Prépare les notifications de repos. À appeler **une fois**, au démarrage.
  *
  * Trois choses, dans cet ordre : le gestionnaire global qui tait la bannière
@@ -433,11 +465,11 @@ let armed: ReturnType<typeof setTimeout> | null = null;
 /**
  * Demande que l'avertissement soit (re)programmé sur l'échéance **courante**.
  *
- * Ne lit pas de durée : il lit `state.endsAt` au moment de tirer, ce qui est la
- * seule façon d'être juste après une attente. Une échéance déjà passée, ou un
+ * Ne lit ni durée ni libellé : il lit `state.endsAt` et `upNext` au moment de
+ * tirer, ce qui est la seule façon d'être juste après une attente. Une échéance déjà passée, ou un
  * repos terminé entre-temps, ne programme rien.
  */
-function armRestNotification(exerciseName: string | null): void {
+function armRestNotification(): void {
   disarmRestNotification();
 
   armed = setTimeout(() => {
@@ -446,7 +478,7 @@ function armRestNotification(exerciseName: string | null): void {
     const remaining = state === null ? 0 : remainingOf(state.endsAt);
 
     if (remaining > 0) {
-      void scheduleRestNotification(remaining, exerciseName);
+      void scheduleRestNotification(remaining, upNext);
     }
   }, NOTIFICATION_DEBOUNCE_MS);
 }
@@ -466,11 +498,16 @@ function disarmRestNotification(): void {
  * d'explication — on vient de cocher une série, l'app propose de prévenir quand
  * le repos est fini. Un refus ne casse rien : le décompte et la vibration au
  * premier plan ne demandent aucune permission.
+ *
+ * **L'heure n'est juste qu'avec une alarme exacte.** `expo-notifications` ne
+ * programme une alarme exacte que si `canScheduleExactAlarms()` répond oui ;
+ * sinon il retombe sur une alarme inexacte, qu'Android en Doze (écran éteint,
+ * téléphone posé sur le banc) repousse de plusieurs minutes, voire au-delà de la
+ * série suivante. Depuis Android 14 `SCHEDULE_EXACT_ALARM` n'est plus accordée
+ * d'office : c'est `USE_EXACT_ALARM` (`app.json`) qui l'est, et que le Play Store
+ * réserve aux minuteurs — ce qu'est ce repos, et l'app n'y est pas distribuée.
  */
-async function scheduleRestNotification(
-  seconds: number,
-  exerciseName: string | null,
-): Promise<void> {
+async function scheduleRestNotification(seconds: number, next: string | null): Promise<void> {
   const mine = ++epoch;
 
   await cancelRestNotification();
@@ -485,7 +522,7 @@ async function scheduleRestNotification(
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'Repos terminé',
-        body: exerciseName ? `Série suivante : ${exerciseName}` : 'Série suivante',
+        body: next ? `À suivre : ${next}` : 'Plus rien à cocher, la séance peut se clôturer.',
         data: { kind: REST_NOTIFICATION_KIND },
       },
       trigger: {

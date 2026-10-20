@@ -6,6 +6,7 @@ import {
   DEFAULT_LANGUAGE,
   exercise,
   exerciseHistory,
+  exerciseSetup,
   loggedExercise,
   loggedSet,
   nowIso,
@@ -15,7 +16,7 @@ import {
   type Transaction,
 } from '@/db';
 
-import { pendingUuids } from './queue';
+import { pendingSetups, pendingUuids } from './queue';
 
 /**
  * Le sens descendant : appliquer un `GET /api/bootstrap` à la base locale
@@ -86,6 +87,7 @@ export function applyBootstrap(payload: BootstrapPayload): PullReport {
     const removedSchedule = purgeSchedule(tx, payload, guarded);
 
     replaceHistory(tx, payload, running.length > 0);
+    replaceSetups(tx, payload);
 
     // Dans la **même** transaction que les données : un état avancé sur une base
     // à moitié écrite ferait repartir la synchronisation suivante d'un `since`
@@ -496,6 +498,65 @@ function replaceHistory(tx: Transaction, payload: BootstrapPayload, workoutRunni
       .onConflictDoUpdate({
         target: exerciseHistory.exerciseId,
         set: { last: sql`excluded.last`, best: sql`excluded.best` },
+      })
+      .run();
+  }
+}
+
+/**
+ * Remplace les réglages de machine par ceux du serveur.
+ *
+ * La liste descend **entière** (`?since` ne l'allège pas) : ce qu'elle ne
+ * contient plus a été effacé ailleurs — sur un autre téléphone, ou ici puis
+ * poussé. Elle remplace donc le local, avec les deux exceptions habituelles :
+ *
+ * - **Un réglage dont la mutation attend** n'est ni écrasé ni supprimé. C'est la
+ *   règle de `protectedUuids`, pour la même raison : tant que le serveur n'a pas
+ *   confirmé, le téléphone fait autorité.
+ * - **Un réglage sur un exercice inconnu** est sauté, comme une entrée
+ *   d'historique (`replaceHistory`) : la clé étrangère ferait sinon tomber le
+ *   pull entier.
+ *
+ * Un serveur qui n'envoie pas encore la clé (déploiement en retard sur l'app) ne
+ * dit rien des réglages : on n'y touche pas, plutôt que de lire son silence
+ * comme « tout a été effacé ».
+ */
+function replaceSetups(tx: Transaction, payload: BootstrapPayload): void {
+  if (payload.setups === undefined) {
+    return;
+  }
+
+  const pending = pendingSetups(tx);
+  const known = knownExerciseIds(tx);
+  const incoming = payload.setups.filter(
+    (entry): entry is typeof entry & { text: string } =>
+      entry.text !== null && known.has(entry.exerciseId) && !pending.has(entry.exerciseId),
+  );
+  const keep = new Set(incoming.map((entry) => entry.exerciseId));
+
+  const doomed = tx
+    .select({ id: exerciseSetup.exerciseId })
+    .from(exerciseSetup)
+    .all()
+    .map((row) => row.id)
+    .filter((id) => !keep.has(id) && !pending.has(id));
+
+  if (doomed.length > 0) {
+    tx.delete(exerciseSetup).where(inArray(exerciseSetup.exerciseId, doomed)).run();
+  }
+
+  for (let i = 0; i < incoming.length; i += BATCH) {
+    tx.insert(exerciseSetup)
+      .values(
+        incoming.slice(i, i + BATCH).map((entry) => ({
+          exerciseId: entry.exerciseId,
+          text: entry.text,
+          updatedAt: entry.updatedAt,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: exerciseSetup.exerciseId,
+        set: { text: sql`excluded.text`, updatedAt: sql`excluded.updated_at` },
       })
       .run();
   }

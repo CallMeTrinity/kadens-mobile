@@ -32,6 +32,7 @@ import {
   db,
   exercise,
   exerciseHistory,
+  exerciseSetup,
   loggedExercise,
   loggedSet,
   mutationQueue,
@@ -325,6 +326,20 @@ export function exerciseHistoryQuery(exerciseIds: number[]) {
     .where(
       inArray(exerciseHistory.exerciseId, exerciseIds.length > 0 ? exerciseIds : [NO_EXERCISE]),
     );
+}
+
+/**
+ * Les réglages de machine des exercices de la séance.
+ *
+ * Même forme que `exerciseHistoryQuery` juste au-dessus, et même garde contre
+ * `IN ()`. Écoute `exercise_setup` : un réglage corrigé sur un autre téléphone
+ * arrive au pull suivant sans rouvrir la séance.
+ */
+export function exerciseSetupsQuery(exerciseIds: number[]) {
+  return db
+    .select({ exerciseId: exerciseSetup.exerciseId, text: exerciseSetup.text })
+    .from(exerciseSetup)
+    .where(inArray(exerciseSetup.exerciseId, exerciseIds.length > 0 ? exerciseIds : [NO_EXERCISE]));
 }
 
 /**

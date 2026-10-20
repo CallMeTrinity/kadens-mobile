@@ -11,6 +11,17 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Ajouté
+
+- **Les réglages de la machine se notent sur l'exercice** : un bloc de texte
+  libre (« dossier : 5, jambe : 1 »), dans la feuille « Ajuster », qui se relit
+  sous le nom de l'exercice à chaque séance suivante. Un appui dessus le corrige,
+  même avant d'avoir démarré ou après la clôture. Le réglage appartient au compte,
+  pas au téléphone : il part au serveur comme le réalisé, hors réseau compris, et
+  revient sur un autre appareil. Le vider l'efface. **Demande le serveur à jour**
+  (`PUT /api/exercises/{id}/setup`) : face à un serveur plus ancien, l'envoi est
+  refusé et finit marqué dans les réglages.
+
 ## [1.2.0] - 2026-09-10
 
 ### Ajouté

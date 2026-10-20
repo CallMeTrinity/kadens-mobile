@@ -123,6 +123,7 @@ export {
   useRunningWorkout,
   useSessionHistory,
   useSessionProgram,
+  useSessionSetups,
   useToday,
   useWorkout,
   useWorkoutPendingSync,
@@ -172,6 +173,8 @@ export {
 export type { ExerciseNameBook, ExerciseNames } from './naming';
 
 export { cancelWorkout } from './cancel';
+
+export { saveExerciseSetup } from './setup';
 export type { CancelOutcome } from './cancel';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';
@@ -221,6 +224,7 @@ export {
   getRest,
   initRestNotifications,
   REST_STEP,
+  setRestUpNext,
   startRest,
   startRestAfterSet,
   stopRest,

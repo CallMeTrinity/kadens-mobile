@@ -39,6 +39,7 @@ const TABLES = [
   'session_layout',
   'scheduled_workout',
   'exercise_history',
+  'exercise_setup',
   'exercise',
   'sync_state',
   'preference',

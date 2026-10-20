@@ -1,12 +1,15 @@
+import { eq } from 'drizzle-orm';
+
 import {
   deleteSchedule,
   describeError,
   isTransient,
   isUnauthorized,
+  putExerciseSetup,
   putSchedule,
   type ScheduleUpsertInput,
 } from '@/api';
-import { db, nowIso, patchSyncState, type MutationRow } from '@/db';
+import { db, exerciseSetup, nowIso, patchSyncState, type MutationRow } from '@/db';
 
 import { readScheduleDocument } from './document';
 import {
@@ -145,7 +148,19 @@ export async function pushPending(): Promise<PushReport> {
  * toujours.
  */
 async function send(mutation: MutationRow): Promise<'created' | 'updated' | 'deleted' | 'moot'> {
-  const { uuid } = mutation.payload;
+  const { uuid, exerciseId } = mutation.payload;
+
+  if (exerciseId !== undefined) {
+    await sendSetup(exerciseId);
+
+    return 'updated';
+  }
+
+  if (uuid === undefined) {
+    // Une ligne sans clé ne vient d'aucun chemin d'écriture de l'app. On la
+    // retire plutôt que de la laisser bloquer la file pour toujours.
+    return 'moot';
+  }
 
   if (mutation.type === 'schedule.delete') {
     await deleteSchedule(uuid);
@@ -167,4 +182,45 @@ async function send(mutation: MutationRow): Promise<'created' | 'updated' | 'del
   return (await putSchedule(uuid, document satisfies ScheduleUpsertInput)).created
     ? 'created'
     : 'updated';
+}
+
+/**
+ * Pousse le réglage de machine de cet exercice, **tel qu'il est maintenant** en
+ * base : le texte est relu au moment du push, comme le document d'une séance.
+ * Pas de ligne, c'est un effacement — le `PUT` part avec `null`, et le serveur
+ * le rend rejouable.
+ *
+ * ## Une retouche pendant l'aller-retour
+ *
+ * Elle réarme la mutation en file, mais c'est **la même ligne** — et le push la
+ * retire dès que cet envoi aboutit. Sans rien de plus, la retouche ne partirait
+ * jamais : contrairement à une séance, que la clôture réempile, un réglage n'a
+ * pas de geste suivant pour le rattraper. D'où la relecture après la réponse, et
+ * un nouvel envoi tant que le texte a bougé (borné : on ne tape pas trois fois
+ * pendant un `PUT`).
+ *
+ * L'horodatage rendu par le serveur n'est recopié que sur le texte qu'il décrit.
+ */
+async function sendSetup(exerciseId: number): Promise<void> {
+  const read = () =>
+    db
+      .select({ text: exerciseSetup.text })
+      .from(exerciseSetup)
+      .where(eq(exerciseSetup.exerciseId, exerciseId))
+      .get()?.text ?? null;
+
+  let sent = read();
+  let saved = await putExerciseSetup(exerciseId, sent);
+
+  for (let retries = 0; retries < 2 && read() !== sent; retries += 1) {
+    sent = read();
+    saved = await putExerciseSetup(exerciseId, sent);
+  }
+
+  if (sent !== null && saved.text === sent && read() === sent) {
+    db.update(exerciseSetup)
+      .set({ updatedAt: saved.updatedAt })
+      .where(eq(exerciseSetup.exerciseId, exerciseId))
+      .run();
+  }
 }
