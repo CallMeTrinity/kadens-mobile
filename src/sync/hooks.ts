@@ -97,8 +97,10 @@ export function useOfflineNotice(): OfflineNotice {
 export interface QueuedMutation {
   id: number;
   type: MutationType;
-  /** La séance concernée. Une mutation ne porte que ça (voir `queue.ts`). */
-  uuid: string;
+  /** La séance concernée, ou `null` pour un réglage de machine. Une mutation ne porte que sa clé (`queue.ts`). */
+  uuid: string | null;
+  /** L'exercice dont le réglage attend, ou `null` pour une séance. */
+  exerciseId: number | null;
   attempts: number;
   lastError: string | null;
   createdAt: string;
@@ -145,12 +147,13 @@ export function useMutationQueue(): QueuedMutation[] {
     const known = new Map(workouts.map((workout) => [workout.uuid, workout]));
 
     return rows.map((row) => {
-      const workout = known.get(row.payload.uuid);
+      const workout = row.payload.uuid === undefined ? undefined : known.get(row.payload.uuid);
 
       return {
         id: row.id,
         type: row.type,
-        uuid: row.payload.uuid,
+        uuid: row.payload.uuid ?? null,
+        exerciseId: row.payload.exerciseId ?? null,
         attempts: row.attempts,
         lastError: row.lastError,
         createdAt: row.createdAt,

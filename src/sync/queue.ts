@@ -1,14 +1,22 @@
 import { asc, eq } from 'drizzle-orm';
 
-import { db, mutationQueue, nowIso, type MutationRow, type Writer } from '@/db';
+import {
+  db,
+  mutationQueue,
+  nowIso,
+  type MutationPayload,
+  type MutationRow,
+  type Writer,
+} from '@/db';
 
 /**
  * La file de mutations montantes (KL-27).
  *
  * ## Ce qu'une mutation dit, et ce qu'elle ne dit pas
  *
- * Une entrée ne porte **que** l'uuid de la séance concernée : le document se relit
- * en base au moment du push (`document.ts`). Y figer le corps de la requête en
+ * Une entrée ne porte **que** sa clé — l'uuid d'une séance, ou l'identifiant
+ * d'un exercice pour un réglage de machine : le document se relit en base au
+ * moment du push (`document.ts`, `exercise_setup`). Y figer le corps de la requête en
  * ferait une seconde version du réalisé, qui périmerait à la série suivante — et
  * deux versions d'un même fait finissent toujours par diverger. Corollaire utile :
  * une séance modifiée dix fois n'a qu'une entrée dans la file, et c'est la
@@ -62,7 +70,32 @@ export function listMutations(writer: Writer = db): MutationRow[] {
  * séances-là (`pull.ts`).
  */
 export function pendingUuids(writer: Writer = db): Set<string> {
-  return new Set(listMutations(writer).map((row) => row.payload.uuid));
+  const uuids = new Set<string>();
+
+  for (const row of listMutations(writer)) {
+    if (row.payload.uuid !== undefined) {
+      uuids.add(row.payload.uuid);
+    }
+  }
+
+  return uuids;
+}
+
+/**
+ * Les exercices dont le réglage de machine attend d'être poussé, épuisés
+ * compris. Le pendant de `pendingUuids()` pour `exercise_setup` : le pull ne
+ * remplace pas ce que le serveur n'a pas encore confirmé.
+ */
+export function pendingSetups(writer: Writer = db): Set<number> {
+  const ids = new Set<number>();
+
+  for (const row of listMutations(writer)) {
+    if (row.payload.exerciseId !== undefined) {
+      ids.add(row.payload.exerciseId);
+    }
+  }
+
+  return ids;
 }
 
 /**
@@ -92,7 +125,27 @@ export function enqueueSchedulePut(uuid: string, writer: Writer = db): void {
     return;
   }
 
-  insert(writer, 'schedule.put', uuid);
+  insert(writer, 'schedule.put', { uuid });
+}
+
+/**
+ * Empile l'envoi du réglage de machine de cet exercice.
+ *
+ * **Coalescé par exercice**, comme une séance par uuid : retoucher trois fois le
+ * cran de la poulie ne fait qu'une entrée, et le texte poussé est celui qu'on lit
+ * au moment du push. Un effacement est un envoi comme un autre — le texte relu
+ * est alors absent, et le `PUT` part avec `null`.
+ */
+export function enqueueSetupPut(exerciseId: number, writer: Writer = db): void {
+  const existing = listMutations(writer).find((row) => row.payload.exerciseId === exerciseId);
+
+  if (existing) {
+    rearm(writer, existing.id);
+
+    return;
+  }
+
+  insert(writer, 'exercise.setup', { exerciseId });
 }
 
 /**
@@ -120,7 +173,7 @@ export function enqueueScheduleDelete(uuid: string, writer: Writer = db): void {
     return;
   }
 
-  insert(writer, 'schedule.delete', uuid);
+  insert(writer, 'schedule.delete', { uuid });
 }
 
 /** Retire une entrée : elle est passée, ou elle n'a plus d'objet. */
@@ -174,10 +227,10 @@ function ofUuid(writer: Writer, uuid: string): MutationRow[] {
   return listMutations(writer).filter((row) => row.payload.uuid === uuid);
 }
 
-function insert(writer: Writer, type: MutationRow['type'], uuid: string): void {
+function insert(writer: Writer, type: MutationRow['type'], payload: MutationPayload): void {
   writer
     .insert(mutationQueue)
-    .values({ type, payload: { uuid }, attempts: 0, lastError: null, createdAt: nowIso() })
+    .values({ type, payload, attempts: 0, lastError: null, createdAt: nowIso() })
     .run();
 }
 

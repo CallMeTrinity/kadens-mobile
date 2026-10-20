@@ -58,6 +58,7 @@ import {
   removeExercise,
   replaceExercise,
   resetExecutionOrder,
+  saveExerciseSetup,
   REST_STEP,
   sessionRecords,
   setCardioDone,
@@ -79,6 +80,7 @@ import {
   useRestTimer,
   useSessionHistory,
   useSessionProgram,
+  useSessionSetups,
   useToday,
   useWorkout,
   useWorkoutPendingSync,
@@ -260,6 +262,9 @@ export default function SessionScreen() {
     [base, drafts, overrides],
   );
   const history = useSessionHistory(program);
+  // Les réglages de machine, lus comme l'historique : une lecture pour tout le
+  // déroulé, indexée par exercice.
+  const setups = useSessionSetups(program);
   // La série qui bat le record de son exercice, s'il y en a une. Calculé une
   // fois pour tout le déroulé, comme l'historique dont il dérive — et mémoïsé
   // comme lui : il se refait à chaque écriture, pas à chaque rendu.
@@ -274,6 +279,7 @@ export default function SessionScreen() {
   // la séance telle qu'elle était avant le dernier appui.
   const [openSet, setOpenSet] = useState<string | null>(null);
   const [openExercise, setOpenExercise] = useState<string | null>(null);
+  const [openSetup, setOpenSetup] = useState<string | null>(null);
   const [picker, setPicker] = useState<PickerTarget | null>(null);
   // Le mode « ranger le déroulé » (KL-52). Il vit dans l'écran et nulle part
   // ailleurs : ce n'est pas un état de la séance, c'est une façon de la regarder,
@@ -552,6 +558,7 @@ export default function SessionScreen() {
   const closedElsewhere = closed && workout.endedAt === null;
   const sheetSet = openSet === null ? null : findLine(program, openSet);
   const sheetExercise = openExercise === null ? null : findExercise(program, openExercise);
+  const setupExercise = openSetup === null ? null : findExercise(program, openSetup);
 
   return (
     <View style={styles.screen}>
@@ -671,6 +678,7 @@ export default function SessionScreen() {
                   block={block}
                   editable={running}
                   history={history}
+                  setups={setups}
                   records={records}
                   today={today}
                   targetKey={target?.exercise.key ?? null}
@@ -681,6 +689,7 @@ export default function SessionScreen() {
                   onAddSet={onAddSet}
                   onDropSet={dropDraft}
                   onOpenExercise={setOpenExercise}
+                  onOpenSetup={setOpenSetup}
                 />
               ))}
 
@@ -711,6 +720,7 @@ export default function SessionScreen() {
                     group={group}
                     editable={running}
                     history={history}
+                    setups={setups}
                     records={records}
                     today={today}
                     targetKey={target?.exercise.key ?? null}
@@ -721,6 +731,7 @@ export default function SessionScreen() {
                     onAddSet={onAddSet}
                     onDropSet={dropDraft}
                     onOpenExercise={setOpenExercise}
+                    onOpenSetup={setOpenSetup}
                   />
                 ))}
               </View>
@@ -835,11 +846,20 @@ export default function SessionScreen() {
         <ExerciseSheet
           scheduledUuid={uuid}
           exercise={sheetExercise}
+          setup={setupOf(setups, sheetExercise)}
           onClose={() => setOpenExercise(null)}
           onReplace={(key) => {
             setOpenExercise(null);
             setPicker({ mode: 'replace', exerciseKey: key });
           }}
+        />
+      ) : null}
+
+      {setupExercise ? (
+        <SetupSheet
+          exercise={setupExercise}
+          setup={setupOf(setups, setupExercise)}
+          onClose={() => setOpenSetup(null)}
         />
       ) : null}
 
@@ -1238,6 +1258,8 @@ type SectionHandlers = {
    * exercice aurait monté autant de requêtes vives qu'il y a de lignes.
    */
   history: Map<number, ExerciseHistoryRow>;
+  /** Les réglages de machine, indexés par identifiant d'exercice, descendus comme l'historique. */
+  setups: Map<number, string>;
   /**
    * Les records battus dans cette séance : clé d'exercice → clé de la série qui
    * les porte (`sessionRecords`). Descendue avec l'historique et pour la même
@@ -1258,6 +1280,8 @@ type SectionHandlers = {
   /** Retire la série annoncée et pas encore faite. Prend la clé de l'exercice. */
   onDropSet: (exerciseKey: string) => void;
   onOpenExercise: (key: string) => void;
+  /** Ouvre la feuille des réglages de machine. Prend la clé de l'exercice. */
+  onOpenSetup: (key: string) => void;
 };
 
 /**
@@ -1475,6 +1499,7 @@ function ExerciseSection({
   exercise,
   editable,
   history,
+  setups,
   records,
   today,
   targetKey,
@@ -1485,12 +1510,14 @@ function ExerciseSection({
   onAddSet,
   onDropSet,
   onOpenExercise,
+  onOpenSetup,
 }: { exercise: SessionExercise } & SectionHandlers) {
   const styles = useStyles(sheets);
   const { prescribed, lines } = exercise;
   const current = targetKey === exercise.key;
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
+  const setup = exerciseId === null ? null : (setups.get(exerciseId) ?? null);
   // Au plus une par exercice : `sessionRecords` retient la meilleure série, pas
   // toutes celles qui dépassent l'ancienne marque.
   const recordKey = records.get(exercise.key) ?? null;
@@ -1528,7 +1555,7 @@ function ExerciseSection({
             label="Ajuster"
             variant="ghost"
             size="sm"
-            accessibilityHint={`Sauter, remplacer ou annoter ${exercise.name}`}
+            accessibilityHint={`Sauter, remplacer, annoter ou noter les réglages de ${exercise.name}`}
             onPress={() => onOpenExercise(exercise.key)}
           />
         ) : null}
@@ -1549,6 +1576,22 @@ function ExerciseSection({
 
       {/* La consigne du programme, adressée à celui qui exécute. */}
       {prescribed?.notes ? <Text style={styles.notes}>{prescribed.notes}</Text> : null}
+
+      {/* Les réglages de la machine : ce qu'on cherche en s'asseyant, avant la
+          dernière fois et avant de charger. Un appui les corrige, que la séance
+          soit ouverte ou non — ils ne décrivent aucune séance (`setup.ts`). */}
+      {setup !== null ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`Réglages : ${setup}`}
+          accessibilityHint="Modifier les réglages de la machine"
+          onPress={() => onOpenSetup(exercise.key)}
+          style={styles.setup}
+        >
+          <Text style={styles.setupLabel}>Réglages</Text>
+          <Text style={styles.setupText}>{setup}</Text>
+        </Pressable>
+      ) : null}
 
       {/* Ce qu'on cherche avant de charger la barre : la dernière fois, et le
           record. Au-dessus des séries, parce que c'est là qu'on décide. */}
@@ -2684,21 +2727,33 @@ function SetSheet({
 function ExerciseSheet({
   scheduledUuid,
   exercise,
+  setup,
   onClose,
   onReplace,
 }: {
   scheduledUuid: string;
   exercise: SessionExercise;
+  setup: string | null;
   onClose: () => void;
   onReplace: (key: string) => void;
 }) {
   const styles = useStyles(sheets);
   const [skipped, setSkipped] = useState(exercise.skipped);
   const [notes, setNotes] = useState(exercise.logged?.notes ?? '');
+  const [machine, setMachine] = useState(setup ?? '');
   const replaceable = canReplaceExercise(exercise);
   const removable = exercise.prescribed === null;
+  // Un exercice que la bibliothèque ne connaît pas n'a pas de machine à quoi
+  // rattacher un réglage : le champ ne se montre pas.
+  const exerciseId = exerciseIdOf(exercise);
 
-  const apply = () => setExerciseState(scheduledUuid, exercise, { skipped, notes });
+  const apply = () => {
+    setExerciseState(scheduledUuid, exercise, { skipped, notes });
+
+    if (exerciseId !== null) {
+      saveExerciseSetup(exerciseId, machine);
+    }
+  };
 
   return (
     <Sheet
@@ -2740,6 +2795,8 @@ function ExerciseSheet({
         }
         hint="Elle part avec la séance et se lit sur le web."
       />
+
+      {exerciseId !== null ? <SetupField value={machine} onChange={setMachine} /> : null}
 
       <Button
         label="Remplacer par un autre exercice"
@@ -2792,6 +2849,82 @@ function ExerciseSheet({
       ) : null}
     </Sheet>
   );
+}
+
+/**
+ * Les réglages de machine, seuls : la feuille qu'ouvre un appui sur ceux qui
+ * s'affichent sous le nom de l'exercice.
+ *
+ * Elle existe à côté de `ExerciseSheet`, qui porte le même champ, parce que
+ * celle-là n'ouvre qu'une séance en cours — elle écrit du réalisé. Les réglages
+ * se corrigent aussi en relisant le programme avant de commencer, ou après la
+ * clôture : sans cette feuille, une erreur notée la veille attendrait la séance
+ * pour se corriger.
+ */
+function SetupSheet({
+  exercise,
+  setup,
+  onClose,
+}: {
+  exercise: SessionExercise;
+  setup: string | null;
+  onClose: () => void;
+}) {
+  const styles = useStyles(sheets);
+  const [machine, setMachine] = useState(setup ?? '');
+  const exerciseId = exerciseIdOf(exercise);
+
+  return (
+    <Sheet
+      visible
+      onClose={onClose}
+      title="Réglages de la machine"
+      footer={
+        <Button
+          label="Valider"
+          block
+          onPress={() => {
+            if (exerciseId !== null) {
+              saveExerciseSetup(exerciseId, machine);
+            }
+            onClose();
+          }}
+        />
+      }
+    >
+      <Text style={styles.name}>{exercise.name}</Text>
+      <SetupField value={machine} onChange={setMachine} />
+    </Sheet>
+  );
+}
+
+/** Le champ des réglages, le même dans les deux feuilles qui le portent. */
+function SetupField({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  return (
+    <Field
+      label="Réglages de la machine"
+      value={value}
+      onChangeText={onChange}
+      multiline
+      maxLength={SETUP_MAX_LENGTH}
+      placeholder="Dossier : 5, jambe : 1…"
+      hint="Gardés pour cet exercice, d’une séance à l’autre. Vide, ils sont effacés."
+    />
+  );
+}
+
+/**
+ * La borne du serveur (`ExerciseSetup::MAX_LENGTH`). Tenue ici par le champ : un
+ * texte plus long se ferait refuser au push, cinq fois, et finirait marqué dans
+ * les réglages pour une faute de frappe.
+ */
+const SETUP_MAX_LENGTH = 2000;
+
+/** Le réglage de l'exercice que porte cette ligne de séance, s'il en a un. */
+function setupOf(setups: Map<number, string>, exercise: SessionExercise): string | null {
+  const exerciseId = exerciseIdOf(exercise);
+
+  return exerciseId === null ? null : (setups.get(exerciseId) ?? null);
 }
 
 /**
@@ -3132,6 +3265,21 @@ const sheets = themed((c) => ({
     paddingLeft: space[4],
     marginTop: space[4],
   },
+  // Les réglages : un libellé structurel en capitales, puis le texte saisi en
+  // casse normale (règle de `typography.ts`). Le même filet que la note de la
+  // salle, parce que c'est la même nature — écrit par l'athlète, pas par le
+  // programme. Toute la zone est la cible, au plancher tactile.
+  setup: {
+    minHeight: layout.touchTarget,
+    justifyContent: 'center',
+    gap: space[1],
+    borderLeftWidth: 2,
+    borderLeftColor: c.borderStrong,
+    paddingLeft: space[4],
+    marginBottom: space[4],
+  },
+  setupLabel: { ...text.eyebrow, color: c.textSecondary },
+  setupText: { ...text.caption, color: c.text },
 
   summary: {
     gap: space[2],

@@ -129,6 +129,41 @@ export const exerciseHistory = sqliteTable('exercise_history', {
   best: text('best', { mode: 'json' }).$type<PerformanceBest>(),
 });
 
+/**
+ * Les réglages de machine, notés par l'athlète (« dossier : 5, jambe : 1 »). Un
+ * texte libre par exercice, qui se relit d'une séance à l'autre.
+ *
+ * ## Ni prescrit ni réalisé, et pourtant synchronisé
+ *
+ * Ce n'est pas `logged_exercise.notes`, qui dit ce qui s'est passé **une**
+ * séance et reste avec elle : un cran de poulie vaut pour toutes les suivantes.
+ * Ce n'est pas un réglage d'appareil comme `preference` non plus — il appartient
+ * au compte (`ExerciseSetup` côté serveur) et doit survivre à un changement de
+ * téléphone. Il suit donc le même chemin que le réalisé : écrit ici, empilé dans
+ * `mutation_queue` dans la même transaction (`exercise.setup`), poussé par
+ * `PUT /api/exercises/{id}/setup`.
+ *
+ * ## Ce que le pull en fait
+ *
+ * Le bootstrap descend la liste **entière** (`setups`) et elle remplace celle-ci,
+ * à une exception près : un réglage dont la mutation attend encore. Même règle
+ * que pour une séance (`sync/pull.ts`) — tant que le serveur n'a pas confirmé, le
+ * téléphone fait autorité.
+ *
+ * Pas de ligne vide : effacer le texte supprime la ligne, comme côté serveur.
+ * La clé étrangère suit `exercise_history` : un exercice qui quitte la
+ * bibliothèque emporte son réglage, et le pull ne pose un réglage que sur un
+ * exercice que la base connaît.
+ */
+export const exerciseSetup = sqliteTable('exercise_setup', {
+  exerciseId: integer('exercise_id')
+    .primaryKey()
+    .references(() => exercise.id, { onDelete: 'cascade' }),
+  text: text('text').notNull(),
+  /** L'horodatage serveur, tel que descendu. Nul tant que l'écriture locale n'est pas confirmée. */
+  updatedAt: text('updated_at'),
+});
+
 // --- La séance datée : le prévu et le réalisé --------------------------------
 
 /**
@@ -484,6 +519,7 @@ export const mutationQueue = sqliteTable('mutation_queue', {
 export type ExerciseRow = typeof exercise.$inferSelect;
 export type ExerciseInsert = typeof exercise.$inferInsert;
 export type ExerciseHistoryRow = typeof exerciseHistory.$inferSelect;
+export type ExerciseSetupRow = typeof exerciseSetup.$inferSelect;
 export type ScheduledWorkoutRow = typeof scheduledWorkout.$inferSelect;
 export type ScheduledWorkoutInsert = typeof scheduledWorkout.$inferInsert;
 export type PrescribedSnapshotRow = typeof prescribedSnapshot.$inferSelect;

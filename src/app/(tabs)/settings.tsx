@@ -1,5 +1,5 @@
 import Constants from 'expo-constants';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Alert, Linking, Platform, ScrollView, Text, View } from 'react-native';
 
 import { deviceName, getApiBaseUrl, refreshMe, signOut, useSession } from '@/api';
@@ -19,8 +19,10 @@ import {
   shortDate,
   startRest,
   useExerciseLanguage,
+  useExerciseNames,
   usePreferences,
   useToday,
+  type ExerciseNameBook,
 } from '@/session';
 import {
   MAX_ATTEMPTS,
@@ -118,7 +120,7 @@ function AccountCard() {
     Alert.alert(
       'Se déconnecter ?',
       pending > 0
-        ? `${pending} séance${pending > 1 ? 's' : ''} n’${pending > 1 ? 'ont' : 'a'} pas encore été envoyée${pending > 1 ? 's' : ''} au serveur. La déconnexion efface les données de cet appareil : ce qu’elle${pending > 1 ? 's contiennent' : ' contient'} serait perdu. Synchronise d’abord.`
+        ? `${pending} envoi${pending > 1 ? 's' : ''} attend${pending > 1 ? 'ent' : ''} encore le serveur. La déconnexion efface les données de cet appareil : ce qu’il${pending > 1 ? 's contiennent' : ' contient'} serait perdu. Synchronise d’abord.`
         : 'Les séances téléchargées et le réalisé déjà envoyé sont effacés de cet appareil. Tout se retrouve sur le serveur à la prochaine connexion.',
       [
         { text: 'Annuler', style: 'cancel' },
@@ -205,6 +207,11 @@ function SyncCard() {
   const state = useSyncState();
   const queue = useMutationQueue();
   const today = useToday();
+  const setupIds = useMemo(
+    () => queue.flatMap((row) => (row.exerciseId === null ? [] : [row.exerciseId])),
+    [queue],
+  );
+  const names = useExerciseNames(setupIds);
 
   const [working, setWorking] = useState(false);
   const [report, setReport] = useState<string | null>(null);
@@ -272,7 +279,7 @@ function SyncCard() {
         <Row
           label="En attente"
           value={
-            queue.length === 0 ? 'rien' : `${queue.length} séance${queue.length > 1 ? 's' : ''}`
+            queue.length === 0 ? 'rien' : `${queue.length} envoi${queue.length > 1 ? 's' : ''}`
           }
         />
 
@@ -285,7 +292,7 @@ function SyncCard() {
         {queue.length > 0 ? (
           <View style={styles.queue}>
             {queue.map((row) => (
-              <QueueRow key={row.id} mutation={row} today={today} />
+              <QueueRow key={row.id} mutation={row} names={names} today={today} />
             ))}
           </View>
         ) : null}
@@ -335,7 +342,7 @@ function SyncCard() {
 }
 
 /**
- * Une séance qui attend de partir.
+ * Une séance — ou un réglage de machine — qui attend de partir.
  *
  * Le titre plutôt que l'uuid : la file est faite pour être lue par celui qui
  * s'est entraîné, pas par celui qui a écrit le moteur. Le compteur de tentatives
@@ -343,10 +350,21 @@ function SyncCard() {
  * attend du réseau) n'a rien d'un échec et n'a pas à ressembler à un décompte
  * avant abandon.
  */
-function QueueRow({ mutation, today }: { mutation: QueuedMutation; today: string }) {
+function QueueRow({
+  mutation,
+  names,
+  today,
+}: {
+  mutation: QueuedMutation;
+  names: ExerciseNameBook;
+  today: string;
+}) {
   const styles = useStyles(sheets);
   const name =
-    mutation.title ?? (mutation.type === 'schedule.delete' ? 'Séance supprimée' : 'Séance libre');
+    mutation.type === 'exercise.setup'
+      ? `Réglages · ${names.labelOf(mutation.exerciseId) ?? 'exercice retiré'}`
+      : (mutation.title ??
+        (mutation.type === 'schedule.delete' ? 'Séance supprimée' : 'Séance libre'));
   const day = mutation.date === null ? null : whenDay(mutation.date, today);
 
   return (

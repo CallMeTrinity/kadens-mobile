@@ -18,6 +18,7 @@ import type {
   AppVersionPayload,
   AuthPayload,
   BootstrapPayload,
+  ExerciseSetupPayload,
   ExerciseHistoryPayload,
   MePayload,
   PingPayload,
@@ -137,6 +138,27 @@ export function exerciseHistory(
 ): Promise<ExerciseHistoryPayload> {
   return request<ExerciseHistoryPayload>({
     path: `/api/exercises/${exerciseId}/history`,
+    signal,
+  }).then((r) => r.data);
+}
+
+/**
+ * Écrit le réglage de machine de cet exercice : **le texte entier**, qui
+ * remplace le précédent. `null` ou vide l'efface.
+ *
+ * Rejouable tel quel, effacement compris (le serveur rend `200` même sur ce qui
+ * n'existait plus) : la file de mutations peut le renvoyer après une réponse
+ * perdue sans cas particulier.
+ */
+export function putExerciseSetup(
+  exerciseId: number,
+  text: string | null,
+  signal?: AbortSignal,
+): Promise<ExerciseSetupPayload> {
+  return request<ExerciseSetupPayload>({
+    method: 'PUT',
+    path: `/api/exercises/${exerciseId}/setup`,
+    body: { text },
     signal,
   }).then((r) => r.data);
 }

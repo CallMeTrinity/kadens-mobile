@@ -183,6 +183,19 @@ export interface HistoryEntryPayload {
   best: PerformanceBest | null;
 }
 
+/**
+ * Un réglage de machine (« dossier : 5, jambe : 1 »), à soi et à un exercice.
+ *
+ * Même forme dans le bootstrap (`setups`) et dans la réponse de
+ * `PUT /api/exercises/{id}/setup` : un seul producteur côté serveur. `text` et
+ * `updatedAt` ne sont nuls que dans la réponse d'un effacement.
+ */
+export interface ExerciseSetupPayload {
+  exerciseId: number;
+  text: string | null;
+  updatedAt: string | null;
+}
+
 /** La fenêtre de séances datées annoncée par le bootstrap. Elle **fait autorité**. */
 export interface BootstrapWindow {
   from: string;
@@ -212,6 +225,12 @@ export interface BootstrapPayload {
   /** Toute la fenêtre, toujours. Elle remplace le local **en entier**. */
   schedule: ScheduledWorkoutPayload[];
   history: HistoryEntryPayload[];
+  /**
+   * Ses réglages de machine, **entiers** : `?since` ne les allège pas, un
+   * réglage effacé n'ayant pas de pierre tombale. Facultatif parce qu'un serveur
+   * pas encore à jour ne l'envoie pas — le pull ne touche alors à rien.
+   */
+  setups?: ExerciseSetupPayload[];
   /** Vide sans `since` : un jeu complet remplace tout, il n'y a rien à défalquer. */
   deleted: {
     exercises: number[];

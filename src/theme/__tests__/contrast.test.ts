@@ -70,6 +70,16 @@ const INK: InkCase[] = [
   // ligne — donc des deux, celle qui écrit et celle qui attend — et rien de sa
   // taille ne la fait sortir du corps courant : le seuil reste 4,5:1.
   { ink: 'text', on: 'surfaceRaised', role: 'numericMinor', where: "l'unité d'une série" },
+  // Les réglages de machine : un texte saisi, à lire en s'asseyant, donc en
+  // encre pleine malgré le corps de mention. Sur les deux fonds d'un exercice.
+  { ink: 'text', on: 'surfaceRaised', role: 'caption', where: 'réglages de la machine' },
+  { ink: 'text', on: 'surfaceSubtle', role: 'caption', where: "réglages de l'exercice courant" },
+  {
+    ink: 'textSecondary',
+    on: 'surfaceSubtle',
+    role: 'eyebrow',
+    where: 'libellé « Réglages », exercice courant',
+  },
   { ink: 'text', on: 'fill', role: 'numericMinor', where: "l'unité d'une série faite" },
   { ink: 'text', on: 'surfaceRaised', role: 'sectionTitle', where: 'titre de section' },
   { ink: 'text', on: 'surfaceRaised', role: 'inputValue', where: 'chrono de repos' },

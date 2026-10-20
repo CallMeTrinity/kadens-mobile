@@ -62,9 +62,11 @@ export {
   dropMutation,
   enqueueScheduleDelete,
   enqueueSchedulePut,
+  enqueueSetupPut,
   isExhausted,
   listMutations,
   MAX_ATTEMPTS,
+  pendingSetups,
   pendingUuids,
   rearmExhausted,
 } from './queue';

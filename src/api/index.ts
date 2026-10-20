@@ -55,6 +55,7 @@ export {
   me,
   pair,
   ping,
+  putExerciseSetup,
   putSchedule,
 } from './endpoints';
 
@@ -85,6 +86,7 @@ export type {
   DevicePayload,
   ExerciseHistoryPayload,
   ExercisePayload,
+  ExerciseSetupPayload,
   HistoryEntryPayload,
   LoggedExerciseInput,
   LoggedExercisePayload,

@@ -111,8 +111,8 @@ The local SQLite schema (`src/db/schema.ts`, extensively commented — read it b
 
 1. **Prescribed data is one JSON document per workout** (`prescribedSnapshot.blocks`), replaced wholesale on every
    pull — never recomposed on the phone ("in a workout you deviate, you don't rebuild"). **Logged data is
-   normalized** (`loggedExercise`, `loggedSet`) because it's written set by set during a live workout, is the only
-   part of the DB the phone mutates, and needs indexing.
+   normalized** (`loggedExercise`, `loggedSet`) because it's written set by set during a live workout, is the
+   only workout data the phone mutates, and needs indexing.
 2. **IDs aren't reinvented.** `exercise.id` is the server's sequential ID. `scheduledWorkout.uuid` and
    `loggedSet.uuid` are client-minted UUIDv7s (`db/uuid.ts`) — this is what makes `PUT /api/schedule/{uuid}`
    idempotent. Only `loggedExercise` and `mutationQueue`, which the server never addresses by ID, get a local
@@ -130,6 +130,14 @@ lead them in the announced order — see "Gym ergonomics" below. Its key is the 
 `session/program.ts` (`e{prescribedId}`, `x{loggedExerciseId}`); the second is only stable as long as a pull
 doesn't rewrite that workout's log, which it never does while a mutation is pending — i.e. never while you're
 doing it.
+
+A fifth one, `exerciseSetup`, holds the athlete's **machine settings** per exercise (free text, "dossier : 5,
+jambe : 1"). Unlike `sessionLayout` it **is** synced: it belongs to the account (`ExerciseSetup` server-side), so
+writing it enqueues an `exercise.setup` mutation in the same transaction (`saveExerciseSetup`, `@/session`), pushed
+by `PUT /api/exercises/{id}/setup`. The bootstrap sends the full list (`setups`) and the pull replaces the local one,
+except rows whose mutation is still pending. It has no "open workout" guard: it describes no workout. Mutation
+payloads are therefore `{ uuid }` or `{ exerciseId }`; code that only cares about workouts reads `payload.uuid` and
+skips `undefined`.
 
 There's no "modified locally" flag on `scheduledWorkout` — that fact is already carried by `mutationQueue` (a
 pending workout has a row there). This is why push-before-pull is non-negotiable (see below): two sources for the

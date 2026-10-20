@@ -4,6 +4,7 @@ import { db } from './client';
 import {
   exercise,
   exerciseHistory,
+  exerciseSetup,
   loggedExercise,
   loggedSet,
   mutationQueue,
@@ -675,6 +676,11 @@ function wipe(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
   tx.delete(sessionLayout).where(all).run();
   tx.delete(scheduledWorkout).where(all).run();
   tx.delete(exerciseHistory).where(all).run();
+  // En cascade de `exercise` elle aussi. Elle part avec le reste parce qu'elle
+  // se retélécharge (`setups` du bootstrap) — à la différence de `preference`.
+  // Un réglage pas encore poussé a sa mutation en file, et les deux appelants
+  // refusent ou font confirmer tant que la file n'est pas vide.
+  tx.delete(exerciseSetup).where(all).run();
   tx.delete(exercise).where(all).run();
   tx.delete(syncState).where(all).run();
 }

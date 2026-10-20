@@ -173,16 +173,22 @@ export interface PerformanceBest {
 // --- La file de mutations ----------------------------------------------------
 
 /**
- * Ce qu'une mutation en attente demande au serveur. Il n'y a que deux sens
- * montants dans toute l'API — le téléphone écrit du réalisé, il ne programme
- * rien — donc deux valeurs, et pas une clé libre.
+ * Ce qu'une mutation en attente demande au serveur. Le téléphone écrit du
+ * réalisé et ses réglages de machine, il ne programme rien — donc trois valeurs,
+ * et pas une clé libre.
  *
- * `schedule.put` ne porte **que** l'uuid : le document complet se relit dans la
- * base locale au moment du push (KL-27). Le figer ici en ferait une seconde
- * version du réalisé, qui périmerait dès la série suivante.
+ * Une mutation ne porte **que** sa clé : l'uuid d'une séance, l'identifiant d'un
+ * exercice. Le document se relit dans la base locale au moment du push (KL-27).
+ * Le figer ici en ferait une seconde version du réalisé, qui périmerait dès la
+ * série suivante.
  */
-export type MutationType = 'schedule.put' | 'schedule.delete';
+export type MutationType = 'schedule.put' | 'schedule.delete' | 'exercise.setup';
 
-export interface MutationPayload {
-  uuid: string;
-}
+/**
+ * L'une ou l'autre clé, jamais les deux. Le `?: never` laisse lire
+ * `payload.uuid` sur n'importe quelle ligne (il vaut alors `undefined` pour un
+ * réglage) sans test de forme à chaque lecture — c'est ce que font les écrans
+ * qui ne s'intéressent qu'aux séances.
+ */
+export type MutationPayload =
+  { uuid: string; exerciseId?: never } | { exerciseId: number; uuid?: never };

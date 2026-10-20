@@ -52,6 +52,7 @@ import {
   dayCountsQuery,
   exerciseAreasQuery,
   exerciseHistoryQuery,
+  exerciseSetupsQuery,
   exerciseLanguageQuery,
   exerciseLibraryQuery,
   exerciseNamesQuery,
@@ -274,6 +275,18 @@ export function useSessionHistory(program: SessionProgram): Map<number, Exercise
 }
 
 /**
+ * Les réglages de machine des exercices du déroulé, indexés par identifiant
+ * d'exercice — même clé et même clé de dépendance que `useSessionHistory`.
+ */
+export function useSessionSetups(program: SessionProgram): Map<number, string> {
+  const ids = useMemo(() => exerciseIdsOf(program), [program]);
+  const key = ids.join(',');
+  const { data } = useLiveQuery(exerciseSetupsQuery(ids), [key]);
+
+  return useMemo(() => new Map(data.map((row) => [row.exerciseId, row.text])), [data]);
+}
+
+/**
  * Les zones travaillées par les exercices du déroulé, pour la carte musculaire de
  * la clôture (`areas.ts`).
  *
@@ -427,5 +440,6 @@ export function useElapsedSeconds(startedAt: string | null, endedAt: string | nu
 function usePendingUuids(): Set<string> {
   const { data } = useLiveQuery(pendingMutationsQuery());
 
-  return useMemo(() => new Set(data.map((row) => row.payload.uuid)), [data]);
+  // Un réglage de machine en attente n'a pas d'uuid : il ne marque aucune séance.
+  return useMemo(() => new Set(data.flatMap((row) => row.payload.uuid ?? [])), [data]);
 }
