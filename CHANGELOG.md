@@ -11,6 +11,8 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.2.1] - 2026-10-20
+
 ### Ajouté
 
 - **Les réglages de la machine se notent sur l'exercice** : un bloc de texte
@@ -21,6 +23,12 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
   revient sur un autre appareil. Le vider l'efface. **Demande le serveur à jour**
   (`PUT /api/exercises/{id}/setup`) : face à un serveur plus ancien, l'envoi est
   refusé et finit marqué dans les réglages.
+
+### Corrigé
+
+- **Le minuteur de repos ne se bloque plus** quand on change d'onglet ou qu'on
+  verrouille l'écran. Il se remet à jour à la réouverture, et son alarme système
+  est replanifiée si elle a été perdue.
 
 ## [1.2.0] - 2026-09-10
 
@@ -187,7 +195,9 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.0.0...v1.0.1
