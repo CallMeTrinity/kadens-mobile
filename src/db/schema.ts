@@ -190,6 +190,15 @@ export const scheduledWorkout = sqliteTable(
     startedAt: text('started_at'),
     endedAt: text('ended_at'),
     completionNotes: text('completion_notes'),
+    /**
+     * Le ressenti de la séance, saisi à la clôture ou plus tard : forme 1-5 (très
+     * faible → très en forme) et difficulté 1-10, aux échelles de Garmin. Pas le
+     * `rpe` des séries : un jugement global, pas une moyenne. Même règle que la
+     * note : écrit s'il est là, jamais effacé par le téléphone (seul le web
+     * retire une note). Une sortie notée sur la montre ne descend pas ici.
+     */
+    feeling: integer('feeling'),
+    sessionRpe: integer('session_rpe'),
     /** `{id, title}` ou absent. Un document, parce qu'on ne synchronise pas les plans. */
     plan: text('plan', { mode: 'json' }).$type<PlanRef>(),
   },

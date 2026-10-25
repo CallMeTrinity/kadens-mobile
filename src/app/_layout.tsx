@@ -223,7 +223,7 @@ function RootScreens() {
           */}
             <Stack.Screen name="(tabs)" />
             {/*
-            Les deux écrans d'une séance. Ils sont déclarés **un par un** parce
+            Les trois écrans d'une séance. Ils sont déclarés **un par un** parce
             que le garde ne protège que ce qu'il liste : une route oubliée ici
             resterait navigable une fois la session purgée, et celle-ci ouvre le
             réalisé (KL-33).
@@ -235,6 +235,7 @@ function RootScreens() {
           */}
             <Stack.Screen name="session/[uuid]/index" />
             <Stack.Screen name="session/[uuid]/close" />
+            <Stack.Screen name="session/[uuid]/rate" />
           </Stack.Protected>
 
           <Stack.Protected guard={signedIn && session.awaitingFirstSync}>

@@ -288,6 +288,10 @@ function applyWholeWorkout(tx: Transaction, workout: ScheduledWorkoutPayload): v
     startedAt: workout.startedAt,
     endedAt: workout.endedAt,
     completionNotes: workout.completionNotes,
+    // Clé absente (serveur antérieur au ressenti) : colonne laissée telle
+    // quelle, plutôt qu'effacée par un champ que le serveur ne connaît pas.
+    ...(workout.feeling !== undefined ? { feeling: workout.feeling } : {}),
+    ...(workout.sessionRpe !== undefined ? { sessionRpe: workout.sessionRpe } : {}),
     plan: workout.plan,
   };
 

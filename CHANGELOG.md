@@ -11,6 +11,16 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Ajouté
+
+- **Le ressenti de la séance** : après « Clôturer », un écran demande comment on
+  s'est senti (forme, de très faible à très en forme) et à quel point c'était dur
+  (difficulté de 1 à 10), aux échelles de Garmin. Facultatif (« Passer »), il se
+  modifie ensuite depuis « Séance terminée », et s'affiche sur les cartes de
+  l'historique. Il part au serveur avec la séance, hors réseau compris, et se lit
+  sur le web. Le téléphone change une note mais ne la retire pas : c'est un geste
+  du web. Face à un serveur plus ancien, la note est simplement ignorée.
+
 ## [1.2.1] - 2026-10-20
 
 ### Ajouté

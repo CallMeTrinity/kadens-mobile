@@ -56,6 +56,10 @@ export function readScheduleDocument(
     startedAt: workout.startedAt,
     endedAt: workout.endedAt,
     completionNotes: workout.completionNotes,
+    // Tels quels, `null` compris : le serveur ne lit un `null` que comme
+    // « rien à dire », jamais comme un effacement.
+    feeling: workout.feeling,
+    sessionRpe: workout.sessionRpe,
     log: readLog(uuid, writer),
   };
 }

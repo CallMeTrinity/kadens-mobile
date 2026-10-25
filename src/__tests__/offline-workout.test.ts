@@ -25,6 +25,7 @@ import {
   beginWorkout,
   checkSet,
   closeWorkout,
+  rateWorkout,
   setExerciseState,
   updateSet,
 } from '@/session';
@@ -71,6 +72,8 @@ function serverView(): ScheduledWorkoutPayload {
     startedAt: stored.startedAt ?? null,
     endedAt: stored.endedAt ?? null,
     completionNotes: stored.completionNotes ?? null,
+    feeling: stored.feeling ?? null,
+    sessionRpe: stored.sessionRpe ?? null,
     log: (stored.log ?? []).map((entry, index) => ({
       exerciseId: entry.exerciseId ?? null,
       name: entry.name ?? null,
@@ -204,6 +207,13 @@ it('fait la séance hors réseau et ne perd rien en la synchronisant', async () 
   expect(db.select().from(scheduledWorkout).get()?.status).toBe('done');
   expect(listMutations()).toHaveLength(1);
 
+  // Le ressenti, noté juste après : même file, même entrée — la mutation
+  // existante est réarmée, pas doublée.
+  expect(rateWorkout(UUID, { feeling: 2, sessionRpe: 8 })).toBe(true);
+  await waitForIdle();
+
+  expect(listMutations()).toHaveLength(1);
+
   // --- 4. Le réseau revient --------------------------------------------------
   online();
   clock += 60_000;
@@ -221,6 +231,8 @@ it('fait la séance hors réseau et ne perd rien en la synchronisant', async () 
     date: today(),
     status: 'done',
     completionNotes: 'Épaule droite sensible',
+    feeling: 2,
+    sessionRpe: 8,
   });
   expect(stored?.startedAt).not.toBeNull();
   expect(stored?.endedAt).not.toBeNull();
@@ -244,6 +256,8 @@ it('fait la séance hors réseau et ne perd rien en la synchronisant', async () 
   expect(db.select().from(scheduledWorkout).get()).toMatchObject({
     status: 'done',
     completionNotes: 'Épaule droite sensible',
+    feeling: 2,
+    sessionRpe: 8,
   });
   // Le transport rejoue trois fois chaque appel idempotent, avec un délai qui
   // croît : deux cycles hors réseau coûtent quelques secondes de vrai temps, et

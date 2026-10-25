@@ -2,7 +2,13 @@ import { router } from 'expo-router';
 import { ScrollView, Text, View } from 'react-native';
 
 import { Button, Card, Chip, EmptyState, Header } from '@/components';
-import { longDate, usePastWorkouts, workoutStateLabel, type DayWorkout } from '@/session';
+import {
+  feelingLabel,
+  longDate,
+  usePastWorkouts,
+  workoutStateLabel,
+  type DayWorkout,
+} from '@/session';
 import { space, text, themed, useStyles } from '@/theme';
 
 /**
@@ -98,6 +104,12 @@ function PastCard({ workout }: { workout: DayWorkout }) {
             // pas lire comme un oubli.
             <Text style={styles.caption}>Aucune série consignée</Text>
           )}
+          {/* Le ressenti, en marque de lecture : on parcourt l'historique pour
+              savoir comment ça s'est passé, pas seulement si ça a eu lieu. */}
+          {workout.feeling !== null ? <Chip label={feelingLabel(workout.feeling) ?? ''} /> : null}
+          {workout.sessionRpe !== null ? (
+            <Chip label={`Difficulté ${workout.sessionRpe}/10`} tone="accent" />
+          ) : null}
           {workout.pendingSync ? <Chip label="À synchroniser" /> : null}
         </View>
 

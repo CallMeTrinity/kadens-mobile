@@ -92,6 +92,7 @@ const INK: InkCase[] = [
   // L'encre secondaire : tout ce qui accompagne, et qui a remplacé l'encre
   // faible en KL-39 (elle tombait à 3,4:1 sur le papier).
   { ink: 'textSecondary', on: 'bg', role: 'caption', where: 'mention sur le papier' },
+  { ink: 'text', on: 'bg', role: 'caption', where: "libellé du cran choisi d'une échelle" },
   { ink: 'textSecondary', on: 'bg', role: 'eyebrow', where: 'sur-titre sur le papier' },
   { ink: 'textSecondary', on: 'surface', role: 'caption', where: 'mention dans une feuille' },
   { ink: 'textSecondary', on: 'surfaceRaised', role: 'caption', where: 'mention dans un bloc' },
@@ -121,12 +122,20 @@ const INK: InkCase[] = [
   // L'encre inversée.
   { ink: 'onInk', on: 'surfaceInk', role: 'eyebrow', where: 'facette retenue' },
   { ink: 'onInk', on: 'surfaceInk', role: 'numeric', where: 'jour choisi' },
+  { ink: 'text', on: 'surfaceRaised', role: 'numeric', where: "cran d'une échelle de ressenti" },
+  {
+    ink: 'text',
+    on: 'surfaceRaised',
+    role: 'bodyStrong',
+    where: 'valeur du ressenti, fin de séance',
+  },
   { ink: 'surfaceRaised', on: 'text', role: 'action', where: 'bouton secondaire pressé' },
   { ink: 'surfaceRaised', on: 'text', role: 'blockRole', where: 'glyphe de compteur pressé' },
 
   // Le rouge : plein sous un libellé blanc, foncé quand il écrit.
   { ink: 'onPrimary', on: 'primary', role: 'action', where: 'bouton primaire' },
   { ink: 'onPrimary', on: 'primaryHover', role: 'action', where: 'bouton primaire pressé' },
+  { ink: 'onPrimary', on: 'primary', role: 'numeric', where: 'difficulté choisie' },
   {
     // Le chrono a maigri (une ligne fine au lieu d'un étage) : il n'est plus un
     // « grand texte » au sens WCAG, donc le rouge plein n'y suffit plus. C'est

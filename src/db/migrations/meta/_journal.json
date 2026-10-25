@@ -71,6 +71,13 @@
       "when": 1792517921223,
       "tag": "0009_exercise_setup",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1792954301305,
+      "tag": "0010_session_rating",
+      "breakpoints": true
     }
   ]
 }

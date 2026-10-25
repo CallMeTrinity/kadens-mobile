@@ -365,6 +365,9 @@ export function seedDemo(): void {
         startedAt: instant(-2, 18, 4),
         endedAt: instant(-2, 19, 11),
         completionNotes: 'Dernière série courte, genou droit sensible.',
+        // Notée « faible, difficile » : le ressenti va avec l'écart qu'elle raconte.
+        feeling: 2,
+        sessionRpe: 8,
         plan: { id: 12, title: 'Prépa force — bloc 1' },
       })
       .run();

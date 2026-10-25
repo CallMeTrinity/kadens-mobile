@@ -286,6 +286,32 @@ describe('un jeton qui ne vaut plus rien', () => {
 });
 
 describe('une séance clôturée', () => {
+  it('emporte son ressenti, et un `null` part tel quel', async () => {
+    seedBootstrap({
+      schedule: [
+        scheduledWorkoutPayload(UUID, {
+          status: 'done',
+          startedAt: '2026-08-04T07:00:00Z',
+          endedAt: '2026-08-04T08:05:00Z',
+          feeling: 4,
+          sessionRpe: null,
+        }),
+      ],
+    });
+
+    enqueueSchedulePut(UUID);
+
+    stubFetch({ [`PUT /api/schedule/${UUID}`]: () => upserted(UUID, 200) });
+
+    await pushPending();
+
+    // Le serveur lit `null` comme « rien à dire », jamais comme un effacement.
+    expect(callsTo('PUT', `/api/schedule/${UUID}`)[0].body).toMatchObject({
+      feeling: 4,
+      sessionRpe: null,
+    });
+  });
+
   it('emporte son statut, ses bornes et sa note', async () => {
     seedBootstrap({
       schedule: [

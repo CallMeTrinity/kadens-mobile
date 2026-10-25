@@ -168,6 +168,13 @@ export interface ScheduledWorkoutPayload {
   startedAt: string | null;
   endedAt: string | null;
   completionNotes: string | null;
+  /**
+   * Le ressenti saisi dans Kadens (téléphone ou web) : forme 1-5, difficulté
+   * 1-10. **Additif** : un serveur antérieur ne l'envoie pas, d'où l'optionnel —
+   * une clé absente ne dit rien, elle n'efface pas la valeur locale.
+   */
+  feeling?: number | null;
+  sessionRpe?: number | null;
   plan: PlanRef | null;
   blocks: PrescribedBlock[];
   /** `null` tant que rien n'a été consigné. */
@@ -298,6 +305,10 @@ export interface ScheduleUpsertInput {
   startedAt?: string | null;
   endedAt?: string | null;
   completionNotes?: string | null;
+  /** 1 – 5. Écrit si présent ; `null` n'efface pas — seul le web retire une note. */
+  feeling?: number | null;
+  /** 1 – 10. Même règle. */
+  sessionRpe?: number | null;
   /** Remplace **intégralement** le réalisé. 100 exercices au plus. */
   log?: LoggedExerciseInput[];
 }

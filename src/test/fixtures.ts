@@ -112,6 +112,8 @@ export function scheduledWorkout(
     startedAt: null,
     endedAt: null,
     completionNotes: null,
+    feeling: null,
+    sessionRpe: null,
     plan: null,
     blocks: [prescribedBlock(1, [prescribedExercise(1)])],
     log: null,

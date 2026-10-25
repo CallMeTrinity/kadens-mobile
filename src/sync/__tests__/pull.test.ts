@@ -346,6 +346,55 @@ describe('une séance que le serveur a confirmée', () => {
   });
 });
 
+describe('le ressenti', () => {
+  it('descend du serveur : une correction faite sur le web arrive ici', () => {
+    seedBootstrap({ schedule: [scheduledWorkoutPayload(UUID, { status: 'done', feeling: 4 })] });
+
+    applyBootstrap(
+      bootstrapPayload({
+        schedule: [scheduledWorkoutPayload(UUID, { status: 'done', feeling: null, sessionRpe: 6 })],
+      }),
+    );
+
+    const [row] = db.select().from(scheduledWorkout).all();
+
+    expect(row.feeling).toBeNull();
+    expect(row.sessionRpe).toBe(6);
+  });
+
+  it('reste en place quand le serveur ne connaît pas encore la clé', () => {
+    seedBootstrap({ schedule: [scheduledWorkoutPayload(UUID, { status: 'done', feeling: 4 })] });
+
+    const legacy = scheduledWorkoutPayload(UUID, { status: 'done' });
+    delete legacy.feeling;
+    delete legacy.sessionRpe;
+    applyBootstrap(bootstrapPayload({ schedule: [legacy] }));
+
+    // Une clé absente ne dit rien : l'effacer serait perdre une note qu'un
+    // serveur antérieur n'a simplement jamais su lire.
+    expect(db.select().from(scheduledWorkout).all()[0].feeling).toBe(4);
+  });
+
+  it('survit au pull tant que sa mutation n’est pas confirmée', () => {
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID, { status: 'done', feeling: 2, sessionRpe: 9 })],
+    });
+
+    enqueueSchedulePut(UUID);
+
+    applyBootstrap(
+      bootstrapPayload({
+        schedule: [scheduledWorkoutPayload(UUID, { feeling: null, sessionRpe: null })],
+      }),
+    );
+
+    const [row] = db.select().from(scheduledWorkout).all();
+
+    expect(row.feeling).toBe(2);
+    expect(row.sessionRpe).toBe(9);
+  });
+});
+
 describe('une séance que le serveur ne connaît pas encore', () => {
   it('reçoit la programmation, garde son réalisé et son statut', () => {
     seedBootstrap({

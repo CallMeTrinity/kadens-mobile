@@ -11,6 +11,7 @@ import m0006 from './0006_session_layout.sql';
 import m0007 from './0007_session_lane.sql';
 import m0008 from './0008_preference_theme.sql';
 import m0009 from './0009_exercise_setup.sql';
+import m0010 from './0010_session_rating.sql';
 
   export default {
     journal,
@@ -24,7 +25,8 @@ m0005,
 m0006,
 m0007,
 m0008,
-m0009
+m0009,
+m0010
     }
   }
   

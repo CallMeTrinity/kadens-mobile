@@ -22,6 +22,7 @@ export { useKeyboardOverlap, type KeyboardOverlap } from './keyboard';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
 export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';
+export { ScaleSelector, type ScaleSelectorProps } from './ScaleSelector';
 export { Sheet, type SheetProps } from './Sheet';
 export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
 

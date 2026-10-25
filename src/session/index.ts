@@ -100,6 +100,11 @@
  *     qu'`exercise_name()` côté web. Corollaire d'écriture : ce qui se **fige**
  *     (le snapshot d'un réalisé) prend le nom canonique, jamais le libellé
  *     affiché.
+ * 11. **Le ressenti se note après la clôture, et reste modifiable** (`rating.ts`).
+ *     C'est la seule écriture d'une séance close : sa garde est « close sur ce
+ *     téléphone », pas `isOpen`. Elle ne retire jamais une note — le téléphone
+ *     change une valeur, le web seul l'efface — et sa mutation part dans la
+ *     même transaction, comme tout ce qui doit atteindre le serveur.
  */
 
 export { buildBodyLoad, EMPTY_BODY_LOAD } from './areas';
@@ -175,6 +180,8 @@ export type { ExerciseNameBook, ExerciseNames } from './naming';
 export { cancelWorkout } from './cancel';
 
 export { saveExerciseSetup } from './setup';
+export { effortLabel, FEELING_MAX, feelingLabel, rateWorkout, SESSION_RPE_MAX } from './rating';
+export type { WorkoutRating } from './rating';
 export type { CancelOutcome } from './cancel';
 
 export { checkSet, setCardioDone, uncheckSet } from './log';

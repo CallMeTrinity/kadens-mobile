@@ -21,6 +21,8 @@ import {
   buildBodyLoad,
   buildSessionSummary,
   closeWorkout,
+  effortLabel,
+  feelingLabel,
   isClosed,
   isRunning,
   longDate,
@@ -180,7 +182,13 @@ export default function SessionCloseScreen() {
         {
           text: 'Clôturer',
           // Rien de destructeur : le réalisé n'est pas perdu, il est déclaré.
-          onPress: () => closeWorkout(uuid, notes),
+          // Le ressenti vient ensuite, par-dessus cet écran déjà passé en
+          // « Séance terminée » : il y revient en validant comme en passant.
+          onPress: () => {
+            if (closeWorkout(uuid, notes)) {
+              router.push(`/session/${uuid}/rate`);
+            }
+          },
         },
       ],
     );
@@ -209,6 +217,14 @@ export default function SessionCloseScreen() {
         <Muscles load={load} silhouette={silhouette} />
 
         <Deviations outcomes={deviations} counts={summary.counts} />
+
+        {closed ? (
+          <Rating
+            feeling={workout.feeling}
+            sessionRpe={workout.sessionRpe}
+            onEdit={() => router.push(`/session/${uuid}/rate`)}
+          />
+        ) : null}
 
         {closed ? (
           notes.length > 0 ? (
@@ -279,6 +295,56 @@ function leaveToToday(): void {
   }
 
   router.replace('/');
+}
+
+/**
+ * Le ressenti noté après la clôture, et le chemin pour le donner ou le changer.
+ *
+ * Il se dit même absent (« Pas noté ») : c'est le seul moyen de retrouver
+ * l'écran qu'on a passé, et une section qui disparaîtrait ne se rouvrirait pas.
+ */
+function Rating({
+  feeling,
+  sessionRpe,
+  onEdit,
+}: {
+  feeling: number | null;
+  sessionRpe: number | null;
+  onEdit: () => void;
+}) {
+  const styles = useStyles(sheets);
+  const rated = feeling !== null || sessionRpe !== null;
+
+  return (
+    <View style={styles.section}>
+      <Text accessibilityRole="header" style={styles.sectionTitle}>
+        Ressenti
+      </Text>
+      {rated ? (
+        <View style={styles.ratingRows}>
+          {feeling !== null ? (
+            <Text style={styles.body}>
+              Forme : <Text style={styles.ratingValue}>{feelingLabel(feeling)}</Text> ({feeling}/5)
+            </Text>
+          ) : null}
+          {sessionRpe !== null ? (
+            <Text style={styles.body}>
+              Difficulté : <Text style={styles.ratingValue}>{sessionRpe}/10</Text> ·{' '}
+              {effortLabel(sessionRpe)}
+            </Text>
+          ) : null}
+        </View>
+      ) : (
+        <Text style={styles.body}>Pas noté.</Text>
+      )}
+      <Button
+        label={rated ? 'Modifier le ressenti' : 'Noter la séance'}
+        variant="secondary"
+        size="sm"
+        onPress={onEdit}
+      />
+    </View>
+  );
 }
 
 /**
@@ -657,6 +723,8 @@ const sheets = themed((c) => ({
     borderColor: c.border,
   },
   sectionTitle: { ...text.sectionTitle, color: c.text },
+  ratingRows: { gap: space[2] },
+  ratingValue: { ...text.bodyStrong, color: c.text },
 
   // Une ligne de légende de la carte musculaire. La pastille reprend la teinte du
   // dessin ; elle est bordée, sinon le palier le plus clair s'effacerait sur le
