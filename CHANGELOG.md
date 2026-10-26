@@ -11,6 +11,8 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.3.0] - 2026-10-26
+
 ### Ajouté
 
 - **Le ressenti de la séance** : après « Clôturer », un écran demande comment on
@@ -20,6 +22,8 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
   l'historique. Il part au serveur avec la séance, hors réseau compris, et se lit
   sur le web. Le téléphone change une note mais ne la retire pas : c'est un geste
   du web. Face à un serveur plus ancien, la note est simplement ignorée.
+
+- **Message** : Ajout d'un message général visible par tous les utilisateurs.
 
 ## [1.2.1] - 2026-10-20
 
@@ -205,7 +209,8 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.1...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.0...v1.1.1
