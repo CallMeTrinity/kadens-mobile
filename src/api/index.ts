@@ -56,6 +56,7 @@ export {
   pair,
   ping,
   putExerciseSetup,
+  putMessageSeen,
   putSchedule,
 } from './endpoints';
 
@@ -83,6 +84,7 @@ export type {
   AuthPayload,
   BootstrapPayload,
   BootstrapWindow,
+  CustomMessagePayload,
   DevicePayload,
   ExerciseHistoryPayload,
   ExercisePayload,

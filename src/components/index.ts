@@ -23,6 +23,7 @@ export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberSt
 export { Header, type HeaderProps } from './Header';
 export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';
 export { ScaleSelector, type ScaleSelectorProps } from './ScaleSelector';
+export { MessageSheet, prefetchMessageMedia, type MessageSheetProps } from './MessageSheet';
 export { Sheet, type SheetProps } from './Sheet';
 export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
 

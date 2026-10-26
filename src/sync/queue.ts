@@ -99,6 +99,23 @@ export function pendingSetups(writer: Writer = db): Set<number> {
 }
 
 /**
+ * Les messages programmés dont le « vu » attend d'être poussé. Même rôle que
+ * `pendingSetups()` : le pull ne rend pas visible un message qu'on vient de
+ * fermer, sous prétexte que le serveur ne le sait pas encore.
+ */
+export function pendingMessages(writer: Writer = db): Set<number> {
+  const ids = new Set<number>();
+
+  for (const row of listMutations(writer)) {
+    if (row.payload.messageId !== undefined) {
+      ids.add(row.payload.messageId);
+    }
+  }
+
+  return ids;
+}
+
+/**
  * Empile un envoi du document complet de cette séance.
  *
  * **Coalescé par uuid** : une entrée existante est réarmée (compteur et dernière
@@ -146,6 +163,22 @@ export function enqueueSetupPut(exerciseId: number, writer: Writer = db): void {
   }
 
   insert(writer, 'exercise.setup', { exerciseId });
+}
+
+/**
+ * Empile le « vu » de ce message. Coalescé par message : on ne ferme pas deux
+ * fois la même modale, mais une entrée existante est réarmée plutôt que doublée.
+ */
+export function enqueueMessageSeen(messageId: number, writer: Writer = db): void {
+  const existing = listMutations(writer).find((row) => row.payload.messageId === messageId);
+
+  if (existing) {
+    rearm(writer, existing.id);
+
+    return;
+  }
+
+  insert(writer, 'message.seen', { messageId });
 }
 
 /**

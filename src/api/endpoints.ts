@@ -163,6 +163,19 @@ export function putExerciseSetup(
   }).then((r) => r.data);
 }
 
+/**
+ * Marque un message programmé comme vu, pour **tous** les appareils du compte :
+ * le web ne le remontrera pas non plus. Rejouable (`204` à chaque fois), donc la
+ * file de mutations peut le renvoyer après une réponse perdue.
+ */
+export function putMessageSeen(messageId: number, signal?: AbortSignal): Promise<void> {
+  return request<void>({
+    method: 'PUT',
+    path: `/api/messages/${messageId}/seen`,
+    signal,
+  }).then(() => undefined);
+}
+
 /** Une séance datée seule, dans la même structure que celles du bootstrap. */
 export function getSchedule(uuid: string, signal?: AbortSignal): Promise<ScheduledWorkoutPayload> {
   return request<ScheduledWorkoutPayload>({ path: `/api/schedule/${uuid}`, signal }).then(

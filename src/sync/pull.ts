@@ -2,6 +2,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 
 import type { BootstrapPayload, ScheduledWorkoutPayload } from '@/api';
 import {
+  customMessage,
   db,
   DEFAULT_LANGUAGE,
   exercise,
@@ -16,7 +17,7 @@ import {
   type Transaction,
 } from '@/db';
 
-import { pendingSetups, pendingUuids } from './queue';
+import { pendingMessages, pendingSetups, pendingUuids } from './queue';
 
 /**
  * Le sens descendant : appliquer un `GET /api/bootstrap` à la base locale
@@ -88,6 +89,7 @@ export function applyBootstrap(payload: BootstrapPayload): PullReport {
 
     replaceHistory(tx, payload, running.length > 0);
     replaceSetups(tx, payload);
+    replaceMessages(tx, payload);
 
     // Dans la **même** transaction que les données : un état avancé sur une base
     // à moitié écrite ferait repartir la synchronisation suivante d'un `since`
@@ -561,6 +563,66 @@ function replaceSetups(tx: Transaction, payload: BootstrapPayload): void {
       .onConflictDoUpdate({
         target: exerciseSetup.exerciseId,
         set: { text: sql`excluded.text`, updatedAt: sql`excluded.updated_at` },
+      })
+      .run();
+  }
+}
+
+/**
+ * Remplace les messages programmés par la liste descendue, **entière**. Même
+ * patron que `replaceSetups` : une clé absente (serveur pas encore à jour) ne
+ * touche à rien, et un message dont le « vu » attend d'être poussé n'est ni
+ * écrasé ni supprimé. Sans cette garde, le pull qui suit la fermeture hors
+ * réseau ramènerait le message, sans `seenAt`, et la modale se rouvrirait.
+ *
+ * Un message vu ailleurs (sur le web) n'est plus dans la liste : il part d'ici.
+ * Un message présent est non vu, par définition de la liste : son `seenAt` local
+ * repart à nul.
+ */
+function replaceMessages(tx: Transaction, payload: BootstrapPayload): void {
+  if (payload.messages === undefined) {
+    return;
+  }
+
+  const pending = pendingMessages(tx);
+  const incoming = payload.messages.filter((message) => !pending.has(message.id));
+  const keep = new Set(incoming.map((message) => message.id));
+
+  const doomed = tx
+    .select({ id: customMessage.id })
+    .from(customMessage)
+    .all()
+    .map((row) => row.id)
+    .filter((id) => !keep.has(id) && !pending.has(id));
+
+  if (doomed.length > 0) {
+    tx.delete(customMessage).where(inArray(customMessage.id, doomed)).run();
+  }
+
+  for (let i = 0; i < incoming.length; i += BATCH) {
+    tx.insert(customMessage)
+      .values(
+        incoming.slice(i, i + BATCH).map((message) => ({
+          id: message.id,
+          body: message.body,
+          mediaUrl: message.mediaUrl,
+          startsOn: message.startsOn,
+          endsOn: message.endsOn,
+          seenAt: null,
+        })),
+      )
+      .onConflictDoUpdate({
+        target: customMessage.id,
+        set: {
+          body: sql`excluded.body`,
+          mediaUrl: sql`excluded.media_url`,
+          startsOn: sql`excluded.starts_on`,
+          endsOn: sql`excluded.ends_on`,
+          // Le serveur le dit non vu, et rien n'attend d'être poussé : il fait
+          // autorité. C'est ce qui rend « Remettre à zéro les vues » du
+          // back-office effectif jusqu'ici.
+          seenAt: null,
+        },
       })
       .run();
   }

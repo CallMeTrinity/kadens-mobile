@@ -203,6 +203,20 @@ export interface ExerciseSetupPayload {
   updatedAt: string | null;
 }
 
+/**
+ * Un message programmé (un anniversaire, un Joyeux Noël), à montrer une fois
+ * entre `startsOn` et `endsOn`, bornes incluses, dates seules. `body` est du
+ * texte brut. `mediaUrl` est absolue et **signée** : elle se charge sans jeton,
+ * et expire deux jours après `endsOn`.
+ */
+export interface CustomMessagePayload {
+  id: number;
+  body: string;
+  mediaUrl: string | null;
+  startsOn: string;
+  endsOn: string;
+}
+
 /** La fenêtre de séances datées annoncée par le bootstrap. Elle **fait autorité**. */
 export interface BootstrapWindow {
   from: string;
@@ -238,6 +252,12 @@ export interface BootstrapPayload {
    * pas encore à jour ne l'envoie pas — le pull ne touche alors à rien.
    */
   setups?: ExerciseSetupPayload[];
+  /**
+   * Les messages programmés non vus, en cours ou à venir sous quinze jours,
+   * **entiers**. Facultatif pour la même raison que `setups` : un serveur pas
+   * encore à jour ne l'envoie pas, et le pull ne touche alors à rien.
+   */
+  messages?: CustomMessagePayload[];
   /** Vide sans `since` : un jeu complet remplace tout, il n'y a rien à défalquer. */
   deleted: {
     exercises: number[];

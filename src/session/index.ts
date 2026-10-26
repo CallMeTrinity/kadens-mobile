@@ -123,7 +123,9 @@ export {
   useExerciseLanguage,
   useExerciseLibrary,
   useExerciseNames,
+  useMessageMediaUrls,
   usePastWorkouts,
+  usePendingMessage,
   usePreferences,
   useRunningWorkout,
   useSessionHistory,
@@ -180,6 +182,7 @@ export type { ExerciseNameBook, ExerciseNames } from './naming';
 export { cancelWorkout } from './cancel';
 
 export { saveExerciseSetup } from './setup';
+export { markMessageSeen } from './message';
 export { effortLabel, FEELING_MAX, feelingLabel, rateWorkout, SESSION_RPE_MAX } from './rating';
 export type { WorkoutRating } from './rating';
 export type { CancelOutcome } from './cancel';
@@ -266,7 +269,9 @@ export {
   loggedSetCountsAllQuery,
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
+  messageMediaQuery,
   pastWorkoutsQuery,
+  pendingMessageQuery,
   pendingMutationsQuery,
   preferencesQuery,
   prescribedSnapshotQuery,

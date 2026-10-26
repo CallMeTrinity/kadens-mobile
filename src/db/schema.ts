@@ -164,6 +164,33 @@ export const exerciseSetup = sqliteTable('exercise_setup', {
   updatedAt: text('updated_at'),
 });
 
+/**
+ * Les messages programmés du compte (un anniversaire, un Joyeux Noël) : un texte
+ * et une image facultative, à montrer **une fois** entre deux dates.
+ *
+ * Le bootstrap descend les messages non vus en cours ou à venir sous quinze
+ * jours (`messages`), et c'est **ici** que le téléphone décide, à sa date
+ * locale, lequel montrer : le jour venu, il le fait sans réseau.
+ *
+ * `seenAt` est le seul champ écrit localement. Le « vu » appartient au compte
+ * (le web ne le remontre pas non plus), il suit donc le chemin d'un réglage :
+ * écrit ici, empilé dans `mutation_queue` dans la même transaction
+ * (`message.seen`), poussé par `PUT /api/messages/{id}/seen`. Le pull remplace
+ * la liste entière, sauf les lignes dont le « vu » attend encore.
+ *
+ * `mediaUrl` est une URL **signée**, pas une ressource de l'API : l'image se
+ * charge sans jeton, et le cache disque d'`expo-image` la garde pour le jour J.
+ */
+export const customMessage = sqliteTable('custom_message', {
+  id: integer('id').primaryKey(),
+  body: text('body').notNull(),
+  mediaUrl: text('media_url'),
+  /** `YYYY-MM-DD`, bornes incluses. */
+  startsOn: text('starts_on').notNull(),
+  endsOn: text('ends_on').notNull(),
+  seenAt: text('seen_at'),
+});
+
 // --- La séance datée : le prévu et le réalisé --------------------------------
 
 /**
@@ -529,6 +556,7 @@ export type ExerciseRow = typeof exercise.$inferSelect;
 export type ExerciseInsert = typeof exercise.$inferInsert;
 export type ExerciseHistoryRow = typeof exerciseHistory.$inferSelect;
 export type ExerciseSetupRow = typeof exerciseSetup.$inferSelect;
+export type CustomMessageRow = typeof customMessage.$inferSelect;
 export type ScheduledWorkoutRow = typeof scheduledWorkout.$inferSelect;
 export type ScheduledWorkoutInsert = typeof scheduledWorkout.$inferInsert;
 export type PrescribedSnapshotRow = typeof prescribedSnapshot.$inferSelect;

@@ -60,12 +60,14 @@ export type { AppVersionStatus, AppVersionVerdict } from './version';
 
 export {
   dropMutation,
+  enqueueMessageSeen,
   enqueueScheduleDelete,
   enqueueSchedulePut,
   enqueueSetupPut,
   isExhausted,
   listMutations,
   MAX_ATTEMPTS,
+  pendingMessages,
   pendingSetups,
   pendingUuids,
   rearmExhausted,

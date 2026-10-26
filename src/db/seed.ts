@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 
 import { db } from './client';
 import {
+  customMessage,
   exercise,
   exerciseHistory,
   exerciseSetup,
@@ -684,6 +685,9 @@ function wipe(tx: Parameters<Parameters<typeof db.transaction>[0]>[0]): void {
   // Un réglage pas encore poussé a sa mutation en file, et les deux appelants
   // refusent ou font confirmer tant que la file n'est pas vide.
   tx.delete(exerciseSetup).where(all).run();
+  // Se retélécharge aussi (`messages`). Un « vu » pas encore poussé a sa
+  // mutation en file, même garde que le réglage ci-dessus.
+  tx.delete(customMessage).where(all).run();
   tx.delete(exercise).where(all).run();
   tx.delete(syncState).where(all).run();
 }

@@ -29,6 +29,7 @@
 import { and, asc, count, desc, eq, gte, inArray, isNotNull, isNull, lte, or } from 'drizzle-orm';
 
 import {
+  customMessage,
   db,
   exercise,
   exerciseHistory,
@@ -542,3 +543,34 @@ export type DayCount = { date: string; total: number };
 
 /** Le nombre de séries consignées d'une séance, tel que `loggedSetCountsQuery` le rend. */
 export type LoggedSetCount = { uuid: string; sets: number };
+
+/**
+ * Le message programmé à montrer ce jour-là : non vu, et la date dans sa
+ * fenêtre, bornes incluses. Le plus ancien début d'abord, un seul : une modale
+ * à la fois, le suivant viendra à la fermeture. Les dates sont du texte
+ * `YYYY-MM-DD`, la comparaison lexicale est donc la comparaison de dates.
+ *
+ * Écoute `custom_message` : le fermer y écrit `seen_at`, la requête se republie.
+ */
+export function pendingMessageQuery(date: string) {
+  return db
+    .select()
+    .from(customMessage)
+    .where(
+      and(
+        isNull(customMessage.seenAt),
+        lte(customMessage.startsOn, date),
+        gte(customMessage.endsOn, date),
+      ),
+    )
+    .orderBy(asc(customMessage.startsOn), asc(customMessage.id))
+    .limit(1);
+}
+
+/** Les images des messages pas encore vus, pour les mettre en cache avant le jour J. */
+export function messageMediaQuery() {
+  return db
+    .select({ mediaUrl: customMessage.mediaUrl })
+    .from(customMessage)
+    .where(and(isNull(customMessage.seenAt), isNotNull(customMessage.mediaUrl)));
+}

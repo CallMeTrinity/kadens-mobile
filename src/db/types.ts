@@ -174,21 +174,23 @@ export interface PerformanceBest {
 
 /**
  * Ce qu'une mutation en attente demande au serveur. Le téléphone écrit du
- * réalisé et ses réglages de machine, il ne programme rien — donc trois valeurs,
- * et pas une clé libre.
+ * réalisé, ses réglages de machine et le « vu » d'un message programmé, il ne
+ * programme rien — donc quatre valeurs, et pas une clé libre.
  *
  * Une mutation ne porte **que** sa clé : l'uuid d'une séance, l'identifiant d'un
- * exercice. Le document se relit dans la base locale au moment du push (KL-27).
+ * exercice ou d'un message. Le document se relit dans la base locale au moment du push (KL-27).
  * Le figer ici en ferait une seconde version du réalisé, qui périmerait dès la
  * série suivante.
  */
-export type MutationType = 'schedule.put' | 'schedule.delete' | 'exercise.setup';
+export type MutationType = 'schedule.put' | 'schedule.delete' | 'exercise.setup' | 'message.seen';
 
 /**
- * L'une ou l'autre clé, jamais les deux. Le `?: never` laisse lire
- * `payload.uuid` sur n'importe quelle ligne (il vaut alors `undefined` pour un
- * réglage) sans test de forme à chaque lecture — c'est ce que font les écrans
+ * Une seule clé, jamais deux. Le `?: never` laisse lire `payload.uuid` sur
+ * n'importe quelle ligne (il vaut alors `undefined` pour un réglage ou un
+ * message) sans test de forme à chaque lecture — c'est ce que font les écrans
  * qui ne s'intéressent qu'aux séances.
  */
 export type MutationPayload =
-  { uuid: string; exerciseId?: never } | { exerciseId: number; uuid?: never };
+  | { uuid: string; exerciseId?: never; messageId?: never }
+  | { exerciseId: number; uuid?: never; messageId?: never }
+  | { messageId: number; uuid?: never; exerciseId?: never };

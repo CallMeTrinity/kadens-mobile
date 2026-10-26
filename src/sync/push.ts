@@ -6,6 +6,7 @@ import {
   isTransient,
   isUnauthorized,
   putExerciseSetup,
+  putMessageSeen,
   putSchedule,
   type ScheduleUpsertInput,
 } from '@/api';
@@ -148,7 +149,14 @@ export async function pushPending(): Promise<PushReport> {
  * toujours.
  */
 async function send(mutation: MutationRow): Promise<'created' | 'updated' | 'deleted' | 'moot'> {
-  const { uuid, exerciseId } = mutation.payload;
+  const { uuid, exerciseId, messageId } = mutation.payload;
+
+  if (messageId !== undefined) {
+    // Rien à relire : le « vu » n'a pas d'autre état que son existence.
+    await putMessageSeen(messageId);
+
+    return 'updated';
+  }
 
   if (exerciseId !== undefined) {
     await sendSetup(exerciseId);

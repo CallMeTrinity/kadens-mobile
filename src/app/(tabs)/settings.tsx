@@ -361,10 +361,12 @@ function QueueRow({
 }) {
   const styles = useStyles(sheets);
   const name =
-    mutation.type === 'exercise.setup'
-      ? `Réglages · ${names.labelOf(mutation.exerciseId) ?? 'exercice retiré'}`
-      : (mutation.title ??
-        (mutation.type === 'schedule.delete' ? 'Séance supprimée' : 'Séance libre'));
+    mutation.type === 'message.seen'
+      ? 'Message lu'
+      : mutation.type === 'exercise.setup'
+        ? `Réglages · ${names.labelOf(mutation.exerciseId) ?? 'exercice retiré'}`
+        : (mutation.title ??
+          (mutation.type === 'schedule.delete' ? 'Séance supprimée' : 'Séance libre'));
   const day = mutation.date === null ? null : whenDay(mutation.date, today);
 
   return (

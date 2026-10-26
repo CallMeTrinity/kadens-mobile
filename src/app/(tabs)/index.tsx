@@ -1,8 +1,18 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
-import { Button, Card, Chip, EmptyState, Field, Header, Sheet } from '@/components';
+import {
+  Button,
+  Card,
+  Chip,
+  EmptyState,
+  Field,
+  Header,
+  MessageSheet,
+  prefetchMessageMedia,
+  Sheet,
+} from '@/components';
 import {
   beginWorkout,
   createFreeWorkout,
@@ -10,9 +20,12 @@ import {
   dayTitle,
   defaultFreeTitle,
   longDate,
+  markMessageSeen,
   shiftDate,
   useDayStrip,
   useDayWorkouts,
+  useMessageMediaUrls,
+  usePendingMessage,
   useRunningWorkout,
   useToday,
   workoutStateLabel,
@@ -66,6 +79,13 @@ export default function TodayScreen() {
   const strip = useDayStrip(today);
   const workouts = useDayWorkouts(selected);
   const running = useRunningWorkout();
+  // Un message programmé du jour, lu à la date **réelle** et pas à la date
+  // affichée : feuilleter la semaine ne doit pas ouvrir un anniversaire en
+  // avance. Toute fermeture vaut « vu » (`markMessageSeen`).
+  const message = usePendingMessage(today);
+  const mediaUrls = useMessageMediaUrls();
+
+  useEffect(() => prefetchMessageMedia(mediaUrls), [mediaUrls]);
 
   // La séance en cours ne se montre en bandeau que si elle n'est pas déjà dans
   // la liste affichée : deux fois la même carte ferait douter qu'il s'agit de la
@@ -174,6 +194,18 @@ export default function TodayScreen() {
         onChangeTitle={setFreeTitle}
         onClose={() => setFreeSheetOpen(false)}
         onStart={startFree}
+      />
+
+      {/* Jamais en même temps que la séance libre : une feuille à la fois. */}
+      <MessageSheet
+        visible={message !== null && !freeSheetOpen}
+        body={message?.body ?? ''}
+        mediaUrl={message?.mediaUrl ?? null}
+        onClose={() => {
+          if (message) {
+            markMessageSeen(message.id);
+          }
+        }}
       />
     </View>
   );

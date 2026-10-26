@@ -21,6 +21,7 @@ import {
   DEFAULT_PREFERENCES,
   localDate,
   type ActivityType,
+  type CustomMessageRow,
   type ExerciseHistoryRow,
   type ExerciseLanguage,
   type PreferenceRow,
@@ -61,6 +62,8 @@ import {
   loggedSetCountsQuery,
   loggedSetsOfWorkoutQuery,
   pastWorkoutsQuery,
+  messageMediaQuery,
+  pendingMessageQuery,
   pendingMutationsQuery,
   preferencesQuery,
   prescribedSnapshotQuery,
@@ -442,4 +445,27 @@ function usePendingUuids(): Set<string> {
 
   // Un réglage de machine en attente n'a pas d'uuid : il ne marque aucune séance.
   return useMemo(() => new Set(data.flatMap((row) => row.payload.uuid ?? [])), [data]);
+}
+
+/**
+ * Le message programmé du jour, ou `null`. Se rejoue quand la date change
+ * (`useToday`, minuit passé app ouverte) et quand la table bouge (un pull, la
+ * fermeture).
+ */
+export function usePendingMessage(date: string): CustomMessageRow | null {
+  const { data } = useLiveQuery(pendingMessageQuery(date), [date]);
+
+  return data[0] ?? null;
+}
+
+/**
+ * Les URL d'image des messages non vus. La liste rendue ne change d'identité que
+ * si son contenu change : un pull qui réécrit les mêmes lignes ne relance pas
+ * le préchargement.
+ */
+export function useMessageMediaUrls(): string[] {
+  const { data } = useLiveQuery(messageMediaQuery());
+  const key = data.flatMap((row) => (row.mediaUrl === null ? [] : [row.mediaUrl])).join('\n');
+
+  return useMemo(() => (key === '' ? [] : key.split('\n')), [key]);
 }

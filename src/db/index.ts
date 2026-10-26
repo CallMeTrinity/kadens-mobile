@@ -38,6 +38,7 @@ export { localDate, nowIso } from './time';
 export { isUuidv7, uuidv7 } from './uuid';
 
 export {
+  customMessage,
   exercise,
   exerciseHistory,
   exerciseSetup,
@@ -54,6 +55,7 @@ export {
 } from './schema';
 
 export type {
+  CustomMessageRow,
   ExerciseHistoryRow,
   ExerciseInsert,
   ExerciseRow,

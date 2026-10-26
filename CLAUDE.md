@@ -135,9 +135,17 @@ A fifth one, `exerciseSetup`, holds the athlete's **machine settings** per exerc
 jambe : 1"). Unlike `sessionLayout` it **is** synced: it belongs to the account (`ExerciseSetup` server-side), so
 writing it enqueues an `exercise.setup` mutation in the same transaction (`saveExerciseSetup`, `@/session`), pushed
 by `PUT /api/exercises/{id}/setup`. The bootstrap sends the full list (`setups`) and the pull replaces the local one,
-except rows whose mutation is still pending. It has no "open workout" guard: it describes no workout. Mutation
-payloads are therefore `{ uuid }` or `{ exerciseId }`; code that only cares about workouts reads `payload.uuid` and
-skips `undefined`.
+except rows whose mutation is still pending. It has no "open workout" guard: it describes no workout.
+
+A sixth one, `customMessage`, holds **scheduled messages** (a birthday, a Christmas greeting: text + optional GIF,
+written in the server's super-admin back-office, spec in `kadens/docs/feature-custom-messages.md`). The bootstrap
+sends the unseen ones running or starting within 14 days (`messages`), and the phone picks today's by **local
+date**, so it shows offline on the day. Closing the sheet on Today writes `seenAt` and enqueues a `message.seen`
+mutation in the same transaction (`markMessageSeen`, `@/session`), pushed by `PUT /api/messages/{id}/seen`; "seen"
+is shared with the web. The image is a **signed URL** loaded without the token, through `expo-image` (RN's `Image`
+doesn't animate GIFs on this build) with a disk cache warmed ahead of time; `__mocks__/expo-image.tsx` makes it
+importable under Jest. Mutation payloads are therefore `{ uuid }`, `{ exerciseId }` or `{ messageId }`; code that
+only cares about workouts reads `payload.uuid` and skips `undefined`.
 
 There's no "modified locally" flag on `scheduledWorkout` — that fact is already carried by `mutationQueue` (a
 pending workout has a row there). This is why push-before-pull is non-negotiable (see below): two sources for the
