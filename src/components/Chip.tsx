@@ -20,6 +20,8 @@ import { Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { layout, space, text, themed, useStyles, variants } from '@/theme';
 
+import { Icon, type IconName } from './Icon';
+
 export type ChipTone = 'neutral' | 'done' | 'planned' | 'missed' | 'accent';
 /** Rang dans l'échelle catégorielle, du plus sombre au plus clair. */
 export type ChipRank = 1 | 2 | 3 | 4;
@@ -30,6 +32,12 @@ export type ChipProps = {
   rank?: ChipRank;
   /** Pastille de couleur devant le libellé (pendant de `.kd-badge__dot`). */
   dot?: boolean;
+  /**
+   * Une icône devant le libellé, dans sa couleur. Seule la couronne s'en sert
+   * (« Record +2,5 kg ») : un chip est une marque de lecture, l'icône n'y entre
+   * que quand elle **est** le sens — pas pour décorer.
+   */
+  icon?: IconName;
   style?: StyleProp<ViewStyle>;
   testID?: string;
 };
@@ -87,7 +95,15 @@ const SKINS = variants((c) => ({
   } as Record<ChipRank, string>,
 }));
 
-export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID }: ChipProps) {
+export function Chip({
+  label,
+  tone = 'neutral',
+  rank,
+  dot = false,
+  icon,
+  style,
+  testID,
+}: ChipProps) {
   const { tones, ranks } = useStyles(SKINS);
   const styles = useStyles(sheets);
   const skin = tones[tone];
@@ -103,6 +119,7 @@ export function Chip({ label, tone = 'neutral', rank, dot = false, style, testID
       ]}
     >
       {dot ? <View style={[styles.dot, { backgroundColor: skin.dot }]} /> : null}
+      {icon ? <Icon name={icon} size={12} color={skin.label} /> : null}
       <Text numberOfLines={1} style={[styles.label, { color: skin.label }]}>
         {label}
       </Text>

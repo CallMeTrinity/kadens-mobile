@@ -12,8 +12,11 @@ import {
   EmptyState,
   Field,
   Figure,
+  gainLabel,
   Header,
+  Icon,
   isFeelingLevel,
+  setEffort,
   useKeyboardOverlap,
   weight,
   type BodyLevel,
@@ -28,6 +31,7 @@ import {
   isClosed,
   isRunning,
   longDate,
+  recordGain,
   sessionRecords,
   targetAreaLabel,
   useElapsedSeconds,
@@ -41,6 +45,7 @@ import {
   type DeviationAxis,
   type DeviationState,
   type ExerciseOutcome,
+  type SessionRecord,
   type SessionSummary,
 } from '@/session';
 import { layout, space, text, themed, useColors, useStyles } from '@/theme';
@@ -126,7 +131,7 @@ export default function SessionCloseScreen() {
 
   // Les records de la séance, lus contre la même référence qu'en séance
   // (`exercise_history`, gelé pour la durée de la séance par `replaceHistory`).
-  // C'est ici que le losange vu ligne après ligne reçoit son nom.
+  // C'est ici que la couronne vue ligne après ligne reçoit son nom, et le gain.
   const history = useSessionHistory(program);
   const records = useMemo(() => sessionRecords(program, history), [program, history]);
 
@@ -214,7 +219,7 @@ export default function SessionCloseScreen() {
 
         <Metrics summary={summary} startedAt={workout.startedAt} endedAt={workout.endedAt} />
 
-        <Records count={records.size} />
+        <Records records={[...records.values()]} />
 
         <Muscles load={load} silhouette={silhouette} />
 
@@ -416,29 +421,74 @@ function Metrics({
 }
 
 /**
- * Le record, dit en toutes lettres — une fois.
+ * Les records battus, nommés un par un, avec ce qu'ils ont gagné.
  *
- * En séance il ne se peint qu'en losange, faute de place sur une ligne qui porte
- * déjà quatre valeurs. Un symbole muet ne s'apprend nulle part : c'est ici, à
- * l'endroit où l'on relit ce qu'on a fait, qu'il reçoit son nom. Le même losange,
- * suivi du mot.
+ * En séance, la couronne se pose sur la ligne et la pastille dit le gain, mais on
+ * ne les voit qu'exercice par exercice. C'est ici, à l'endroit où l'on relit ce
+ * qu'on a fait, qu'ils se rassemblent : « Squat barre, 92,5 kg, +2,5 kg — avant
+ * 90 kg ». Une phrase « Record battu sur 2 exercices » demandait de se souvenir
+ * desquels ; la carte les nomme.
  *
- * Rien du tout quand il n'y en a pas. Un « 0 record » serait un cinquième chiffre
- * dans une grille qui en a quatre, et il dirait un échec là où il n'y a qu'une
- * séance ordinaire.
+ * Rien du tout quand il n'y en a pas. Une carte « 0 record » dirait un échec là
+ * où il n'y a qu'une séance ordinaire.
  */
-function Records({ count }: { count: number }) {
+function Records({ records }: { records: SessionRecord[] }) {
   const styles = useStyles(sheets);
-  if (count === 0) {
+  const colors = useColors();
+  if (records.length === 0) {
     return null;
   }
 
   return (
-    <View accessibilityRole="text" style={styles.records}>
-      <View style={styles.recordMark} />
-      <Text style={styles.caption}>
-        Record battu sur {count} exercice{count > 1 ? 's' : ''}
-      </Text>
+    <View style={styles.section}>
+      <View style={styles.recordsHead}>
+        <Icon name="crown" size={20} color={colors.primaryOnTint} />
+        <Text accessibilityRole="header" style={styles.sectionTitle}>
+          Records battus
+        </Text>
+        <View style={styles.spacer} />
+        <Text style={styles.recordsCount}>{records.length}</Text>
+      </View>
+
+      {records.map((record) => (
+        <RecordRow key={record.lineKey} record={record} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * Un record : l'exercice et la série à gauche, la charge et le gain à droite.
+ *
+ * La marque battue s'écrit sur l'axe qui a fait le record : « avant 90 kg » quand
+ * la charge a monté, « avant 8 reps » quand c'est à charge égale que les
+ * répétitions ont départagé (`recordGain`).
+ */
+function RecordRow({ record }: { record: SessionRecord }) {
+  const styles = useStyles(sheets);
+  const gain = recordGain(record);
+  const effort = setEffort(record.reps, record.durationSeconds);
+  const before =
+    gain.axis === 'weight'
+      ? weight(record.previous.weightKg)
+      : (setEffort(record.previous.reps, null) ?? weight(record.previous.weightKg));
+  const detail = `${effort !== null ? `${effort} · ` : ''}avant ${before}`;
+
+  return (
+    <View
+      accessible
+      accessibilityLabel={`${record.name}, ${weight(record.weightKg)}, ${gainLabel(gain)}, ${detail}`}
+      style={styles.recordRow}
+    >
+      <View style={styles.recordWhat}>
+        {/* Un nom saisi : Barlow, casse normale (règle 4). */}
+        <Text style={styles.recordName}>{record.name}</Text>
+        <Text style={styles.caption}>{detail}</Text>
+      </View>
+      <View style={styles.recordHow}>
+        <Text style={styles.recordLoad}>{weight(record.weightKg)}</Text>
+        <Text style={styles.recordGain}>{gainLabel(gain)}</Text>
+      </View>
     </View>
   );
 }
@@ -701,15 +751,26 @@ const sheets = themed((c) => ({
   // Deux colonnes : quatre chiffres en ligne seraient illisibles à cette taille,
   // et la grille tient sans média-requête — l'app n'a qu'une largeur.
   metrics: { flexDirection: 'row', flexWrap: 'wrap', gap: layout.hairline },
-  records: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
-  // Le losange de la ligne de série, à l'identique — c'est ce qui fait que la
-  // phrase nomme le symbole, et pas un autre.
-  recordMark: {
-    width: 8,
-    height: 8,
-    backgroundColor: c.primaryOnTint,
-    transform: [{ rotate: '45deg' }],
+
+  // La carte des records. La couronne de la ligne de série, à l'identique et en
+  // plus grand — c'est ce qui fait que la carte nomme le symbole, et pas un autre.
+  recordsHead: { flexDirection: 'row', alignItems: 'center', gap: space[3] },
+  recordsCount: { ...text.numeric, color: c.textSecondary },
+  recordRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: space[4],
+    paddingTop: space[4],
+    borderTopWidth: layout.hairline,
+    borderTopColor: c.dividerSoft,
   },
+  recordWhat: { flex: 1, gap: space[1] },
+  recordName: { ...text.bodyStrong, color: c.text },
+  recordHow: { alignItems: 'flex-end', gap: space[1] },
+  recordLoad: { ...text.numeric, color: c.text },
+  // Le gain s'écrit en rouge : c'est de l'intensité. `primaryOnTint`, le rouge
+  // qui écrit, pas celui qui peint.
+  recordGain: { ...text.numericMinor, color: c.primaryOnTint },
   metric: {
     flexGrow: 1,
     flexBasis: '45%',

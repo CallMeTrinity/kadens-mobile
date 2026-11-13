@@ -18,6 +18,16 @@
  * jointures ronds, aucun remplissage) sont portés une fois par `<Svg>`. Ne pas
  * les recopier par icône : c'est ce qui garantit qu'une icône ajoutée ressemble
  * aux autres.
+ *
+ * ## Une seule icône pleine : la couronne
+ *
+ * Le record se marque d'une couronne **remplie** (`SOLID`), pas d'un contour.
+ * À 12 ou 18 points, le trait de 2 d'un contour bouche les pointes et la
+ * couronne se lit comme une tache ; pleine, elle reste une couronne. C'est le
+ * seul glyphe de l'app qui célèbre au lieu d'agir, et le seul à se peindre
+ * plein. Le tracé, lui, reste celui de Lucide au caractère près : le web le
+ * remplit de la même façon, en CSS (`.kd-icon--solid`), sans toucher au fichier
+ * importé.
  */
 
 import Svg, { Circle, Path, Rect } from 'react-native-svg';
@@ -68,9 +78,26 @@ const ICONS = {
       d: 'M10 2h4m-9.4 9a8 8 0 0 0 1.7 8.7a8 8 0 0 0 8.7 1.7m-7.6-14a8 8 0 0 1 10.3 1a8 8 0 0 1 .9 10.2M2 2l20 20M12 12v-2',
     },
   ],
+  /**
+   * Le record battu : sur la série qui le porte, sur l'exercice, dans
+   * l'historique et à la clôture. Peinte pleine (`SOLID`, voir l'en-tête).
+   */
+  crown: [
+    {
+      d: 'M11.562 3.266a.5.5 0 0 1 .876 0L15.39 8.87a1 1 0 0 0 1.516.294L21.183 5.5a.5.5 0 0 1 .798.519l-2.834 10.246a1 1 0 0 1-.956.734H5.81a1 1 0 0 1-.957-.734L2.02 6.02a.5.5 0 0 1 .798-.519l4.276 3.664a1 1 0 0 0 1.516-.294zM5 21h14',
+    },
+  ],
 } as const satisfies Record<string, readonly Shape[]>;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * Les icônes qui se remplissent de leur couleur au lieu de n'en tracer que le
+ * contour. Une seule, et l'en-tête dit pourquoi : ne pas en ajouter une pour
+ * « faire plus plein » — c'est le contraste plein / contour qui fait lire la
+ * couronne comme une distinction.
+ */
+const SOLID: ReadonlySet<IconName> = new Set<IconName>(['crown']);
 
 export type IconProps = {
   name: IconName;
@@ -78,7 +105,8 @@ export type IconProps = {
   size?: number;
   /**
    * Toujours un token (règle 1). Passé en `stroke` : les tracés Lucide sont des
-   * traits, pas des aplats — une icône « pleine » n'existe pas dans ce jeu.
+   * traits, pas des aplats. Seules les icônes de `SOLID` le reçoivent aussi en
+   * `fill`.
    */
   color: string;
 };
@@ -89,7 +117,7 @@ export function Icon({ name, size = 20, color }: IconProps) {
       width={size}
       height={size}
       viewBox="0 0 24 24"
-      fill="none"
+      fill={SOLID.has(name) ? color : 'none'}
       stroke={color}
       strokeWidth={2}
       strokeLinecap="round"

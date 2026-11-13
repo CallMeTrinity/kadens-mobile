@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from 'react';
 import {
   Alert,
+  Animated,
   Pressable,
   ScrollView,
   Text,
@@ -19,6 +20,7 @@ import {
   EmptyState,
   Field,
   FilterChip,
+  gainLabel,
   Header,
   Icon,
   NumberStepper,
@@ -51,6 +53,8 @@ import {
   lineValues,
   isClosed,
   isRunning,
+  isWrapped,
+  lastWrapped,
   longDate,
   moveExercise,
   moveExerciseTo,
@@ -60,6 +64,7 @@ import {
   resetExecutionOrder,
   saveExerciseSetup,
   REST_STEP,
+  recordGain,
   sessionRecords,
   setCardioDone,
   setDeviates,
@@ -93,6 +98,7 @@ import {
   type SessionExercise,
   type SessionGroup,
   type SessionProgram,
+  type SessionRecord,
   type SessionSetLine,
   type SessionTarget,
   type SetValues,
@@ -102,6 +108,7 @@ import {
   space,
   text,
   themed,
+  useEntrance,
   useReducedMotion,
   useStyles,
   useColors,
@@ -306,6 +313,15 @@ export default function SessionScreen() {
   // on déplace une ligne (`useRevealTarget`).
   const upNext = running ? nextTarget(program) : null;
   const target = reordering ? null : upNext;
+  // L'exercice que la dernière série vient de **boucler** annonce la suite
+  // (« Ensuite : Fentes bulgares ») : la cible de la barre basse, nommée là où
+  // l'œil est encore. Seulement si la suite est un autre exercice — sinon il n'y
+  // a rien à annoncer, la barre basse dit déjà la série suivante.
+  const wrappedKey = useMemo(() => (running ? lastWrapped(program) : null), [running, program]);
+  const ahead =
+    wrappedKey !== null && target !== null && target.exercise.key !== wrappedKey
+      ? { after: wrappedKey, name: target.exercise.name }
+      : null;
   // La notification de fin de repos annonce la **prochaine** série, et seul cet
   // écran la connaît. Indépendante du rangement : on peut ranger le déroulé
   // pendant un repos, la série qui suit ne change pas pour autant.
@@ -690,6 +706,7 @@ export default function SessionScreen() {
                   history={history}
                   setups={setups}
                   records={records}
+                  ahead={ahead}
                   today={today}
                   targetKey={target?.exercise.key ?? null}
                   targetRef={targetRef}
@@ -732,6 +749,7 @@ export default function SessionScreen() {
                     history={history}
                     setups={setups}
                     records={records}
+                    ahead={ahead}
                     today={today}
                     targetKey={target?.exercise.key ?? null}
                     targetRef={targetRef}
@@ -1271,11 +1289,17 @@ type SectionHandlers = {
   /** Les réglages de machine, indexés par identifiant d'exercice, descendus comme l'historique. */
   setups: Map<number, string>;
   /**
-   * Les records battus dans cette séance : clé d'exercice → clé de la série qui
-   * les porte (`sessionRecords`). Descendue avec l'historique et pour la même
-   * raison — c'est une seule lecture pour tout le déroulé.
+   * Les records battus dans cette séance : clé d'exercice → le record, série qui
+   * le porte et marque battue comprises (`sessionRecords`). Descendue avec
+   * l'historique et pour la même raison — c'est une seule lecture pour tout le
+   * déroulé.
    */
-  records: Map<string, string>;
+  records: Map<string, SessionRecord>;
+  /**
+   * L'exercice qui vient d'être bouclé (`after`) et le nom de celui qui suit.
+   * Un seul exercice l'affiche : celui que la dernière série a bouclé.
+   */
+  ahead: { after: string; name: string } | null;
   /** Le jour réel, repère des dates d'historique. */
   today: string;
   /** L'exercice que la barre basse propose. Il se marque, et il se garde en vue. */
@@ -1511,6 +1535,7 @@ function ExerciseSection({
   history,
   setups,
   records,
+  ahead,
   today,
   targetKey,
   targetRef,
@@ -1528,9 +1553,26 @@ function ExerciseSection({
   const exerciseId = exerciseIdOf(exercise);
   const past = exerciseId === null ? null : (history.get(exerciseId) ?? null);
   const setup = exerciseId === null ? null : (setups.get(exerciseId) ?? null);
-  // Au plus une par exercice : `sessionRecords` retient la meilleure série, pas
+  // Au plus un par exercice : `sessionRecords` retient la meilleure série, pas
   // toutes celles qui dépassent l'ancienne marque.
-  const recordKey = records.get(exercise.key) ?? null;
+  const record = records.get(exercise.key) ?? null;
+  const recordKey = record?.lineKey ?? null;
+  // Bouclé : toutes les séries prévues sont faites (`wrapped.ts`). La suite ne
+  // s'annonce que sous celui que la dernière série vient de boucler.
+  const wrapped = isWrapped(exercise);
+  const next = ahead !== null && ahead.after === exercise.key ? ahead.name : null;
+  // Trois accusés de réception, joués à la transition et jamais au montage
+  // (`useEntrance`) : « Bouclé » et « Ensuite » montent en place, le filet de fin
+  // se tire de gauche à droite. Ils vivent ici et non dans ce qu'ils animent,
+  // parce que ce qu'ils animent naît au moment même de la transition.
+  const arrival = useEntrance(wrapped, 350);
+  const announce = useEntrance(next !== null, 350);
+  const sweep = useEntrance(wrapped, 600);
+  // Les styles animés se bâtissent une fois par valeur, pas à chaque écriture
+  // qui re-rend l'exercice.
+  const arrivalStyle = useMemo(() => rising(arrival), [arrival]);
+  const announceStyle = useMemo(() => rising(announce), [announce]);
+  const sweepStyle = useMemo(() => ({ transform: [{ scaleX: sweep }] }), [sweep]);
   // Une série annoncée attend d'être faite : le bouton devient sa reprise, pas un
   // second ajout. C'est aussi ce qui limite l'annonce à une ligne à la fois — on
   // n'annonce pas trois séries d'avance, on en fait une.
@@ -1556,9 +1598,18 @@ function ExerciseSection({
         {exercise.skipped ? (
           <Chip label="Sauté" />
         ) : exercise.total > 0 ? (
-          <Text style={styles.exerciseCount}>
-            {exercise.done}/{exercise.total}
-          </Text>
+          <>
+            {wrapped ? (
+              <Animated.View style={arrivalStyle}>
+                <Chip label="Bouclé" tone="done" dot />
+              </Animated.View>
+            ) : null}
+            {/* Au vert une fois bouclé : c'est le statut « fait », à l'échelle
+                d'un exercice — la pastille le nomme, le compteur le confirme. */}
+            <Text style={[styles.exerciseCount, wrapped && styles.exerciseCountWrapped]}>
+              {exercise.done}/{exercise.total}
+            </Text>
+          </>
         ) : null}
         {editable ? (
           <Button
@@ -1581,6 +1632,12 @@ function ExerciseSection({
         {prescribed?.rpe != null ? <Text style={styles.caption}>RPE {prescribed.rpe}</Text> : null}
         {prescribed?.restSeconds != null && prescribed.restSeconds > 0 ? (
           <Text style={styles.caption}>repos {prescribed.restSeconds} s</Text>
+        ) : null}
+        {/* Le record se dit sur l'exercice, avec ce qu'il a gagné : la couronne
+            de la ligne montre **où**, la pastille dit **de combien**. En rouge
+            plein, c'est de l'intensité (règle 2). */}
+        {record !== null ? (
+          <Chip label={`Record ${gainLabel(recordGain(record))}`} tone="accent" icon="crown" />
         ) : null}
       </View>
 
@@ -1646,8 +1703,37 @@ function ExerciseSection({
 
       {/* Ce que l'athlète a écrit à la salle. Rien à voir avec la consigne. */}
       {exercise.logged?.notes ? <Text style={styles.logNotes}>{exercise.logged.notes}</Text> : null}
+
+      {/* La suite, nommée sous l'exercice qu'on vient de finir : on lève les yeux
+          de la dernière case cochée et on lit où aller. La barre basse la
+          propose déjà, ceci la dit là où le regard est encore. */}
+      {next !== null ? (
+        <Animated.View
+          accessible
+          accessibilityLabel={`Ensuite : ${next}`}
+          style={[styles.ahead, announceStyle]}
+        >
+          <Text style={styles.aheadLabel}>Ensuite</Text>
+          <Text style={styles.aheadName}>{next}</Text>
+        </Animated.View>
+      ) : null}
+
+      {/* Le filet de fin d'un exercice bouclé, au vert du statut fait. Il se
+          tire de gauche à droite à la transition, puis reste. */}
+      {wrapped ? <Animated.View style={[styles.sweep, sweepStyle]} /> : null}
     </View>
   );
+}
+
+/**
+ * Une entrée en place : quatorze points plus bas et transparent, puis à sa
+ * place. Le décalage est un `transform`, il ne pousse rien autour de lui.
+ */
+function rising(progress: Animated.Value) {
+  return {
+    opacity: progress,
+    transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+  };
 }
 
 /**
@@ -2011,6 +2097,7 @@ function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: s
       {best ? (
         <HistoryTable
           label="Record"
+          crowned
           date={performanceDate(best.date, today)}
           rows={[bestRow(best)]}
           summary={bestSummary(best)}
@@ -2033,16 +2120,20 @@ type HistoryLine = { count: string; effort: string; load: string };
  */
 function HistoryTable({
   label,
+  crowned = false,
   date,
   rows,
   summary,
 }: {
   label: string;
+  /** La couronne devant l'intitulé : celle du record, la même qu'en séance. */
+  crowned?: boolean;
   date: string;
   rows: HistoryLine[];
   summary: string;
 }) {
   const styles = useStyles(sheets);
+  const colors = useColors();
   return (
     <View
       accessible
@@ -2050,6 +2141,7 @@ function HistoryTable({
       style={styles.historyPart}
     >
       <View style={styles.historyHead}>
+        {crowned ? <Icon name="crown" size={12} color={colors.textSecondary} /> : null}
         <Text style={styles.historyLabel}>{label}</Text>
         <View style={styles.spacer} />
         <Text style={styles.historyDate}>{date}</Text>
@@ -2247,7 +2339,16 @@ const SET_BADGES = variants<Record<SetType, { ink: string; tint: string }>>((c) 
  * s'aligne au caractère près, donc en mono comme lui.
  *
  * **Pas de glyphe** : un « ✓ » dépendrait de ce que Barlow contient. Une case
- * pleine à l'encre dit la même chose et ne peut pas manquer.
+ * pleine à l'encre dit la même chose et ne peut pas manquer. Elle rebondit une
+ * fois quand on la coche (`useEntrance`) — l'accusé de réception du geste, en
+ * échelle seulement : la ligne ne bouge pas d'un point sous le pouce.
+ *
+ * **La série record se couronne à la place de son numéro**, et se teinte. Le
+ * rang d'une série faite ne sert plus à rien — on ne vise plus « la troisième »
+ * une fois qu'elle est faite — alors que la place, elle, est déjà réservée :
+ * la couronne s'y pose sans rien décaler. L'ancienne marque, un losange dans
+ * une gouttière en bout de ligne, prenait douze points aux valeurs pour une
+ * marque absente neuf fois sur dix.
  */
 function SetRow({
   line,
@@ -2264,7 +2365,19 @@ function SetRow({
   onAdjust: () => void;
 }) {
   const styles = useStyles(sheets);
+  const colors = useColors();
   const checked = line.logged !== null;
+  // L'échelle n'est posée que sur une case cochée : à zéro, l'interpolation
+  // donnerait une case réduite de moitié à toutes les séries qui attendent.
+  const pop = useEntrance(checked, 350);
+  const popStyle = useMemo(
+    () => ({
+      transform: [
+        { scale: pop.interpolate({ inputRange: [0, 0.6, 1], outputRange: [0.55, 1.18, 1] }) },
+      ],
+    }),
+    [pop],
+  );
   const values = lineValues(line);
   const effortParts = values ? setEffortParts(values.reps, values.durationSeconds) : null;
   // La ligne se **peint** en deux morceaux, elle ne se **dit** pas en deux
@@ -2275,9 +2388,17 @@ function SetRow({
 
   const body = (
     <>
-      <Text style={[styles.setRank, checked && styles.setRankChecked]}>
-        {String(line.index).padStart(2, '0')}
-      </Text>
+      {record ? (
+        // `primaryOnTint` : le rouge qui se pose **sur** une surface, ici la
+        // teinte de la ligne. Il tient ses 3:1 des deux côtés (`contrast.test.ts`).
+        <View style={styles.setRankSlot}>
+          <Icon name="crown" size={18} color={colors.primaryOnTint} />
+        </View>
+      ) : (
+        <Text style={[styles.setRank, checked && styles.setRankChecked]}>
+          {String(line.index).padStart(2, '0')}
+        </Text>
+      )}
 
       {/* Le sigle du type, dans une gouttière de largeur fixe : les lignes
           restent alignées qu'elles soient qualifiées ou non. */}
@@ -2316,13 +2437,6 @@ function SetRow({
           ) : null}
         </View>
       </View>
-
-      {/* Le record, dans une gouttière **toujours réservée** : une marque qui
-          pousserait la ligne au moment où on la coche ferait bouger la cible
-          juste sous le pouce. Une forme dessinée et non un glyphe, pour la
-          raison du « ✓ » plus haut — un « ◆ » dépendrait de ce que Barlow
-          contient. Rouge parce que c'est de l'intensité, l'un de ses trois sens. */}
-      <View style={styles.setRecordSlot}>{record ? <View style={styles.setRecord} /> : null}</View>
     </>
   );
 
@@ -2332,7 +2446,7 @@ function SetRow({
   const adjustable = editable && (checked || line.planned !== null);
 
   return (
-    <View style={[styles.setRow, checked && styles.setRowChecked]}>
+    <View style={[styles.setRow, checked && styles.setRowChecked, record && styles.setRowRecord]}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={`${setRowLabel(line, effort, load, record)}. ${
@@ -2371,10 +2485,11 @@ function SetRow({
         onPress={onToggle}
         style={({ pressed }) => [styles.boxTarget, pressed && actionable && styles.setRowPressed]}
       >
-        <View
+        <Animated.View
           style={[
             styles.box,
             checked && styles.boxChecked,
+            checked && popStyle,
             !checked && !actionable && styles.boxIdle,
           ]}
         />
@@ -3245,9 +3360,9 @@ function setRowLabel(
     parts.push(`au lieu de ${missed.join(' × ')}`);
   }
 
-  // Le mot que le losange ne dit pas. À l'écran il se lit dans sa gouttière ;
-  // une forme ne s'entend pas, et c'est la seule chose de la ligne qui soit une
-  // nouvelle.
+  // Le mot que la couronne ne dit pas. À l'écran elle se lit à la place du
+  // numéro ; une forme ne s'entend pas, et c'est la seule chose de la ligne qui
+  // soit une nouvelle.
   if (record) {
     parts.push('record');
   }
@@ -3410,6 +3525,23 @@ const sheets = themed((c) => ({
   },
   exerciseHead: { flexDirection: 'row', alignItems: 'center', gap: space[4] },
   exerciseCount: { ...text.numeric, color: c.textSecondary },
+  exerciseCountWrapped: { color: c.statusDone },
+  // « Ensuite » : un sur-titre et un nom, rien qui ressemble à une cible — la
+  // cible est en bas, dans la barre.
+  ahead: { flexDirection: 'row', alignItems: 'center', gap: space[3], marginTop: space[5] },
+  aheadLabel: { ...text.eyebrow, color: c.textSecondary },
+  aheadName: { ...text.bodyStrong, color: c.text, flexShrink: 1 },
+  // Le filet de fin d'un exercice bouclé : posé sur le bord bas, hors du flux —
+  // il ne prend aucune place et ne pousse rien. Il se tire depuis la gauche.
+  sweep: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: c.statusDone,
+    transformOrigin: 'left',
+  },
   // Le rang dans le superset, en mono : il se compare, il ne se lit pas.
   rank: { ...text.eyebrow, color: c.text },
   marks: { flexDirection: 'row', flexWrap: 'wrap', gap: space[4], marginTop: space[2] },
@@ -3453,6 +3585,9 @@ const sheets = themed((c) => ({
   // Une série faite se pose sur un fond appuyé et garde son filet : elle ne
   // disparaît pas, elle se range.
   setRowChecked: { backgroundColor: c.fill, borderColor: c.borderStrong },
+  // La série record se teinte de rouge pâle, faite ou non : c'est de
+  // l'intensité, et la couronne à la place du numéro dit laquelle.
+  setRowRecord: { backgroundColor: c.primaryTint, borderColor: c.primaryTrack },
   setRowPressed: { backgroundColor: c.surfaceHover },
   setValues: {
     flex: 1,
@@ -3464,6 +3599,9 @@ const sheets = themed((c) => ({
     paddingRight: space[3],
   },
   setRank: { ...text.numeric, color: c.textSecondary, width: 24 },
+  // La place du numéro, à la même largeur : la couronne s'y pose sans décaler
+  // les valeurs d'un point.
+  setRankSlot: { width: 24, alignItems: 'flex-start', justifyContent: 'center' },
   setRankChecked: { color: c.textSecondary },
   setEffort: { ...text.numeric, color: c.text },
   setLoad: { ...text.numeric, color: c.text },
@@ -3539,25 +3677,6 @@ const sheets = themed((c) => ({
   setSummary: { flexShrink: 1 },
 
   setBadgeSlot: { width: 22, alignItems: 'center' },
-  // La gouttière du record, en fin de valeurs. **Toujours là**, vide la plupart
-  // du temps : elle se réserve une fois pour toutes plutôt que d'apparaître au
-  // moment où l'on coche, ce qui décalerait la ligne sous le pouce. Étroite,
-  // parce qu'elle prend sa place aux valeurs, qui n'en ont pas de trop
-  // (§ « rien ne déborde »).
-  setRecordSlot: { width: 12, alignItems: 'center' },
-  // Un losange dessiné, pas un caractère : un « ◆ » dépendrait de ce que Barlow
-  // contient, comme le « ✓ » de la case. Un carré tourné d'un huitième de tour,
-  // que toutes les polices du monde rendent pareil.
-  setRecord: {
-    width: 8,
-    height: 8,
-    // `primaryOnTint` et non `primary` : c'est le rouge qui se pose **sur** une
-    // surface, par opposition à celui qui *est* la surface et porte du blanc.
-    // Le rouge plein tient ses 3:1 sur du papier et les perd sur une ligne
-    // sombre ; celui-ci les tient des deux côtés (`contrast.test.ts`).
-    backgroundColor: c.primaryOnTint,
-    transform: [{ rotate: '45deg' }],
-  },
   // Couleur et fond viennent du type (`SET_BADGES`) : ici la forme seulement.
   setBadge: { borderWidth: layout.hairline, paddingHorizontal: space[1] },
   setBadgeText: { ...text.eyebrow },

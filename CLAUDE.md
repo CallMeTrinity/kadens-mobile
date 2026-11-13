@@ -367,7 +367,8 @@ without the other breaks `expo prebuild` on a missing path.
 **Icons** are Lucide, frozen locally in `src/components/Icon.tsx` (`react-native-svg`), copied verbatim from
 the server repo's own frozen set in `assets/icons/lucide/` — a `git grep calendar-days` across both repos must
 land on the same drawing. A new icon is imported server-side first
-(`php bin/console ux:icons:import lucide:<name>`), then transcribed.
+(`php bin/console ux:icons:import lucide:<name>`), then transcribed. One icon is painted **solid**, the record's
+`crown` (`SOLID` in `Icon.tsx`; the web fills it with `.kd-icon--solid`) — don't add another to "make it fuller".
 The five feeling **figures** (`src/components/Figure.tsx`) follow the same rule from a different source: they are
 Kadens' own drawings, frozen server-side in `assets/icons/kadens/feeling-{1..5}.svg` and transcribed here.
 

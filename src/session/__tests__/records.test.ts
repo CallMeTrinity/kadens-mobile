@@ -2,7 +2,7 @@
  * Le record battu en séance, et surtout ce qui n'en est pas un.
  *
  * `sessionRecords` est pur, donc vérifiable sans base ni rendu. Ce que ces tests
- * protègent est l'accord avec le serveur : le losange doit se poser exactement
+ * protègent est l'accord avec le serveur : la couronne doit se poser exactement
  * sur ce que `PerformanceHistory` appellerait un record après la synchro. Une
  * divergence ne se verrait pas ici mais en salle, sur une ligne fêtée à tort.
  *
@@ -11,7 +11,7 @@
  */
 
 import type { ExerciseHistoryRow, LoggedExerciseRow, LoggedSetRow, PerformanceBest } from '@/db';
-import { beatsBest, buildProgram, sessionRecords } from '@/session';
+import { beatsBest, buildProgram, recordGain, sessionRecords } from '@/session';
 import { prescribedBlock, prescribedExercise } from '@/test/fixtures';
 
 /** L'identifiant de bibliothèque que `prescribedExercise(1)` travaille. */
@@ -81,7 +81,7 @@ function recordsOf(
   logged: LoggedExerciseRow = loggedRow(),
 ): string[] {
   const program = buildProgram([prescribedBlock(1, [prescribedExercise(1)])], [logged], sets);
-  const marked = new Set(sessionRecords(program, history).values());
+  const marked = new Set([...sessionRecords(program, history).values()].map((r) => r.lineKey));
   const lines = program.blocks[0]?.groups[0]?.exercises[0]?.lines ?? [];
 
   return lines
@@ -174,5 +174,49 @@ describe('sessionRecords', () => {
     const sets = [setRow({ type: 'warmup', weightKg: 200 }), setRow({ weightKg: 85 })];
 
     expect(recordsOf(sets, historyOf(best()))).toEqual(['85 × 8']);
+  });
+});
+
+describe('le record retenu', () => {
+  function onlyRecord(sets: LoggedSetRow[], mark: PerformanceBest) {
+    const program = buildProgram(
+      [prescribedBlock(1, [prescribedExercise(1)])],
+      [loggedRow()],
+      sets,
+    );
+    const records = [...sessionRecords(program, historyOf(mark)).values()];
+
+    expect(records).toHaveLength(1);
+
+    return records[0];
+  }
+
+  it('garde la marque battue, pas celle que la série vient de poser', () => {
+    const record = onlyRecord([setRow({ weightKg: 85, reps: 5 })], best());
+
+    expect(record.weightKg).toBe(85);
+    expect(record.reps).toBe(5);
+    expect(record.previous.weightKg).toBe(80);
+  });
+
+  it('dit le gain en kilos quand la charge monte', () => {
+    expect(recordGain(onlyRecord([setRow({ weightKg: 82.5 })], best()))).toEqual({
+      axis: 'weight',
+      weightKg: 2.5,
+    });
+  });
+
+  it('arrondit le gain au centième, sans traîner de bruit binaire', () => {
+    expect(recordGain(onlyRecord([setRow({ weightKg: 60.3 })], best({ weightKg: 60 })))).toEqual({
+      axis: 'weight',
+      weightKg: 0.3,
+    });
+  });
+
+  it('dit le gain en répétitions à charge égale', () => {
+    expect(recordGain(onlyRecord([setRow({ weightKg: 80, reps: 10 })], best()))).toEqual({
+      axis: 'reps',
+      reps: 2,
+    });
   });
 });
