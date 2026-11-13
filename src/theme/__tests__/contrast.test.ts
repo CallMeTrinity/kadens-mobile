@@ -150,6 +150,45 @@ const INK: InkCase[] = [
   { ink: 'primaryOnTint', on: 'surface', role: 'caption', where: 'champ en erreur, en feuille' },
   { ink: 'primaryOnTint', on: 'surfaceRaised', role: 'eyebrow', where: 'chip « manquée »' },
   { ink: 'statusDone', on: 'surfaceRaised', role: 'eyebrow', where: 'chip « faite »' },
+
+  // La refonte « éléments plus chaleureux » : record, exercice bouclé, ressenti.
+  { ink: 'text', on: 'primaryTint', role: 'numeric', where: 'valeurs de la série record' },
+  {
+    ink: 'textSecondary',
+    on: 'primaryTint',
+    role: 'numericMinor',
+    where: 'prévu barré de la série record',
+  },
+  { ink: 'onPrimary', on: 'primary', role: 'eyebrow', where: 'pastille « Record +2,5 kg »' },
+  {
+    ink: 'statusDone',
+    on: 'surfaceRaised',
+    role: 'numeric',
+    where: "compteur d'un exercice bouclé",
+  },
+  {
+    ink: 'statusDone',
+    on: 'surfaceSubtle',
+    role: 'numeric',
+    where: 'compteur bouclé, exercice courant',
+  },
+  { ink: 'text', on: 'surfaceRaised', role: 'bodyStrong', where: '« Ensuite », nom de la suite' },
+  {
+    ink: 'primaryOnTint',
+    on: 'surfaceRaised',
+    role: 'numericMinor',
+    where: "gain d'un record, clôture",
+  },
+  {
+    ink: 'textSoft',
+    on: 'surfaceRaised',
+    role: 'eyebrow',
+    where: 'chiffre sous un bonhomme non retenu',
+  },
+  { ink: 'text', on: 'bg', role: 'kpi', where: 'difficulté retenue, en grand' },
+  { ink: 'textSecondary', on: 'bg', role: 'numericMinor', where: '« / 10 » de la difficulté' },
+  { ink: 'primaryOnTint', on: 'bg', role: 'sectionTitle', where: 'palier de difficulté retenu' },
+  { ink: 'textSecondary', on: 'bg', role: 'eyebrow', where: "chiffre sous une marche d'escalier" },
 ];
 
 /**
@@ -162,11 +201,18 @@ const SHAPES: { color: ColorToken; on: ColorToken; where: string }[] = [
   { color: 'statusPlanned', on: 'surfaceRaised', where: 'pastille de statut' },
   { color: 'statusMissed', on: 'surfaceRaised', where: "filet d'un champ en erreur" },
   { color: 'text', on: 'surfaceRaised', where: 'filet de la barre basse' },
-  // Le losange du record. Il ne se pose que sur une série **faite**, donc sur le
-  // fond appuyé — mais la ligne se peint claire tant qu'on ne l'a pas cochée, et
-  // une marque qui n'y tiendrait pas serait un piège au premier rendu.
-  { color: 'primaryOnTint', on: 'fill', where: 'losange du record, sur une série faite' },
-  { color: 'primaryOnTint', on: 'surfaceRaised', where: 'losange du record, ligne claire' },
+  // La couronne du record. Sur la série, elle se pose sur la teinte de la
+  // ligne record ; dans la carte de clôture, sur une surface claire.
+  { color: 'primaryOnTint', on: 'primaryTint', where: 'couronne de la série record' },
+  { color: 'primaryOnTint', on: 'surfaceRaised', where: 'couronne de la carte des records' },
+  { color: 'textSecondary', on: 'surfaceRaised', where: "couronne de l'historique" },
+  { color: 'onPrimary', on: 'primary', where: 'couronne de la pastille record' },
+  { color: 'statusDone', on: 'surfaceRaised', where: "filet de fin d'un exercice bouclé" },
+  // Le bonhomme non retenu est la cible qu'on vise pour changer de forme.
+  { color: 'textSoft', on: 'surfaceRaised', where: 'bonhomme de forme non retenu' },
+  { color: 'text', on: 'surfaceRaised', where: 'bonhomme de forme retenu' },
+  // Le filet qui désigne la marche retenue, sur le papier de la page.
+  { color: 'text', on: 'bg', where: "filet de la marche d'escalier retenue" },
 ];
 
 /**

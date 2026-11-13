@@ -94,6 +94,23 @@ export function setEffortParts(
 }
 
 /**
+ * Ce qu'un record a gagné, signé : « +2,5 kg », « +2 reps ».
+ *
+ * Le type est structurel plutôt qu'importé de `@/session` (`RecordGain`) : les
+ * composants de base ne dépendent pas du domaine. L'axe est celui qui a fait le
+ * record, et un seul s'écrit — voir `recordGain`.
+ */
+export function gainLabel(gain: { weightKg: number } | { reps: number }): string {
+  if ('weightKg' in gain) {
+    return `+${weight(gain.weightKg)}`;
+  }
+
+  // Un compte de répétitions donne toujours une grandeur : le repli ne sert
+  // qu'au typage, et il garde le pluriel écrit à un seul endroit.
+  return `+${setEffort(gain.reps, null) ?? gain.reps}`;
+}
+
+/**
  * Les deux morceaux recollés. C'est cette phrase que lisent les libellés
  * d'accessibilité et tout ce qui compose (la barre basse, l'historique) : une
  * grandeur ne s'écrit qu'ici, sous les deux formes, sinon la version parlée et

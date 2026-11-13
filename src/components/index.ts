@@ -16,13 +16,15 @@ export { Chip, type ChipProps, type ChipRank, type ChipTone } from './Chip';
 export { EmptyState, type EmptyStateProps } from './EmptyState';
 export { Fault, type FaultProps } from './Fault';
 export { Field, type FieldProps } from './Field';
+export { EffortSelector, type EffortSelectorProps } from './EffortSelector';
+export { FeelingSelector, type FeelingSelectorProps } from './FeelingSelector';
+export { Figure, isFeelingLevel, type FeelingLevel, type FigureProps } from './Figure';
 export { FilterChip, type FilterChipProps } from './FilterChip';
 export { Icon, type IconName, type IconProps } from './Icon';
 export { useKeyboardOverlap, type KeyboardOverlap } from './keyboard';
 export { formatNumber, NumberStepper, type NumberStepperProps } from './NumberStepper';
 export { Header, type HeaderProps } from './Header';
 export { OfflineBanner, type OfflineBannerProps } from './OfflineBanner';
-export { ScaleSelector, type ScaleSelectorProps } from './ScaleSelector';
 export { MessageSheet, prefetchMessageMedia, type MessageSheetProps } from './MessageSheet';
 export { Sheet, type SheetProps } from './Sheet';
 export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
@@ -32,4 +34,12 @@ export { UpdateBanner, type UpdateBannerProps } from './UpdateBanner';
  * de ce qui est fait est du domaine, écrire « 82,5 kg » est du rendu — et le
  * rendu français des nombres vit déjà dans ce dossier.
  */
-export { duration, setEffort, setEffortParts, weight, weightParts, type Measure } from './units';
+export {
+  duration,
+  gainLabel,
+  setEffort,
+  setEffortParts,
+  weight,
+  weightParts,
+  type Measure,
+} from './units';

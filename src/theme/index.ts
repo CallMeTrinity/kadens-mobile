@@ -43,7 +43,7 @@ export type { Themed, ThemePreference } from './theme';
 
 export { layout } from './layout';
 
-export { useReducedMotion } from './motion';
+export { useEntrance, useReducedMotion } from './motion';
 
 export { fontFamily, useKadensFonts } from './fonts';
 export type { WeightOf } from './fonts';

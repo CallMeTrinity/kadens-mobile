@@ -283,8 +283,12 @@ none of them is cosmetic.
   on is a trap. Red that is **written** is `primaryOnTint`; full `primary`/`statusMissed` stay for fills, dots
   and rules, where 3:1 is the bar. `src/theme/__tests__/contrast.test.ts` holds the declared ink/surface pairs
   and derives each threshold from the **typographic role** — a new pair is added by hand when introduced.
-- **Motion and keyboard are measured, not assumed.** `useReducedMotion()` (`@/theme`) gates the only two
-  movements in the app (a sheet rising, the reveal scroll). `useKeyboardOverlap()` (`@/components`) returns
+- **Motion and keyboard are measured, not assumed.** `useReducedMotion()` (`@/theme`) gates the two structural
+  movements (a sheet rising, the reveal scroll). Everything else that moves is an **acknowledgement of a gesture**
+  — a checked box popping, a wrapped exercise drawing its finish rule, "Bouclé"/"Ensuite" rising into place, the
+  chosen feeling figure bobbing — and goes through `useEntrance()` (`theme/motion.ts`, closed list there): it plays
+  on the transition only, never at mount (reopening a half-done workout pops nothing), touches `transform`/`opacity`
+  only (nothing shifts under the thumb), and snaps to its end state under "reduce motion". `useKeyboardOverlap()` (`@/components`) returns
   `host height − keyboard top`, not the keyboard height: an Android window may resize under the keyboard or
   not, and the same formula is right either way. Where it applies, the bottom safe-area inset **stops being
   added** — the keyboard already covers the gesture bar.
@@ -363,7 +367,10 @@ without the other breaks `expo prebuild` on a missing path.
 **Icons** are Lucide, frozen locally in `src/components/Icon.tsx` (`react-native-svg`), copied verbatim from
 the server repo's own frozen set in `assets/icons/lucide/` — a `git grep calendar-days` across both repos must
 land on the same drawing. A new icon is imported server-side first
-(`php bin/console ux:icons:import lucide:<name>`), then transcribed.
+(`php bin/console ux:icons:import lucide:<name>`), then transcribed. One icon is painted **solid**, the record's
+`crown` (`SOLID` in `Icon.tsx`; the web fills it with `.kd-icon--solid`) — don't add another to "make it fuller".
+The five feeling **figures** (`src/components/Figure.tsx`) follow the same rule from a different source: they are
+Kadens' own drawings, frozen server-side in `assets/icons/kadens/feeling-{1..5}.svg` and transcribed here.
 
 **Red means one of three things** and nothing else: a primary action, intensity, failure. Categories
 (activity, target area, block role) are coded by their **rank in the grey scale** (`colors.cat1…cat4`), never

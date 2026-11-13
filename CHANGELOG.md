@@ -11,6 +11,31 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.4.0] - 2026-11-13
+
+### Modifié
+
+- **Le record a une couronne** : la série qui bat le record se teinte et prend
+  une couronne à la place de son numéro, et l'exercice affiche ce qu'elle a
+  gagné (« Record +2,5 kg »). La couronne marque aussi le record dans
+  l'historique de l'exercice. Elle remplace le petit losange rouge.
+- **« Séance terminée » nomme les records battus** : une carte les liste un par
+  un, avec la charge, le gain et la marque d'avant, au lieu de la phrase
+  « Record battu sur N exercices ».
+- **Le ressenti se donne en dessins** : la forme se choisit parmi cinq
+  bonhommes, d'avachi à bras en l'air, et la difficulté sur un escalier de dix
+  marches qui rougit en montant. Le bonhomme choisi revient sur « Séance
+  terminée ».
+
+### Ajouté
+
+- **Exercice bouclé** : quand toutes ses séries sont faites, l'exercice passe
+  au vert, affiche « Bouclé », et annonce le suivant (« Ensuite : … »).
+- **Quelques mouvements discrets** : la case rebondit quand on coche une série,
+  l'exercice bouclé tire un filet de fin, le bonhomme choisi sautille. Ils ne
+  jouent qu'au moment du geste et s'éteignent avec le réglage Android
+  « Supprimer les animations ».
+
 ## [1.3.0] - 2026-10-26
 
 ### Ajouté
@@ -209,7 +234,8 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.3.0...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...v1.2.0
