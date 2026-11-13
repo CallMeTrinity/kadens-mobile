@@ -3,24 +3,18 @@ import { useState } from 'react';
 import { ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, EmptyState, Header, ScaleSelector } from '@/components';
-import {
-  effortLabel,
-  FEELING_MAX,
-  feelingLabel,
-  longDate,
-  rateWorkout,
-  SESSION_RPE_MAX,
-  useWorkout,
-} from '@/session';
+import { Button, EffortSelector, EmptyState, FeelingSelector, Header } from '@/components';
+import { effortLabel, feelingLabel, longDate, rateWorkout, useWorkout } from '@/session';
 import { layout, space, text, themed, useStyles } from '@/theme';
 
 /**
  * Écran « Ressenti » — juste après la clôture, et ensuite à la demande.
  *
- * Deux questions, aux échelles de Garmin : **comment tu t'es senti** (forme 1-5)
- * et **à quel point c'était dur** (difficulté 1-10). Rien d'autre : c'est l'écran
- * qu'on remplit en rangeant ses affaires, il doit tenir en deux gestes.
+ * Deux questions, aux échelles de Garmin : **comment tu t'es senti** (forme 1-5,
+ * en bonhommes) et **à quel point c'était dur** (difficulté 1-10, en escalier).
+ * Rien d'autre : c'est l'écran qu'on remplit en rangeant ses affaires, il doit
+ * tenir en deux gestes. Le pourquoi des deux dessins est dans
+ * `FeelingSelector` et `EffortSelector`.
  *
  * ## Après la clôture, pas à sa place
  *
@@ -89,24 +83,21 @@ export default function SessionRateScreen() {
           </Text>
         </View>
 
-        <ScaleSelector
+        <FeelingSelector
           testID="rate-feeling"
           label="Comment tu t’es senti ?"
-          max={FEELING_MAX}
           value={feeling}
           onChange={setFeeling}
           describe={feelingLabel}
           ends={['Très faible', 'Très en forme']}
         />
 
-        <ScaleSelector
+        <EffortSelector
           testID="rate-effort"
           label="À quel point c’était dur ?"
-          max={SESSION_RPE_MAX}
           value={sessionRpe}
           onChange={setRpe}
           describe={effortLabel}
-          tone="primary"
           ends={['Très léger', 'Maximal']}
         />
       </ScrollView>

@@ -150,6 +150,18 @@ const INK: InkCase[] = [
   { ink: 'primaryOnTint', on: 'surface', role: 'caption', where: 'champ en erreur, en feuille' },
   { ink: 'primaryOnTint', on: 'surfaceRaised', role: 'eyebrow', where: 'chip « manquée »' },
   { ink: 'statusDone', on: 'surfaceRaised', role: 'eyebrow', where: 'chip « faite »' },
+
+  // Le ressenti en dessins : bonhommes de forme, escalier de difficulté.
+  {
+    ink: 'textSoft',
+    on: 'surfaceRaised',
+    role: 'eyebrow',
+    where: 'chiffre sous un bonhomme non retenu',
+  },
+  { ink: 'text', on: 'bg', role: 'kpi', where: 'difficulté retenue, en grand' },
+  { ink: 'textSecondary', on: 'bg', role: 'numericMinor', where: '« / 10 » de la difficulté' },
+  { ink: 'primaryOnTint', on: 'bg', role: 'sectionTitle', where: 'palier de difficulté retenu' },
+  { ink: 'textSecondary', on: 'bg', role: 'eyebrow', where: "chiffre sous une marche d'escalier" },
 ];
 
 /**
@@ -167,6 +179,11 @@ const SHAPES: { color: ColorToken; on: ColorToken; where: string }[] = [
   // une marque qui n'y tiendrait pas serait un piège au premier rendu.
   { color: 'primaryOnTint', on: 'fill', where: 'losange du record, sur une série faite' },
   { color: 'primaryOnTint', on: 'surfaceRaised', where: 'losange du record, ligne claire' },
+  // Le bonhomme non retenu est la cible qu'on vise pour changer de forme.
+  { color: 'textSoft', on: 'surfaceRaised', where: 'bonhomme de forme non retenu' },
+  { color: 'text', on: 'surfaceRaised', where: 'bonhomme de forme retenu' },
+  // Le filet qui désigne la marche retenue, sur le papier de la page.
+  { color: 'text', on: 'bg', where: "filet de la marche d'escalier retenue" },
 ];
 
 /**

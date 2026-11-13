@@ -11,6 +11,13 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Modifié
+
+- **Le ressenti se donne en dessins** : la forme se choisit parmi cinq
+  bonhommes, d'avachi à bras en l'air, et la difficulté sur un escalier de dix
+  marches qui rougit en montant. Le bonhomme choisi revient sur « Séance
+  terminée ».
+
 ## [1.3.0] - 2026-10-26
 
 ### Ajouté

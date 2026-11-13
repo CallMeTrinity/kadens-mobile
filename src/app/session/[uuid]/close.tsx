@@ -11,7 +11,9 @@ import {
   duration,
   EmptyState,
   Field,
+  Figure,
   Header,
+  isFeelingLevel,
   useKeyboardOverlap,
   weight,
   type BodyLevel,
@@ -41,7 +43,7 @@ import {
   type ExerciseOutcome,
   type SessionSummary,
 } from '@/session';
-import { layout, space, text, themed, useStyles } from '@/theme';
+import { layout, space, text, themed, useColors, useStyles } from '@/theme';
 
 /**
  * Écran « Clôture de séance » (KL-33) — le dernier geste de la séance, et le
@@ -313,6 +315,7 @@ function Rating({
   onEdit: () => void;
 }) {
   const styles = useStyles(sheets);
+  const colors = useColors();
   const rated = feeling !== null || sessionRpe !== null;
 
   return (
@@ -321,18 +324,26 @@ function Rating({
         Ressenti
       </Text>
       {rated ? (
-        <View style={styles.ratingRows}>
-          {feeling !== null ? (
-            <Text style={styles.body}>
-              Forme : <Text style={styles.ratingValue}>{feelingLabel(feeling)}</Text> ({feeling}/5)
-            </Text>
+        <View style={styles.rating}>
+          {/* Le bonhomme choisi sur l'écran Ressenti, à l'encre : il redit la
+              forme d'un coup d'œil, la ligne d'à côté l'écrit. */}
+          {isFeelingLevel(feeling) ? (
+            <Figure level={feeling} width={30} color={colors.text} />
           ) : null}
-          {sessionRpe !== null ? (
-            <Text style={styles.body}>
-              Difficulté : <Text style={styles.ratingValue}>{sessionRpe}/10</Text> ·{' '}
-              {effortLabel(sessionRpe)}
-            </Text>
-          ) : null}
+          <View style={styles.ratingRows}>
+            {feeling !== null ? (
+              <Text style={styles.body}>
+                Forme : <Text style={styles.ratingValue}>{feelingLabel(feeling)}</Text>{' '}
+                {`(${feeling}/5)`}
+              </Text>
+            ) : null}
+            {sessionRpe !== null ? (
+              <Text style={styles.body}>
+                Difficulté : <Text style={styles.ratingValue}>{sessionRpe}/10</Text> ·{' '}
+                {effortLabel(sessionRpe)}
+              </Text>
+            ) : null}
+          </View>
         </View>
       ) : (
         <Text style={styles.body}>Pas noté.</Text>
@@ -723,7 +734,8 @@ const sheets = themed((c) => ({
     borderColor: c.border,
   },
   sectionTitle: { ...text.sectionTitle, color: c.text },
-  ratingRows: { gap: space[2] },
+  rating: { flexDirection: 'row', alignItems: 'center', gap: space[5] },
+  ratingRows: { flexShrink: 1, gap: space[2] },
   ratingValue: { ...text.bodyStrong, color: c.text },
 
   // Une ligne de légende de la carte musculaire. La pastille reprend la teinte du
