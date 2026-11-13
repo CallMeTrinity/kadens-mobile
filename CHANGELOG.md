@@ -11,6 +11,8 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+## [1.4.0] - 2026-11-13
+
 ### Modifié
 
 - **Le record a une couronne** : la série qui bat le record se teinte et prend
@@ -232,7 +234,8 @@ Première version publiée.
 - Bandeau de mise à jour signalant une version plus récente.
 - Chaîne de build : APK de release signé, publié en GitHub Release sur tag.
 
-[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.3.0...HEAD
+[Non publié]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/CallMeTrinity/kadens-mobile/compare/v1.1.1...v1.2.0
