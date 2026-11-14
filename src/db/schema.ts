@@ -16,6 +16,7 @@ import type {
   MutationPayload,
   MutationType,
   PerformanceBest,
+  PerformanceRepMax,
   PerformanceSession,
   PlanRef,
   PrescribedBlock,
@@ -126,7 +127,10 @@ export const exerciseHistory = sqliteTable('exercise_history', {
     .primaryKey()
     .references(() => exercise.id, { onDelete: 'cascade' }),
   last: text('last', { mode: 'json' }).$type<PerformanceSession>(),
+  /** Le record de charge. Nul au poids du corps : il n'y a pas de kilos à battre. */
   best: text('best', { mode: 'json' }).$type<PerformanceBest>(),
+  /** Le record au poids du corps, en répétitions. Nul tant qu'on n'a rien fait sans charge. */
+  bestReps: text('best_reps', { mode: 'json' }).$type<PerformanceRepMax>(),
 });
 
 /**

@@ -243,7 +243,7 @@ export {
 } from './rest';
 export type { RestState } from './rest';
 
-export { beatsBest, recordGain, sessionRecords } from './records';
+export { beatsBest, beatsRepMax, recordGain, sessionRecords } from './records';
 export type { RecordGain, SessionRecord } from './records';
 export { isWrapped, lastWrapped } from './wrapped';
 

@@ -45,6 +45,7 @@ import {
   type DeviationAxis,
   type DeviationState,
   type ExerciseOutcome,
+  type RecordGain,
   type SessionRecord,
   type SessionSummary,
 } from '@/session';
@@ -458,26 +459,24 @@ function Records({ records }: { records: SessionRecord[] }) {
 }
 
 /**
- * Un record : l'exercice et la série à gauche, la charge et le gain à droite.
+ * Un record : l'exercice et la série à gauche, la valeur et le gain à droite.
  *
  * La marque battue s'écrit sur l'axe qui a fait le record : « avant 90 kg » quand
  * la charge a monté, « avant 8 reps » quand c'est à charge égale que les
  * répétitions ont départagé (`recordGain`).
+ *
+ * Au poids du corps, la valeur **est** le compte : « 15 reps », « +1 rep », et la
+ * légende dit « poids du corps · avant 14 reps » plutôt que de répéter l'effort.
  */
 function RecordRow({ record }: { record: SessionRecord }) {
   const styles = useStyles(sheets);
   const gain = recordGain(record);
-  const effort = setEffort(record.reps, record.durationSeconds);
-  const before =
-    gain.axis === 'weight'
-      ? weight(record.previous.weightKg)
-      : (setEffort(record.previous.reps, null) ?? weight(record.previous.weightKg));
-  const detail = `${effort !== null ? `${effort} · ` : ''}avant ${before}`;
+  const { headline, detail } = recordWording(record, gain);
 
   return (
     <View
       accessible
-      accessibilityLabel={`${record.name}, ${weight(record.weightKg)}, ${gainLabel(gain)}, ${detail}`}
+      accessibilityLabel={`${record.name}, ${headline}, ${gainLabel(gain)}, ${detail}`}
       style={styles.recordRow}
     >
       <View style={styles.recordWhat}>
@@ -486,11 +485,37 @@ function RecordRow({ record }: { record: SessionRecord }) {
         <Text style={styles.caption}>{detail}</Text>
       </View>
       <View style={styles.recordHow}>
-        <Text style={styles.recordLoad}>{weight(record.weightKg)}</Text>
+        <Text style={styles.recordLoad}>{headline}</Text>
         <Text style={styles.recordGain}>{gainLabel(gain)}</Text>
       </View>
     </View>
   );
+}
+
+/** La grandeur du record, et la légende qui dit d'où il part. */
+function recordWording(
+  record: SessionRecord,
+  gain: RecordGain,
+): { headline: string; detail: string } {
+  if (record.metric === 'reps') {
+    // Un compte de répétitions donne toujours une grandeur : le repli ne sert
+    // qu'au typage.
+    return {
+      headline: setEffort(record.reps, null) ?? String(record.reps),
+      detail: `poids du corps · avant ${setEffort(record.previous.reps, null) ?? record.previous.reps}`,
+    };
+  }
+
+  const effort = setEffort(record.reps, record.durationSeconds);
+  const before =
+    gain.axis === 'weight'
+      ? weight(record.previous.weightKg)
+      : (setEffort(record.previous.reps, null) ?? weight(record.previous.weightKg));
+
+  return {
+    headline: weight(record.weightKg),
+    detail: `${effort !== null ? `${effort} · ` : ''}avant ${before}`,
+  };
 }
 
 /**

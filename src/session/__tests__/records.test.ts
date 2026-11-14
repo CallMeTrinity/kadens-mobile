@@ -10,8 +10,14 @@
  * un record qui n'en est pas est bien pire que de n'en annoncer aucun.
  */
 
-import type { ExerciseHistoryRow, LoggedExerciseRow, LoggedSetRow, PerformanceBest } from '@/db';
-import { beatsBest, buildProgram, recordGain, sessionRecords } from '@/session';
+import type {
+  ExerciseHistoryRow,
+  LoggedExerciseRow,
+  LoggedSetRow,
+  PerformanceBest,
+  PerformanceRepMax,
+} from '@/db';
+import { beatsBest, beatsRepMax, buildProgram, recordGain, sessionRecords } from '@/session';
 import { prescribedBlock, prescribedExercise } from '@/test/fixtures';
 
 /** L'identifiant de bibliothèque que `prescribedExercise(1)` travaille. */
@@ -62,8 +68,16 @@ function best(overrides: Partial<PerformanceBest> = {}): PerformanceBest {
   };
 }
 
-function historyOf(entry: PerformanceBest | null): Map<number, ExerciseHistoryRow> {
-  return new Map([[EXERCISE, { exerciseId: EXERCISE, last: null, best: entry }]]);
+/** La marque à battre au poids du corps : quatorze répétitions, il y a une semaine. */
+function repMax(overrides: Partial<PerformanceRepMax> = {}): PerformanceRepMax {
+  return { date: '2026-07-28', type: 'normal', reps: 14, ...overrides };
+}
+
+function historyOf(
+  entry: PerformanceBest | null,
+  bestReps: PerformanceRepMax | null = null,
+): Map<number, ExerciseHistoryRow> {
+  return new Map([[EXERCISE, { exerciseId: EXERCISE, last: null, best: entry, bestReps }]]);
 }
 
 /**
@@ -120,8 +134,8 @@ describe('beatsBest', () => {
   });
 
   it('écarte une série sans kilos', () => {
-    // Au poids du corps il n'y a pas de record côté serveur : `best` y est nul,
-    // et une charge nulle ne se distingue pas d'une charge absente.
+    // Une série à vide se mesure au record au poids du corps, pas à celui de
+    // charge — et une charge nulle ne se distingue pas d'une charge absente.
     expect(beatsBest(setRow({ weightKg: null, reps: 30 }), best())).toBe(false);
     expect(beatsBest(setRow({ weightKg: 0, reps: 30 }), best())).toBe(false);
   });
@@ -194,9 +208,12 @@ describe('le record retenu', () => {
   it('garde la marque battue, pas celle que la série vient de poser', () => {
     const record = onlyRecord([setRow({ weightKg: 85, reps: 5 })], best());
 
-    expect(record.weightKg).toBe(85);
-    expect(record.reps).toBe(5);
-    expect(record.previous.weightKg).toBe(80);
+    expect(record).toMatchObject({
+      metric: 'load',
+      weightKg: 85,
+      reps: 5,
+      previous: { weightKg: 80 },
+    });
   });
 
   it('dit le gain en kilos quand la charge monte', () => {
@@ -218,5 +235,100 @@ describe('le record retenu', () => {
       axis: 'reps',
       reps: 2,
     });
+  });
+});
+
+describe('le record au poids du corps', () => {
+  /** Une série de pompes : des répétitions, pas de charge. */
+  function pushups(reps: number | null, overrides: Partial<LoggedSetRow> = {}): LoggedSetRow {
+    return setRow({ reps, weightKg: null, ...overrides });
+  }
+
+  function recordsAt(
+    sets: LoggedSetRow[],
+    bestReps: PerformanceRepMax | null,
+    load: PerformanceBest | null = null,
+  ) {
+    const program = buildProgram(
+      [prescribedBlock(1, [prescribedExercise(1)])],
+      [loggedRow()],
+      sets,
+    );
+
+    return [...sessionRecords(program, historyOf(load, bestReps)).values()];
+  }
+
+  it('couronne 15 pompes après 14', () => {
+    // Le cas qui a fait écrire ce bloc : sans kilos, la séance n'avait rien à
+    // comparer, et 15 après 14 passait sans un mot.
+    const records = recordsAt([pushups(12), pushups(15), pushups(13)], repMax());
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ metric: 'reps', reps: 15, previous: { reps: 14 } });
+    expect(recordGain(records[0])).toEqual({ axis: 'reps', reps: 1 });
+  });
+
+  it("ne couronne rien la première fois qu'on fait l'exercice", () => {
+    // 14 pompes la toute première fois sont une première, pas un record.
+    expect(recordsAt([pushups(14)], null)).toEqual([]);
+  });
+
+  it('demande de faire mieux, pas aussi bien', () => {
+    expect(beatsRepMax(pushups(15), repMax())).toBe(true);
+    expect(beatsRepMax(pushups(14), repMax())).toBe(false);
+    expect(beatsRepMax(pushups(15, { weightKg: 0 }), repMax())).toBe(true);
+    expect(beatsRepMax(pushups(15), null)).toBe(false);
+  });
+
+  it("écarte l'échauffement, une série chargée et une série sans répétitions", () => {
+    expect(beatsRepMax(pushups(40, { type: 'warmup' }), repMax())).toBe(false);
+    // 20 dips à 10 kg ne disent rien d'un maximum à vide.
+    expect(beatsRepMax(pushups(20, { weightKg: 10 }), repMax())).toBe(false);
+    expect(beatsRepMax(pushups(null, { durationSeconds: 60 }), repMax())).toBe(false);
+    expect(beatsRepMax(pushups(0), repMax())).toBe(false);
+  });
+
+  it("ne mélange pas les deux records d'une traction", () => {
+    // Record lesté 8 × 10 kg, record à vide 14. Trente répétitions à 5 kg
+    // restent sous la charge, et ne comptent pas à vide pour autant ; quatorze
+    // à vide égalent la marque, sans la battre.
+    expect(recordsAt([pushups(30, { weightKg: 5 })], repMax(), best({ weightKg: 10 }))).toEqual([]);
+    expect(recordsAt([pushups(14)], repMax(), best({ weightKg: 10 }))).toEqual([]);
+  });
+
+  it('laisse la charge passer devant quand les deux tombent le même jour', () => {
+    const records = recordsAt(
+      [pushups(10, { weightKg: 12.5 }), pushups(16)],
+      repMax(),
+      best({ weightKg: 10, reps: 8 }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ metric: 'load', weightKg: 12.5 });
+  });
+
+  it('couronne la série à vide quand la charge reste sous sa marque', () => {
+    const records = recordsAt(
+      [pushups(6, { weightKg: 10 }), pushups(16)],
+      repMax(),
+      best({ weightKg: 10, reps: 8 }),
+    );
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({ metric: 'reps', reps: 16 });
+  });
+
+  it("lit une ligne d'historique écrite avant la colonne comme sans marque", () => {
+    // Une base migrée relit `best_reps` à null jusqu'au pull suivant.
+    const program = buildProgram(
+      [prescribedBlock(1, [prescribedExercise(1)])],
+      [loggedRow()],
+      [pushups(30)],
+    );
+    const history = new Map<number, ExerciseHistoryRow>([
+      [EXERCISE, { exerciseId: EXERCISE, last: null, best: null, bestReps: null }],
+    ]);
+
+    expect(sessionRecords(program, history).size).toBe(0);
   });
 });

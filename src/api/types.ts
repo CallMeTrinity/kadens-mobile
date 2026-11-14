@@ -21,6 +21,7 @@ import type {
   ActivityType,
   ExerciseLanguage,
   PerformanceBest,
+  PerformanceRepMax,
   PerformanceSession,
   PlanRef,
   PrescribedBlock,
@@ -183,11 +184,18 @@ export interface ScheduledWorkoutPayload {
 
 // --- Bootstrap et historique -------------------------------------------------
 
-/** Une entrée du tableau `history` : le dernier point et le record, sans la trajectoire. */
+/** Une entrée du tableau `history` : le dernier point et les records, sans la trajectoire. */
 export interface HistoryEntryPayload {
   exerciseId: number;
   last: PerformanceSession | null;
+  /** Le record de charge. */
   best: PerformanceBest | null;
+  /**
+   * Le record au poids du corps. **Optionnel** parce que le téléphone et le
+   * serveur ne se mettent pas à jour ensemble : un serveur d'avant ce champ ne
+   * l'envoie pas, et l'absence se lit comme « aucun record à vide ».
+   */
+  bestReps?: PerformanceRepMax | null;
 }
 
 /**
@@ -270,6 +278,8 @@ export interface ExerciseHistoryPayload {
   /** Exactement `sessions[0]`. Exposé parce que le bootstrap le donne sous ce nom. */
   last: PerformanceSession | null;
   best: PerformanceBest | null;
+  /** Même champ, même tolérance que dans `HistoryEntryPayload`. */
+  bestReps?: PerformanceRepMax | null;
   /** Dix entrées au plus, la plus récente d'abord. */
   sessions: PerformanceSession[];
 }

@@ -499,11 +499,17 @@ function replaceHistory(tx: Transaction, payload: BootstrapPayload, workoutRunni
           exerciseId: entry.exerciseId,
           last: entry.last,
           best: entry.best,
+          // Absent d'un serveur antérieur au record à vide : rien à battre.
+          bestReps: entry.bestReps ?? null,
         })),
       )
       .onConflictDoUpdate({
         target: exerciseHistory.exerciseId,
-        set: { last: sql`excluded.last`, best: sql`excluded.best` },
+        set: {
+          last: sql`excluded.last`,
+          best: sql`excluded.best`,
+          bestReps: sql`excluded.best_reps`,
+        },
       })
       .run();
   }

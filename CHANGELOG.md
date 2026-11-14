@@ -11,6 +11,15 @@ la version taguée et s'en sert comme description de la GitHub Release. Un tag
 
 ## [Non publié]
 
+### Corrigé
+
+- **Le record au poids du corps a enfin sa couronne** : pompes, tractions ou
+  dips sans charge se mesurent au plus de répétitions jamais enchaînées. 15
+  pompes après 14 s'affichent comme un record (« Record +1 rep »), en séance
+  comme sur « Séance terminée ». La toute première fois reste une première, pas
+  un record. L'historique de l'exercice affiche aussi ce record en
+  répétitions. Demande un serveur à jour et une synchro hors séance.
+
 ## [1.4.0] - 2026-11-13
 
 ### Modifié

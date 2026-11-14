@@ -161,13 +161,28 @@ export interface PerformanceSession {
   sets: PerformanceSetGroup[];
 }
 
-/** Le record. Pas de record sans kilos : au poids du corps il n'y en a pas. */
+/**
+ * Le record de charge : la série la plus lourde. Il n'existe pas sans kilos — au
+ * poids du corps, c'est `PerformanceRepMax` qui parle.
+ */
 export interface PerformanceBest {
   date: string;
   type: SetType;
   reps: number | null;
   weightKg: number;
   durationSeconds: number | null;
+}
+
+/**
+ * Le record au poids du corps : le plus de répétitions jamais enchaînées **sans
+ * charge** (`PerformanceHistory::bestRepMaxesForIds`). C'est celui d'une pompe,
+ * d'une traction à vide ou d'un dips. Ni charge ni durée : la valeur est le
+ * compte, et c'est tout ce qu'il y a à comparer.
+ */
+export interface PerformanceRepMax {
+  date: string;
+  type: SetType;
+  reps: number;
 }
 
 // --- La file de mutations ----------------------------------------------------

@@ -1,0 +1,1 @@
+ALTER TABLE `exercise_history` ADD `best_reps` text;

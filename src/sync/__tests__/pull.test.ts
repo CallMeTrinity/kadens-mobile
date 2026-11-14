@@ -256,6 +256,44 @@ describe("l'historique", () => {
     // dès qu'elle est terminée.
     expect(storedBest(101)).toEqual(best(85));
   });
+
+  it("range le record au poids du corps, et le gèle comme l'autre", () => {
+    const repMax = (reps: number) => ({ date: dayFromNow(-7), type: 'normal' as const, reps });
+    const storedRepMax = () =>
+      db
+        .select()
+        .from(exerciseHistory)
+        .all()
+        .find((row) => row.exerciseId === 101)?.bestReps ?? null;
+
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID)],
+      history: [{ exerciseId: 101, last: null, best: null, bestReps: repMax(14) }],
+    });
+
+    expect(storedRepMax()).toEqual(repMax(14));
+
+    beginWorkout(UUID);
+    applyBootstrap(
+      bootstrapPayload({
+        schedule: [scheduledWorkoutPayload(UUID)],
+        history: [{ exerciseId: 101, last: null, best: null, bestReps: repMax(15) }],
+      }),
+    );
+
+    // Même raison que pour la charge : sinon les 15 pompes qu'on vient de faire
+    // deviendraient la marque, et ne se battraient plus elles-mêmes.
+    expect(storedRepMax()).toEqual(repMax(14));
+  });
+
+  it("lit l'absence du champ, chez un serveur qui ne l'envoie pas, comme pas de record", () => {
+    seedBootstrap({
+      schedule: [scheduledWorkoutPayload(UUID)],
+      history: [{ exerciseId: 101, last: null, best: best(80) }],
+    });
+
+    expect(db.select().from(exerciseHistory).all()[0]?.bestReps).toBeNull();
+  });
 });
 
 describe('la fenêtre de séances datées', () => {

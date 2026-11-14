@@ -119,6 +119,7 @@ import {
   type ActivityType,
   type ExerciseHistoryRow,
   type PerformanceBest,
+  type PerformanceRepMax,
   type PerformanceSession,
   type SetType,
   type TargetArea,
@@ -2060,9 +2061,12 @@ function ArrangeDock({
  * l'écrire.
  *
  * Un exercice jamais fait n'a pas d'entrée du tout et ce composant n'est pas
- * monté ; un exercice fait au poids du corps a une dernière fois mais pas de
- * record (il n'y a pas de record sans kilos, `docs/api-mobile.md §6.6`), et la
- * section manquante n'est pas rendue — pas de case vide.
+ * monté. Le record a deux sources (`docs/api-mobile.md §6.6`) : la charge
+ * (`best`) et, au poids du corps, les répétitions (`bestReps`). Une pompe n'a que
+ * le second, un squat que le premier ; une section sans valeur n'est pas rendue —
+ * pas de case vide. Quand les deux existent (une traction tantôt lestée, tantôt
+ * à vide), le second se nomme « Record au poids du corps » pour ne pas se lire
+ * comme une contradiction du premier.
  *
  * **Ça ne ressemble toujours pas à une série** : pas de case, pas de fond, pas de
  * cadre, et un rail à gauche qui dit « ceci est du passé cité » comme la note de
@@ -2076,11 +2080,13 @@ function ArrangeDock({
 function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: string }) {
   const styles = useStyles(sheets);
   const { last, best } = entry;
+  // Nul aussi sur une ligne écrite avant la colonne (migration 0012).
+  const bestReps = entry.bestReps ?? null;
 
   // Une ligne d'historique sans dernière performance ni record ne devrait pas
   // exister — le serveur n'en descend pas — mais la table est un cache, et un
   // cadre vide serait exactement ce que le ticket refuse.
-  if (last === null && best === null) {
+  if (last === null && best === null && bestReps === null) {
     return null;
   }
 
@@ -2101,6 +2107,15 @@ function ExerciseHistory({ entry, today }: { entry: ExerciseHistoryRow; today: s
           date={performanceDate(best.date, today)}
           rows={[bestRow(best)]}
           summary={bestSummary(best)}
+        />
+      ) : null}
+      {bestReps ? (
+        <HistoryTable
+          label={best ? 'Record au poids du corps' : 'Record'}
+          crowned
+          date={performanceDate(bestReps.date, today)}
+          rows={[repMaxRow(bestReps)]}
+          summary={repMaxSummary(bestReps)}
         />
       ) : null}
     </View>
@@ -2189,6 +2204,16 @@ function performanceRows(session: PerformanceSession): HistoryLine[] {
     effort: setEffort(group.reps, group.durationSeconds) ?? 'série',
     load: group.weightKg === null ? '' : weight(group.weightKg),
   }));
+}
+
+/** Le record au poids du corps : une ligne, un compte, pas de charge. */
+function repMaxRow(best: PerformanceRepMax): HistoryLine {
+  return { count: '', effort: setEffort(best.reps, null) ?? 'série', load: '' };
+}
+
+/** Ce que TalkBack lit pour le record au poids du corps. */
+function repMaxSummary(best: PerformanceRepMax): string {
+  return `${setEffort(best.reps, null) ?? best.reps} au poids du corps`;
 }
 
 /** Le record : la série la plus lourde. Une ligne, et elle a toujours des kilos. */

@@ -81,6 +81,7 @@ export type {
   MutationPayload,
   MutationType,
   PerformanceBest,
+  PerformanceRepMax,
   PerformanceSession,
   PerformanceSetGroup,
   PlanRef,
